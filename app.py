@@ -13,6 +13,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
+from fpdf import FPDF
 
 # IMPORTANT: scanner.py is the existing engine. This UI only calls its existing functions.
 from scanner import load_universe, scan_universe, scan_single, fetch_history
@@ -36,38 +37,90 @@ st.set_page_config(
 # -----------------------------------------------------------------------------
 CSS = r"""
 <style>
-:root{--bg:#07111f;--card:#0c192b;--card2:#101f33;--border:rgba(148,163,184,.15);--text:#f1f5f9;--muted:#8fa3ba;--accent:#19d38a;--red:#ff5c70;--yellow:#f5c451;--chart-bg:#07111f}
-html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important}[data-testid="stHeader"],footer,#MainMenu,[data-testid="stToolbar"]{visibility:hidden!important;height:0!important;display:none!important}.block-container{max-width:720px!important;padding:1rem .75rem 5rem!important}section[data-testid="stSidebar"]{display:none!important}*{box-sizing:border-box}
-.stButton>button{width:100%;border-radius:14px;border:1px solid var(--border);background:var(--card);color:var(--text);min-height:46px;font-weight:800;transition:.18s ease}.stButton>button:hover{border-color:rgba(25,211,138,.55);transform:translateY(-1px)}
-.scan-btn .stButton>button{min-height:58px;border:0;color:white;background:linear-gradient(135deg,#10b981,#0ea5e9);box-shadow:0 12px 30px rgba(16,185,129,.20);font-size:1.08rem}
-.card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:18px;padding:14px;margin:8px 0;box-shadow:0 8px 28px rgba(0,0,0,.12)}.status-card{padding:10px 12px;border-radius:15px;background:var(--card);border:1px solid var(--border)}.status-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.status-left{display:flex;align-items:center;gap:8px;font-weight:800}.dot{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 12px currentColor}.dot.green{background:var(--accent);color:var(--accent);animation:pulse 1.5s infinite}.dot.red{background:var(--red);color:var(--red);animation:pulse 1.5s infinite}.dot.yellow{background:var(--yellow);color:var(--yellow);animation:pulse 1.5s infinite}.index-wrap{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap}.index-item{font-size:.82rem;color:var(--muted)}.index-item b{color:var(--text);font-size:.9rem}.up{color:var(--accent)!important}.down{color:var(--red)!important}.section-title{font-size:1.2rem;font-weight:900;margin:18px 2px 10px}
-.metric-card{min-height:76px;padding:11px;border-radius:14px;border:1px solid var(--border);background:var(--card)}.metric-label{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.metric-value{color:var(--text);font-weight:950;font-size:1.05rem;margin-top:4px;word-break:break-word}.metric-good{background:linear-gradient(135deg,rgba(25,211,138,.25),var(--card));border-color:rgba(25,211,138,.42)}.metric-ok{background:linear-gradient(135deg,rgba(154,211,70,.20),var(--card));border-color:rgba(154,211,70,.32)}.metric-neutral{background:linear-gradient(135deg,rgba(245,196,81,.20),var(--card));border-color:rgba(245,196,81,.30)}.metric-poor{background:linear-gradient(135deg,rgba(255,142,70,.20),var(--card));border-color:rgba(255,142,70,.32)}.metric-bad{background:linear-gradient(135deg,rgba(255,92,112,.22),var(--card));border-color:rgba(255,92,112,.34)}
-.hero-price{font-size:2.15rem;font-weight:950;letter-spacing:-.03em}.badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:.82rem;font-weight:950}.badge-green{background:rgba(25,211,138,.16);color:var(--accent);border:1px solid rgba(25,211,138,.35)}.badge-red{background:rgba(255,92,112,.14);color:var(--red);border:1px solid rgba(255,92,112,.30)}.badge-yellow{background:rgba(245,196,81,.16);color:#a56b00;border:1px solid rgba(245,196,81,.35)}.badge-grey{background:rgba(148,163,184,.10);color:var(--muted);border:1px solid var(--border)}.entry-pulse{animation:glow 1.35s ease-in-out infinite alternate}.target-box{padding:10px 12px;border-radius:14px;background:rgba(25,211,138,.09);border:1px solid rgba(25,211,138,.28)}.target-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;font-weight:800}.target-value{font-size:1.15rem;font-weight:950;color:var(--accent)}.target-upside{font-size:.75rem;color:var(--text);margin-top:2px}
-.scan-shell{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;overflow:hidden}.scan-chart{height:145px;position:relative;overflow:hidden;border-radius:12px;background:linear-gradient(180deg,var(--card2),var(--bg))}.candle-track{position:absolute;inset:0;display:flex;align-items:center;gap:10px;width:max-content;animation:scrollCandles 7s linear infinite}.candle{width:7px;position:relative;border-radius:2px;flex:none;box-shadow:0 0 8px currentColor}.candle:before{content:"";position:absolute;left:2px;width:2px;top:-13px;bottom:-13px;background:currentColor;opacity:.85}.candle.g{height:55px;background:#19d38a;color:#19d38a}.candle.r{height:38px;background:#ff5c70;color:#ff5c70}@keyframes scrollCandles{from{transform:translateX(0)}to{transform:translateX(-50%)}}.scan-copy{display:flex;justify-content:space-between;color:var(--muted);font-size:.82rem;margin:10px 0 7px}.progress{height:7px;background:rgba(148,163,184,.18);border-radius:99px;overflow:hidden}.progress>div{width:65%;height:100%;border-radius:99px;background:linear-gradient(90deg,#10b981,#38bdf8);animation:progress 2.2s ease-in-out infinite}@keyframes progress{0%{width:8%}50%{width:78%}100%{width:94%}}
-.ticker-note,.small-muted{color:var(--muted);font-size:.78rem}.tradingview-btn{display:block;text-align:center;padding:10px 14px;border-radius:12px;background:linear-gradient(135deg,#19d38a,#0ea5e9);color:#fff!important;text-decoration:none!important;font-weight:900;margin:4px 0 8px}.tv-under{text-align:center;margin:5px 0 12px}.tv-under a{color:var(--accent);font-size:.76rem;font-weight:800;text-decoration:none}.rank-note{font-size:.72rem;color:var(--muted);margin-bottom:8px}@keyframes pulse{50%{opacity:.45;transform:scale(.75)}}@keyframes glow{from{box-shadow:0 0 4px rgba(25,211,138,.1)}to{box-shadow:0 0 20px rgba(25,211,138,.45)}}
-@media(max-width:520px){.block-container{padding:.65rem .55rem 4rem!important}.index-wrap{justify-content:flex-start}.hero-price{font-size:1.9rem}.stButton>button{min-height:44px}.target-value{font-size:1rem}.metric-value{font-size:.98rem}}
+:root {
+  --bg: #07111f;
+  --card: #0c192b;
+  --card2: #101f33;
+  --border: rgba(148,163,184,.15);
+  --text: #f1f5f9;
+  --muted: #8fa3ba;
+  --green: #19d38a;
+  --green2: #0ea66b;
+  --red: #ff5c70;
+  --yellow: #f5c451;
+  --blue: #4da3ff;
+}
+html, body, [data-testid="stAppViewContainer"] { background: var(--bg) !important; color: var(--text) !important; }
+[data-testid="stHeader"], footer, #MainMenu { visibility: hidden !important; height: 0 !important; }
+[data-testid="stToolbar"] { display: none !important; }
+.block-container { max-width: 720px !important; padding: 1rem .75rem 5rem !important; }
+section[data-testid="stSidebar"] { display: none !important; }
+* { box-sizing: border-box; }
+.stButton > button {
+  width: 100%; border-radius: 14px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); min-height: 46px;
+  font-weight: 700; transition: .18s ease; box-shadow: none;
+}
+.stButton > button:hover { border-color: rgba(25,211,138,.55); transform: translateY(-1px); }
+.scan-btn .stButton > button {
+  min-height: 58px; border: 0; color: white;
+  background: linear-gradient(135deg,#10b981,#0ea5e9);
+  box-shadow: 0 12px 30px rgba(16,185,129,.20);
+  font-size: 1.08rem;
+}
+.card {
+  background: linear-gradient(145deg, rgba(16,31,51,.98), rgba(8,21,36,.98));
+  border: 1px solid var(--border); border-radius: 18px; padding: 14px;
+  margin: 8px 0; box-shadow: 0 8px 28px rgba(0,0,0,.16);
+}
+.status-card { padding: 10px 12px; border-radius: 15px; background:#0b1829; border:1px solid var(--border); }
+.status-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.status-left { display:flex; align-items:center; gap:8px; font-weight:800; }
+.dot { width:9px; height:9px; border-radius:50%; display:inline-block; box-shadow:0 0 12px currentColor; }
+.dot.green { background:var(--green); color:var(--green); animation:pulse 1.5s infinite; }
+.dot.red { background:var(--red); color:var(--red); animation:pulse 1.5s infinite; }
+.dot.yellow { background:var(--yellow); color:var(--yellow); animation:pulse 1.5s infinite; }
+.index-wrap { display:flex; gap:12px; justify-content:flex-end; flex-wrap:wrap; }
+.index-item { font-size:.82rem; color:var(--muted); }
+.index-item b { color:var(--text); font-size:.9rem; }
+.up { color:var(--green) !important; } .down { color:var(--red) !important; }
+.section-title { font-size:1.2rem; font-weight:850; margin:18px 2px 10px; }
+.stock-btn { text-align:left !important; }
+.stock-rank { color:var(--green); font-weight:900; margin-right:7px; }
+.stock-name { font-weight:800; } .stock-meta { color:var(--muted); font-size:.78rem; }
+.metric-card { min-height:76px; padding:11px; border-radius:14px; background:#0b1829; border:1px solid var(--border); }
+.metric-label { color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
+.metric-value { color:var(--text); font-weight:850; font-size:1rem; margin-top:4px; word-break:break-word; }
+.hero-price { font-size:2.15rem; font-weight:900; letter-spacing:-.03em; }
+.badge { display:inline-block; padding:5px 9px; border-radius:999px; font-size:.72rem; font-weight:900; }
+.badge-green { background:rgba(25,211,138,.13); color:var(--green); border:1px solid rgba(25,211,138,.25); }
+.badge-red { background:rgba(255,92,112,.12); color:var(--red); border:1px solid rgba(255,92,112,.25); }
+.badge-grey { background:rgba(148,163,184,.10); color:#aab9ca; border:1px solid var(--border); }
+.entry-pulse { animation: glow 1.35s ease-in-out infinite alternate; }
+@keyframes pulse { 50% { opacity:.45; transform:scale(.75); } }
+@keyframes glow { from { box-shadow:0 0 4px rgba(25,211,138,.1); } to { box-shadow:0 0 20px rgba(25,211,138,.45); } }
+.scan-shell { background:#06101d; border:1px solid var(--border); border-radius:18px; padding:16px; overflow:hidden; }
+.scan-chart { height:145px; position:relative; overflow:hidden; border-radius:12px; background:linear-gradient(180deg,#081626,#06101a); }
+.candle-track { position:absolute; inset:0; display:flex; align-items:center; gap:10px; width:max-content; animation:scrollCandles 7s linear infinite; }
+.candle { width:7px; position:relative; border-radius:2px; flex:none; box-shadow:0 0 8px currentColor; }
+.candle:before { content:""; position:absolute; left:2px; width:2px; top:-13px; bottom:-13px; background:currentColor; opacity:.85; }
+.candle.g { height:55px; background:#19d38a; color:#19d38a; } .candle.r { height:38px; background:#ff5c70; color:#ff5c70; }
+@keyframes scrollCandles { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+.scan-copy { display:flex; justify-content:space-between; color:#9fb1c5; font-size:.82rem; margin:10px 0 7px; }
+.progress { height:7px; background:#132438; border-radius:99px; overflow:hidden; }
+.progress > div { width:65%; height:100%; border-radius:99px; background:linear-gradient(90deg,#10b981,#38bdf8); animation:progress 2.2s ease-in-out infinite; }
+@keyframes progress { 0%{width:8%} 50%{width:78%} 100%{width:94%} }
+.ticker-note { color:var(--muted); font-size:.72rem; text-align:center; margin-top:6px; }
+.small-muted { color:var(--muted); font-size:.78rem; }
+@media (max-width: 520px) {
+  .block-container { padding: .65rem .55rem 4rem !important; }
+  .index-wrap { justify-content:flex-start; }
+  .hero-price { font-size:1.9rem; }
+  .stButton > button { min-height:44px; }
+}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
-
-# UI-only theme state. Scanner/data/scoring logic is unchanged.
-if "theme_mode" not in st.session_state:
-    st.session_state.theme_mode = "dark"
-
-def apply_theme():
-    if st.session_state.theme_mode == "light":
-        st.markdown("""<style>:root{--bg:#f5f7fa;--card:#fff;--card2:#f8fafc;--border:rgba(15,23,42,.12);--text:#111827;--muted:#64748b;--accent:#079669;--red:#dc3545;--yellow:#b7791f;--chart-bg:#f5f7fa}</style>""", unsafe_allow_html=True)
-
-def render_theme_toggle():
-    _, col = st.columns([5,1])
-    with col:
-        is_light = st.toggle("☀️", value=(st.session_state.theme_mode=="light"), key="theme_toggle", help="Switch light/dark mode")
-        new_mode = "light" if is_light else "dark"
-        if new_mode != st.session_state.theme_mode:
-            st.session_state.theme_mode = new_mode
-            st.rerun()
-
-apply_theme()
 
 # -----------------------------------------------------------------------------
 # Cached UI market data. This does not touch scanner.py's scanning functions.
@@ -177,17 +230,31 @@ def render_market_bar():
 
 
 def render_ticker():
-    symbols=get_nifty50_symbols(); df=get_nifty50_ticker_data(tuple(symbols))
+    symbols = get_nifty50_symbols()
+    df = get_nifty50_ticker_data(tuple(symbols))
     if df.empty:
-        st.markdown('<div class="ticker-note">NIFTY 50 ticker data temporarily unavailable.</div>',unsafe_allow_html=True); return
-    items=[]
-    for _,r in df.iterrows():
-        cls="up" if r.pct>=0 else "down"; arrow="▲" if r.pct>=0 else "▼"
+        st.markdown('<div class="ticker-note">NIFTY 50 ticker data temporarily unavailable.</div>', unsafe_allow_html=True)
+        return
+    items = []
+    for _, r in df.iterrows():
+        cls = "up" if r.pct >= 0 else "down"
+        arrow = "▲" if r.pct >= 0 else "▼"
         items.append(f'<span class="tick"><b>{html.escape(r.symbol)}</b> {money(r.price)} <span class="{cls}">{arrow} {r.pct:+.2f}%</span></span>')
-    content="".join(items); light=st.session_state.theme_mode=="light"
-    bg="#fff" if light else "#07111f"; viewport="#fff" if light else "#091727"; textc="#111827" if light else "#dbe7f3"; muted="#64748b" if light else "#9fb1c5"; border="rgba(15,23,42,.12)" if light else "rgba(148,163,184,.12)"; green="#079669" if light else "#19d38a"; red="#dc3545" if light else "#ff5c70"
-    markup=f"""<html><head><style>*{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:Arial,sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:13px;background:{viewport}}}.track{{display:flex;width:max-content;animation:marquee 144s linear infinite;padding:10px 0}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;margin-right:28px;font-size:12px;color:{muted}}}.tick b{{color:{textc};margin-right:5px}}.up{{color:{green}}}.down{{color:{red}}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport" id="v"><div class="track" id="t">{content}{content}</div></div><script>const v=document.getElementById('v'),t=document.getElementById('t');v.addEventListener('touchstart',()=>t.style.animationPlayState='paused',{{passive:true}});v.addEventListener('touchend',()=>t.style.animationPlayState='running',{{passive:true}});</script></body></html>"""
-    components.html(markup,height=43,scrolling=False)
+    content = "".join(items)
+    markup = f"""
+    <html><head><style>
+    *{{box-sizing:border-box}} body{{margin:0;background:#07111f;color:#dbe7f3;font-family:Arial,sans-serif;overflow:hidden}}
+    .viewport{{width:100%;overflow:hidden;border:1px solid rgba(148,163,184,.12);border-radius:13px;background:#091727}}
+    .track{{display:flex;width:max-content;animation:marquee 48s linear infinite;padding:10px 0}}
+    .track:hover{{animation-play-state:paused}} .tick{{white-space:nowrap;margin-right:28px;font-size:12px;color:#9fb1c5}}
+    .tick b{{color:#f1f5f9;margin-right:5px}} .up{{color:#19d38a}} .down{{color:#ff5c70}}
+    @keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}
+    </style></head><body>
+    <div class="viewport" id="v"><div class="track" id="t">{content}{content}</div></div>
+    <script>const v=document.getElementById('v'),t=document.getElementById('t');v.addEventListener('touchstart',()=>t.style.animationPlayState='paused',{{passive:true}});v.addEventListener('touchend',()=>t.style.animationPlayState='running',{{passive:true}});</script>
+    </body></html>"""
+    components.html(markup, height=43, scrolling=False)
+
 
 def render_scan_animation():
     candles = "".join('<span class="candle '+('g' if i%3 else 'r')+'"></span>' for i in range(42))
@@ -206,150 +273,360 @@ def day_change(symbol, period="2y"):
     return last, last-prev, (last/prev-1)*100
 
 
-def detail_chart(symbol,row,period="2y"):
-    hist=fetch_history(symbol,period)
+def detail_chart(symbol, row, period="2y"):
+    hist = fetch_history(symbol, period)
     if hist is None or hist.empty:
-        st.warning("Price history is temporarily unavailable for the chart."); return
-    light=st.session_state.theme_mode=="light"
-    fig=go.Figure()
-    fig.add_trace(go.Candlestick(x=hist.index,open=hist.Open,high=hist.High,low=hist.Low,close=hist.Close,name=symbol))
-    fig.add_trace(go.Bar(x=hist.index,y=hist.Volume,name="Volume",yaxis="y2",opacity=.25))
-    fig.add_hline(y=float(row["breakout_level"]),line_dash="dash",line_color="#079669" if light else "#19d38a",annotation_text=f"Breakout: ₹{row['breakout_level']:.2f}",annotation_position="top left")
-    fig.update_layout(template="plotly_white" if light else "plotly_dark",height=470,margin=dict(l=8,r=8,t=30,b=10),xaxis_rangeslider_visible=False,hovermode="x unified",paper_bgcolor="#fff" if light else "#0c192b",plot_bgcolor="#f5f7fa" if light else "#07111f",yaxis=dict(title="Price"),yaxis2=dict(title="Volume",overlaying="y",side="right",showgrid=False,rangemode="tozero"),legend=dict(orientation="h",y=1.02,x=0))
-    st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False,"responsive":True})
+        st.warning("Price history is temporarily unavailable for the chart.")
+        return
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=hist.index, open=hist.Open, high=hist.High, low=hist.Low, close=hist.Close, name=symbol))
+    fig.add_trace(go.Bar(x=hist.index, y=hist.Volume, name="Volume", yaxis="y2", opacity=.25))
+    fig.add_hline(y=float(row["breakout_level"]), line_dash="dash", line_color="#19d38a", annotation_text=f"Breakout: ₹{row['breakout_level']:.2f}", annotation_position="top left")
+    fig.update_layout(
+        template="plotly_dark", height=470, margin=dict(l=8,r=8,t=30,b=10),
+        xaxis_rangeslider_visible=False, hovermode="x unified",
+        paper_bgcolor="#0c192b", plot_bgcolor="#07111f",
+        yaxis=dict(title="Price", fixedrange=False),
+        yaxis2=dict(title="Volume", overlaying="y", side="right", showgrid=False, rangemode="tozero"),
+        legend=dict(orientation="h", y=1.02, x=0),
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+
 
 def verdict(score):
-    if score>=90:return "Strong",True
-    if score>=75:return "Good",True
-    if score>=60:return "Neutral",False
-    if score>=40:return "Weak",False
-    return "Avoid",False
+    if score >= 90: return "Strong", True
+    if score >= 75: return "Good", True
+    if score >= 60: return "Neutral", False
+    if score >= 40: return "Weak", False
+    return "Avoid", False
 
-def score_class(value,kind):
-    try:v=float(value)
-    except Exception:return "metric-neutral"
-    if kind=="rsi": return "metric-good" if 52<=v<=68 else "metric-ok" if 48<=v<=72 else "metric-poor"
-    if kind=="rvol": return "metric-good" if v>=1.5 else "metric-ok" if v>=1.1 else "metric-poor" if v>=.8 else "metric-bad"
-    if kind=="adx": return "metric-good" if v>=25 else "metric-ok" if v>=18 else "metric-poor"
-    if kind=="distance": return "metric-good" if v<=1 else "metric-ok" if v<=3 else "metric-neutral" if v<=5 else "metric-poor" if v<=10 else "metric-bad"
-    if kind=="rr": return "metric-good" if v>=2 else "metric-ok" if v>=1.5 else "metric-neutral" if v>=1 else "metric-poor"
-    if kind=="score": return "metric-good" if v>=80 else "metric-ok" if v>=65 else "metric-neutral" if v>=50 else "metric-poor" if v>=35 else "metric-bad"
-    return "metric-neutral"
 
-def metric_card(label,value,kind=None):
-    cls=score_class(value,kind) if kind else "metric-neutral"
-    return f'<div class="metric-card {cls}"><div class="metric-label">{html.escape(str(label))}</div><div class="metric-value">{html.escape(str(value))}</div></div>'
 
-def target_values(row,price):
-    b=float(row.get("breakout_level",0) or 0); note=""
-    try:t1=float(row.get("target1"))
-    except Exception:t1=None
-    try:t2=float(row.get("target2"))
-    except Exception:t2=None
-    if t1 is None or not np.isfinite(t1):
-        base=max(b-float(price),0); t1=b+base if base else b*1.01; note="Targets estimated from the breakout base height."
-    if t2 is None or not np.isfinite(t2):
-        base=max(b-float(price),0); t2=b+2*base if base else b*1.02; note="Targets estimated from the breakout base height."
-    return t1,t2,note
+def _pdf_text(value):
+    """Keep PDF text compatible with fpdf2 core fonts (no Unicode font required)."""
+    text = str(value if value is not None else "-")
+    replacements = {
+        "₹": "Rs.", "—": "-", "–": "-", "•": "-", "→": "->", "▲": "UP", "▼": "DOWN",
+        "×": "x", "≥": ">=", "≤": "<=", "…": "...", "✓": "OK", "✕": "NO",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text.encode("latin-1", "replace").decode("latin-1")
 
-def render_detail(symbol,row):
-    render_theme_toggle()
+
+def _pdf_money(value):
+    if value is None:
+        return "-"
+    try:
+        value = float(value)
+        if not np.isfinite(value):
+            return "-"
+        return f"Rs. {value:,.2f}"
+    except Exception:
+        return _pdf_text(value)
+
+
+def _pdf_add_title(pdf, title):
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 9, _pdf_text(title), ln=1)
+    pdf.set_draw_color(120, 130, 145)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(4)
+
+
+def _pdf_add_section(pdf, title):
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_fill_color(235, 240, 246)
+    pdf.cell(0, 7, _pdf_text(title), ln=1, fill=True)
+    pdf.ln(2)
+
+
+def _pdf_add_fields(pdf, fields):
+    for label, value in fields:
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(52, 6, _pdf_text(label), border=0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(138, 6, _pdf_text(value), border=0)
+
+
+def build_detail_pdf(symbol, row, price, label, entry_title, entry_msg, scanned_at, export_at, fields, summary):
+    """Build the detail report entirely in memory; no server-side file is written."""
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=14)
+    pdf.set_margins(10, 10, 10)
+    pdf.add_page()
+
+    company = row.get("company_name", symbol)
+    target1 = row.get("target1")
+    target2 = row.get("target2")
+    score = float(row.get("score", 0) or 0)
+
+    _pdf_add_title(pdf, "NIFTY Breakout Scanner - Detail Report")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, _pdf_text(f"Scanned: {scanned_at.strftime('%d %b %Y %H:%M IST')}"), ln=1)
+    pdf.cell(0, 5, _pdf_text(f"Exported: {export_at.strftime('%d %b %Y %H:%M IST')}"), ln=1)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, _pdf_text(f"{company} ({symbol})"), ln=1)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _pdf_text(f"Price at export: {_pdf_money(price)}"), ln=1)
+    pdf.cell(0, 6, _pdf_text(f"Target 1: {_pdf_money(target1)}    Target 2: {_pdf_money(target2)}"), ln=1)
+    pdf.ln(3)
+
+    _pdf_add_section(pdf, "Technical Setup Strength")
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_text(f"Score: {score:.1f}/100    Verdict: {label}"), ln=1)
+    pdf.ln(2)
+
+    _pdf_add_section(pdf, "Entry Status")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, _pdf_text(entry_title), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(0, 5, _pdf_text(entry_msg))
+    pdf.ln(2)
+
+    _pdf_add_section(pdf, "Technical Data")
+    _pdf_add_fields(pdf, fields)
+    pdf.ln(2)
+
+    _pdf_add_section(pdf, "Technical Summary")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(0, 5, _pdf_text(summary or "No technical summary was supplied by the scanner."))
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.multi_cell(0, 4, "For educational purposes only. This report is a technical scanner output, not investment advice.")
+    return bytes(pdf.output())
+
+
+def build_shortlist_pdf(result, scanned_at, export_at):
+    """Optional home-page shortlist PDF; generated only in memory."""
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=14)
+    pdf.set_margins(8, 10, 8)
+    pdf.add_page()
+    _pdf_add_title(pdf, "NIFTY Breakout Scanner - Shortlist")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, _pdf_text(f"Scanned: {scanned_at.strftime('%d %b %Y %H:%M IST')}"), ln=1)
+    pdf.cell(0, 5, _pdf_text(f"Exported: {export_at.strftime('%d %b %Y %H:%M IST')}"), ln=1)
+    pdf.ln(3)
+
+    headers = [("Rank", 12), ("Symbol", 30), ("Price", 28), ("Distance", 25), ("Rating", 20), ("Score", 22), ("Status", 48)]
+    pdf.set_font("Helvetica", "B", 8)
+    for h, w in headers:
+        pdf.cell(w, 6, _pdf_text(h), border=1)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    for _, r in result.iterrows():
+        values = [
+            str(r.get("rank", "-")), str(r.get("symbol", "-")), _pdf_money(r.get("price")),
+            f"{float(r.get('distance_pct', 0)):.2f}%", f"{r.get('rating', '-')}/10",
+            f"{float(r.get('score', 0)):.1f}", str(r.get("status", "-")),
+        ]
+        for value, (_, w) in zip(values, headers):
+            pdf.cell(w, 6, _pdf_text(value), border=1)
+        pdf.ln()
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.multi_cell(0, 4, "For educational purposes only. Breakout levels are technical reference levels, not guaranteed predictions.")
+    return bytes(pdf.output())
+
+def render_detail(symbol, row):
+    scanned_at = st.session_state.get("selected_scanned_at", datetime.now(IST))
+    if not isinstance(scanned_at, datetime):
+        scanned_at = datetime.now(IST)
     if st.button("← Back to Top 20"):
-        st.session_state.page="home"; st.rerun()
-    company=row.get("company_name",symbol); last,change,change_pct=day_change(symbol); price=last if last is not None else row.get("price")
-    score=float(row.get("score",0)); label,strong=verdict(score); change_cls="up" if (change_pct or 0)>=0 else "down"; arrow="▲" if (change_pct or 0)>=0 else "▼"
-    t1,t2,target_note=target_values(row,price)
-    t1up=((t1/price)-1)*100 if price else 0; t2up=((t2/price)-1)*100 if price else 0
-    note_html=f'<div class="small-muted" style="margin-top:7px">{html.escape(target_note)}</div>' if target_note else ''
-    st.markdown(f'''<div class="card"><div class="small-muted">{html.escape(str(company))}</div><div style="font-size:1.15rem;font-weight:900">{html.escape(symbol)}</div><div class="hero-price">{money(price)}</div><div class="{change_cls}" style="font-weight:850">{arrow} {money(change)} ({pct(change_pct)})</div><div style="height:8px"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}% upside</div></div><div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}% upside</div></div></div>{note_html}</div>''',unsafe_allow_html=True)
-    light=st.session_state.theme_mode=="light"
-    fig=go.Figure(go.Indicator(mode="gauge+number",value=score,number={"suffix":" / 100","font":{"size":38,"color":"#111827" if light else "#f1f5f9"}},title={"text":"Technical Setup Strength"},gauge={"axis":{"range":[0,100],"tickwidth":1,"tickcolor":"#64748b"},"bar":{"color":"#079669" if light else "#19d38a","thickness":.22},"bgcolor":"#e5e7eb" if light else "#0b1829","borderwidth":0,"steps":[{"range":[0,40],"color":"#f3c4ca"},{"range":[40,65],"color":"#f5e4ad"},{"range":[65,80],"color":"#d9ecb0"},{"range":[80,100],"color":"#b8efd9"}]}))
-    fig.update_layout(template="plotly_white" if light else "plotly_dark",height=245,margin=dict(l=15,r=15,t=45,b=5),paper_bgcolor="#fff" if light else "#0c192b")
-    st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
-    badge_cls="badge-green" if strong else "badge-red" if score<40 else "badge-yellow"; badge='<span class="badge badge-green">BUY SIGNAL</span>' if strong else '<span class="badge badge-grey">SETUP WATCH</span>'
-    st.markdown(f'<div style="text-align:center;margin-top:-12px"><span class="badge {badge_cls}">{label}</span> &nbsp; {badge}</div>',unsafe_allow_html=True)
+        st.session_state.page = "home"
+        st.rerun()
+    company = row.get("company_name", symbol)
+    last, change, change_pct = day_change(symbol)
+    price = last if last is not None else row.get("price")
+    score = float(row.get("score", 0))
+    label, strong = verdict(score)
+    change_cls = "up" if (change_pct or 0) >= 0 else "down"
+    arrow = "▲" if (change_pct or 0) >= 0 else "▼"
 
-    st.markdown('<div class="section-title">Technical Data</div>',unsafe_allow_html=True)
-    hist=fetch_history(symbol,"2y"); extra={}
+    st.markdown(f'''<div class="card"><div class="small-muted">{html.escape(str(company))}</div><div style="font-size:1.15rem;font-weight:900">{html.escape(symbol)}</div><div class="hero-price">{money(price)}</div><div class="{change_cls}" style="font-weight:850">{arrow} {money(change)} ({pct(change_pct)})</div></div>''', unsafe_allow_html=True)
+
+    # The scanner's score is a technical setup score, not a fundamental-analysis score.
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=score,
+        number={"suffix":" / 100", "font":{"size":34}},
+        title={"text":"Technical Setup Strength"},
+        gauge={
+            "axis":{"range":[0,100],"tickwidth":1,"tickcolor":"#71839a"},
+            "bar":{"color":"#19d38a","thickness":.22},
+            "bgcolor":"#0b1829", "borderwidth":0,
+            "steps":[
+                {"range":[0,40],"color":"#54202a"},
+                {"range":[40,65],"color":"#5a4c22"},
+                {"range":[65,80],"color":"#716225"},
+                {"range":[80,100],"color":"#123d30"},
+            ],
+        },
+        domain={"x":[0,1],"y":[0,1]},
+    ))
+    fig.update_layout(template="plotly_dark", height=245, margin=dict(l=15,r=15,t=45,b=5), paper_bgcolor="#0c192b")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
+    badge = '<span class="badge badge-green">BUY SIGNAL</span>' if strong else '<span class="badge badge-grey">SETUP WATCH</span>'
+    st.markdown(f'<div style="text-align:center;margin-top:-12px"><b>{label}</b> &nbsp; {badge}</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-title">Technical Data</div>', unsafe_allow_html=True)
+    hist = fetch_history(symbol, "2y")
+    extra = {}
     if hist is not None and len(hist):
-        last52=hist.tail(252); extra={"52-week high":money(float(last52.High.max())),"52-week low":money(float(last52.Low.min()))}
-    fields=[
-      ("Breakout level",money(row.get("breakout_level")),"distance"),("Breakout trigger",money(row.get("breakout_trigger")),None),
-      ("Distance",pct(row.get("distance_pct")),"distance"),("Rating",f"{row.get('rating','—')}/10","score"),
-      ("Score",f"{row.get('score',0):.1f}/100","score"),("RVOL",f"{row.get('rvol',0):.2f}x","rvol"),
-      ("RSI",f"{row.get('rsi',0):.1f}","rsi"),("ADX",f"{row.get('adx',0):.1f}","adx"),
-      ("EMA structure",row.get("ema_structure","—"),None),("MACD",f"{row.get('macd',0):.3f}",None),
-      ("ATR %",f"{row.get('atr_pct',0):.2f}%",None),("Squeeze",f"{row.get('squeeze',0):.2f}",None),
-      ("NIFTY relative strength",pct(row.get("nifty_relative_strength")),None),("60D relative strength",pct(row.get("relative_strength")),None),
-      ("Candlestick",row.get("candlestick","—"),None),("Resistance touches",row.get("resistance_touches","—"),None),
-      ("Risk / reward",f"{row.get('risk_reward',0):.2f}","rr"),("Market regime",row.get("market_regime","—"),None),
-      ("Status",row.get("status","—"),None),("False breakout","Yes" if row.get("false_breakout") else "No",None),
-      ("Stop reference",money(row.get("stop_reference")),None),("Target 1",money(t1),None),("Target 2",money(t2),None),
-      ("52-week high",extra.get("52-week high","—"),None),("52-week low",extra.get("52-week low","—"),None)]
-    known={x[0] for x in fields}; field_map={"price":"Current price","breakout_level":"Breakout level","breakout_trigger":"Breakout trigger","distance_pct":"Distance","score":"Score","rating":"Rating","rsi":"RSI","macd":"MACD","adx":"ADX","rvol":"RVOL","atr_pct":"ATR %","ema_structure":"EMA structure","candlestick":"Candlestick","relative_strength":"60D relative strength","nifty_relative_strength":"NIFTY relative strength","sector_relative_strength":"Sector relative strength","market_regime":"Market regime","risk_reward":"Risk / reward","squeeze":"Squeeze"}
-    for k,v in row.items():
-        label2=field_map.get(k,k.replace("_"," ").title())
-        if label2 in known or k in {"symbol","company_name","rank_score","explanation","rank"}: continue
-        fields.append((label2,f"{v:.2f}" if isinstance(v,(float,np.floating)) else str(v),None))
-    for i in range(0,len(fields),2):
-        c1,c2=st.columns(2)
-        with c1: st.markdown(metric_card(fields[i][0],fields[i][1],fields[i][2]),unsafe_allow_html=True)
-        if i+1<len(fields):
-            with c2: st.markdown(metric_card(fields[i+1][0],fields[i+1][1],fields[i+1][2]),unsafe_allow_html=True)
+        last52 = hist.tail(252)
+        extra = {"52-week high": money(float(last52.High.max())), "52-week low": money(float(last52.Low.min()))}
+    fields = [
+        ("Breakout level", money(row.get("breakout_level"))), ("Breakout trigger", money(row.get("breakout_trigger"))),
+        ("Distance", pct(row.get("distance_pct"))), ("Rating", f"{row.get('rating','—')}/10"),
+        ("Score", f"{row.get('score',0):.1f}/100"), ("RVOL", f"{row.get('rvol',0):.2f}x"),
+        ("RSI", f"{row.get('rsi',0):.1f}"), ("ADX", f"{row.get('adx',0):.1f}"),
+        ("EMA structure", row.get("ema_structure","—")), ("MACD", f"{row.get('macd',0):.3f}"),
+        ("ATR %", f"{row.get('atr_pct',0):.2f}%"), ("Squeeze", f"{row.get('squeeze',0):.2f}"),
+        ("NIFTY relative strength", pct(row.get("nifty_relative_strength"))), ("60D relative strength", pct(row.get("relative_strength"))),
+        ("Candlestick", row.get("candlestick","—")), ("Resistance touches", row.get("resistance_touches","—")),
+        ("Risk / reward", f"{row.get('risk_reward',0):.2f}"), ("Market regime", row.get("market_regime","—")),
+        ("Status", row.get("status","—")), ("False breakout", "Yes" if row.get("false_breakout") else "No"),
+        ("Stop reference", money(row.get("stop_reference"))), ("Target 1", money(row.get("target1"))),
+        ("Target 2", money(row.get("target2"))), ("52-week high", extra.get("52-week high","—")),
+        ("52-week low", extra.get("52-week low","—")),
+    ]
+    # If the scanner later exposes additional fields, display them too without changing scanner.py.
+    known = {x[0] for x in fields}
+    field_map = {"price":"Current price","breakout_level":"Breakout level","breakout_trigger":"Breakout trigger","distance_pct":"Distance","score":"Score","rating":"Rating","rsi":"RSI","macd":"MACD","adx":"ADX","rvol":"RVOL","atr_pct":"ATR %","ema_structure":"EMA structure","candlestick":"Candlestick","relative_strength":"60D relative strength","nifty_relative_strength":"NIFTY relative strength","sector_relative_strength":"Sector relative strength","market_regime":"Market regime","risk_reward":"Risk / reward","squeeze":"Squeeze"}
+    for k, v in row.items():
+        label = field_map.get(k, k.replace("_"," ").title())
+        if label in known or k in {"symbol","company_name","rank_score","explanation","rank"}: continue
+        fields.append((label, f"{v:.2f}" if isinstance(v,(float,np.floating)) else str(v)))
+    for i in range(0, len(fields), 2):
+        c1, c2 = st.columns(2)
+        with c1: st.markdown(metric_card(*fields[i]), unsafe_allow_html=True)
+        if i+1 < len(fields):
+            with c2: st.markdown(metric_card(*fields[i+1]), unsafe_allow_html=True)
 
-    st.markdown('<div class="section-title">Price Chart</div>',unsafe_allow_html=True)
-    tv_symbol=str(symbol).replace(".NS","").upper(); tv_url=f"https://www.tradingview.com/chart/?symbol=NSE:{tv_symbol}"
-    st.markdown(f'<a class="tradingview-btn" href="{tv_url}" target="_blank" rel="noopener">Open in TradingView ↗</a>',unsafe_allow_html=True)
-    detail_chart(symbol,row)
-    st.markdown(f'<div class="tv-under"><a href="{tv_url}" target="_blank" rel="noopener">View on TradingView ↗</a></div>',unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Price Chart</div>', unsafe_allow_html=True)
+    detail_chart(symbol, row)
 
-    level=float(row.get("breakout_level",0) or 0); p=float(price or 0); distance=((level-p)/level*100) if level else 999
-    if p>=level: title,msg,cls="Breakout Confirmed","Price is trading at or above the detected breakout level.","badge-green"
-    elif distance<=2: title,msg,cls="ENTRY ZONE","Price is near the breakout level. Confirmation still matters.","badge-green entry-pulse"
-    elif distance<=5: title,msg,cls="Wait","Not near the entry point yet.","badge-yellow"
-    else: title,msg,cls="Wait","Not near the entry point.","badge-grey"
-    st.markdown(f'''<div class="card"><span class="badge {cls}">{title}</span><div style="font-size:1.05rem;font-weight:900;margin-top:9px">{msg}</div><div class="small-muted" style="margin-top:7px">Distance to breakout: {distance:.2f}% &nbsp; • &nbsp; Suggested entry reference: {money(row.get("breakout_trigger"))}</div></div>''',unsafe_allow_html=True)
+    level = float(row.get("breakout_level", 0) or 0)
+    p = float(price or 0)
+    distance = ((level-p)/level*100) if level else 999
+    if p >= level:
+        title, msg, cls = "Breakout Confirmed", "Price is trading at or above the detected breakout level.", "badge-green"
+    elif distance <= 2:
+        title, msg, cls = "ENTRY ZONE", "Price is near the breakout level. Confirmation still matters.", "badge-green entry-pulse"
+    else:
+        title, msg, cls = "Wait", "Not near the entry point yet.", "badge-grey"
+    st.markdown(f'''<div class="card"><span class="badge {cls}">{title}</span><div style="font-size:1.05rem;font-weight:850;margin-top:9px">{msg}</div><div class="small-muted" style="margin-top:7px">Distance to breakout: {distance:.2f}% &nbsp; • &nbsp; Suggested entry reference: {money(row.get('breakout_trigger'))}</div></div>''', unsafe_allow_html=True)
+
     if row.get("explanation"):
-        st.markdown(f'<div class="card"><b>Technical summary</b><div class="small-muted" style="margin-top:8px">{html.escape(str(row["explanation"]))}</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card"><b>Technical summary</b><div class="small-muted" style="margin-top:8px">{html.escape(str(row["explanation"]))}</div></div>', unsafe_allow_html=True)
+
+    export_at = datetime.now(IST)
+    report_bytes = build_detail_pdf(
+        symbol=symbol, row=row, price=price, label=label,
+        entry_title=title, entry_msg=msg, scanned_at=scanned_at, export_at=export_at,
+        fields=fields, summary=row.get("explanation", ""),
+    )
+    st.download_button(
+        "Download PDF report", data=report_bytes,
+        file_name=f"{symbol}_breakout_report_{export_at.strftime('%Y%m%d_%H%M')}.pdf",
+        mime="application/pdf", use_container_width=True, key=f"pdf_detail_{symbol}",
+    )
 
 
 def render_home():
-    render_theme_toggle()
-    st.markdown("<div style='font-size:1.6rem;font-weight:950'>📈 NIFTY Breakout Scanner</div><div class='small-muted'>Top 20 near-breakout technical setups from the NIFTY LargeMidcap 250 universe</div>",unsafe_allow_html=True)
-    render_market_bar(); render_ticker(); st.markdown("<div style='height:5px'></div>",unsafe_allow_html=True)
-    if st.button("🚀 SCAN MARKET",key="scan_market",type="primary",use_container_width=True):
-        st.session_state.scanning=True; st.session_state.scan_error=None; placeholder=st.empty(); placeholder.markdown(render_scan_animation(),unsafe_allow_html=True)
+    st.markdown("<div style='font-size:1.6rem;font-weight:950'>📈 NIFTY Breakout Scanner</div><div class='small-muted'>Top 20 near-breakout technical setups from the NIFTY LargeMidcap 250 universe</div>", unsafe_allow_html=True)
+    render_market_bar()
+    render_ticker()
+    st.markdown("<div style='height:5px'></div>", unsafe_allow_html=True)
+
+    if st.button("🚀 SCAN MARKET", key="scan_market", type="primary", use_container_width=True):
+        st.session_state.scanning = True
+        st.session_state.scan_error = None
+        placeholder = st.empty()
+        placeholder.markdown(render_scan_animation(), unsafe_allow_html=True)
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
-                future=executor.submit(scan_universe,max_distance=10.0,period="2y",top_n=20)
-                while not future.done(): time.sleep(.25)
-                result=future.result()
-            st.session_state.scan_result=result
+                future = executor.submit(scan_universe, max_distance=10.0, period="2y", top_n=20)
+                while not future.done():
+                    time.sleep(.25)
+                result = future.result()
+            st.session_state.scan_result = result
+            st.session_state.scan_scanned_at = datetime.now(IST)
         except Exception as exc:
-            st.session_state.scan_result=pd.DataFrame(); st.session_state.scan_error=str(exc)
+            st.session_state.scan_result = pd.DataFrame()
+            st.session_state.scan_error = str(exc)
         finally:
-            placeholder.empty(); st.session_state.scanning=False
-    result=st.session_state.get("scan_result")
-    if st.session_state.get("scan_error"): st.error("The market scan could not be completed. Please try again. Details: "+st.session_state.scan_error)
+            placeholder.empty()
+            st.session_state.scanning = False
+
+    st.markdown('<div class="section-title" style="margin-top:14px">Search a Stock</div>', unsafe_allow_html=True)
+    st.caption("Run one stock through the existing scanner. No criteria are changed or relaxed.")
+    search_symbol = st.text_input("Stock symbol", placeholder="Example: TCS", key="single_stock_input", label_visibility="collapsed")
+    if st.button("Search Stock", key="search_single_stock", use_container_width=True):
+        normalized = search_symbol.strip().upper().replace(".NS", "")
+        if not normalized:
+            st.warning("Please enter a stock symbol, for example TCS or RELIANCE.")
+        else:
+            with st.spinner(f"Checking {normalized} with the existing scanner criteria..."):
+                try:
+                    single = scan_single(normalized, max_distance=10.0, period="2y")
+                    if single is None:
+                        st.session_state.single_scan_message = (
+                            normalized,
+                            "does not meet the scanner criteria right now. The scanner criteria were not loosened to force a result."
+                        )
+                    else:
+                        scanned_at = datetime.now(IST)
+                        st.session_state.selected_stock = normalized
+                        st.session_state.selected_row = dict(single)
+                        st.session_state.selected_scanned_at = scanned_at
+                        st.session_state.page = "detail"
+                        st.session_state.single_scan_message = None
+                        st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not scan {normalized}. Please check the symbol and try again. Details: {exc}")
+
+    if st.session_state.get("single_scan_message"):
+        sym, message = st.session_state.single_scan_message
+        st.info(f"{sym} {message}")
+
+    result = st.session_state.get("scan_result")
+    if st.session_state.get("scan_error"):
+        st.error("The market scan could not be completed. Please try again. Details: " + st.session_state.scan_error)
     if result is None:
-        st.markdown('<div class="card"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch the NIFTY LargeMidcap 250 data and rank the strongest near-breakout setups.</div></div>',unsafe_allow_html=True); return
+        st.markdown('<div class="card"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch the NIFTY LargeMidcap 250 data and rank the strongest near-breakout setups.</div></div>', unsafe_allow_html=True)
+        return
     if result.empty:
-        st.markdown('<div class="card"><b>No qualifying setups found</b><div class="small-muted" style="margin-top:6px">Nothing currently meets the scanner’s near-breakout criteria. Try again after the next market session.</div></div>',unsafe_allow_html=True); return
-    display=result.copy()
-    if "distance_pct" in display.columns: display=display.sort_values(["distance_pct","score"],ascending=[True,False],kind="stable").reset_index(drop=True)
-    st.markdown(f'<div class="section-title">Shortlisted Stocks ({len(display)})</div>',unsafe_allow_html=True); st.markdown('<div class="rank-note">Sorted by distance to breakout: closest first.</div>',unsafe_allow_html=True)
-    for start in range(0,len(display),2):
-        cols=st.columns(2)
-        for j,col in enumerate(cols):
-            idx=start+j
-            if idx>=len(display): continue
-            row=display.iloc[idx]; ratio=idx/max(len(display)-1,1)
-            color="#19d38a" if ratio<.2 else "#8fd66a" if ratio<.4 else "#f5c451" if ratio<.6 else "#ff9b4a" if ratio<.8 else "#ff5c70"
+        st.markdown('<div class="card"><b>No qualifying setups found</b><div class="small-muted" style="margin-top:6px">Nothing currently meets the scanner’s near-breakout criteria. Try again after the next market session.</div></div>', unsafe_allow_html=True)
+        return
+
+    st.markdown(f'<div class="section-title">Shortlisted Stocks ({len(result)})</div>', unsafe_allow_html=True)
+    for start in range(0, len(result), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            idx = start+j
+            if idx >= len(result): continue
+            row = result.iloc[idx]
             with col:
-                st.markdown(f'''<div style="border-radius:14px;border:1px solid rgba(255,255,255,.12);padding:10px 11px 5px;background:linear-gradient(145deg,{color}22,var(--card));margin-bottom:-4px"><div style="font-size:.72rem;font-weight:900;color:{color}">RANK #{idx+1}</div><div style="font-weight:950;font-size:1rem;color:var(--text)">{html.escape(str(row.get("company_name",row["symbol"])))}</div><div class="small-muted">{html.escape(str(row["symbol"]))}</div><div style="font-weight:950;font-size:1.05rem;margin-top:5px">{money(row.get("price"))}</div><div style="font-size:.75rem;color:{color};font-weight:900">{float(row.get("distance_pct",0)):.2f}% to breakout</div></div>''',unsafe_allow_html=True)
-                if st.button(f"Open {row['symbol']}",key=f"stock_{row['symbol']}",use_container_width=True):
-                    st.session_state.selected_stock=row["symbol"]; st.session_state.selected_row=row.to_dict(); st.session_state.page="detail"; st.rerun()
-    st.markdown('<div class="small-muted" style="text-align:center;margin-top:12px">Breakout levels are technical reference levels, not guaranteed predictions.</div>',unsafe_allow_html=True)
+                label = f"#{int(row['rank'])}  {row['symbol']}\n₹{row['price']:,.2f}  •  {row['distance_pct']:.2f}% to breakout  •  {int(row['rating'])}/10"
+                if st.button(label, key=f"stock_{row['symbol']}", use_container_width=True):
+                    st.session_state.selected_stock = row['symbol']
+                    st.session_state.selected_row = row.to_dict()
+                    st.session_state.selected_scanned_at = st.session_state.get("scan_scanned_at", datetime.now(IST))
+                    st.session_state.page = "detail"
+                    st.rerun()
+
+    shortlist_export_at = datetime.now(IST)
+    shortlist_scanned_at = st.session_state.get("scan_scanned_at", shortlist_export_at)
+    shortlist_pdf = build_shortlist_pdf(result, shortlist_scanned_at, shortlist_export_at)
+    st.download_button(
+        "Download Shortlist PDF", data=shortlist_pdf,
+        file_name=f"nifty_breakout_shortlist_{shortlist_export_at.strftime('%Y%m%d_%H%M')}.pdf",
+        mime="application/pdf", use_container_width=True, key="pdf_shortlist",
+    )
+    st.markdown('<div class="small-muted" style="text-align:center;margin-top:12px">Breakout levels are technical reference levels, not guaranteed predictions.</div>', unsafe_allow_html=True)
 
 
 # -----------------------------------------------------------------------------
@@ -357,6 +634,9 @@ def render_home():
 # -----------------------------------------------------------------------------
 if "page" not in st.session_state: st.session_state.page = "home"
 if "scan_result" not in st.session_state: st.session_state.scan_result = None
+if "single_scan_message" not in st.session_state: st.session_state.single_scan_message = None
+if "scan_scanned_at" not in st.session_state: st.session_state.scan_scanned_at = None
+if "selected_scanned_at" not in st.session_state: st.session_state.selected_scanned_at = None
 
 if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
