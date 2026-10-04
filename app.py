@@ -245,7 +245,7 @@ def render_ticker():
     <html><head><style>
     *{{box-sizing:border-box}} body{{margin:0;background:#07111f;color:#dbe7f3;font-family:Arial,sans-serif;overflow:hidden}}
     .viewport{{width:100%;overflow:hidden;border:1px solid rgba(148,163,184,.12);border-radius:13px;background:#091727}}
-    .track{{display:flex;width:max-content;animation:marquee 48s linear infinite;padding:10px 0}}
+    .track{{display:flex;width:max-content;animation:marquee 148s linear infinite;padding:10px 0}}
     .track:hover{{animation-play-state:paused}} .tick{{white-space:nowrap;margin-right:28px;font-size:12px;color:#9fb1c5}}
     .tick b{{color:#f1f5f9;margin-right:5px}} .up{{color:#19d38a}} .down{{color:#ff5c70}}
     @keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}
