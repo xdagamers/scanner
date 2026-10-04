@@ -1,7 +1,7 @@
 streamlit
 pandas
 numpy
-yfinance
 plotly
 requests
+yfinance
 fpdf2
