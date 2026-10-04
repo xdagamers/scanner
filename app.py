@@ -13,7 +13,6 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
-from fpdf import FPDF
 
 # IMPORTANT: scanner.py is the existing engine. This UI only calls its existing functions.
 from scanner import load_universe, scan_universe, scan_single, fetch_history
@@ -253,162 +252,6 @@ def target_values(row,price):
         base=max(b-float(price),0); t2=b+2*base if base else b*1.02; note="Targets estimated from the breakout base height."
     return t1,t2,note
 
-
-def _pdf_text(value):
-    """Convert report text to fpdf2 core-font-safe ASCII."""
-    s = "" if value is None else str(value)
-    for old, new in {
-        "₹": "Rs.", "≥": ">=", "≤": "<=", "–": "-", "—": "-",
-        "•": "-", "→": "->", "×": "x", "’": "'", "“": '"', "”": '"', "…": "..."
-    }.items():
-        s = s.replace(old, new)
-    return s.encode("latin-1", "replace").decode("latin-1")
-
-
-def build_pdf_report(symbol, row, price, export_dt):
-    """Build the detail report entirely in memory; no server file is created."""
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=12)
-    pdf.add_page()
-
-    company = row.get("company_name", symbol)
-    t1, t2, _ = target_values(row, price)
-    score = float(row.get("score", 0) or 0)
-    label, _ = verdict(score)
-
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 9, _pdf_text("NIFTY Breakout Scanner - Stock Report"), ln=1)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(0, 6, _pdf_text(f"Scanned / exported: {export_dt.strftime('%d %b %Y, %H:%M:%S IST')}"), ln=1)
-    pdf.ln(3)
-
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, _pdf_text(f"{company} ({symbol})"), ln=1)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, _pdf_text(f"Price on export date: {money(price)}"), ln=1)
-    pdf.cell(0, 6, _pdf_text(f"Target 1: {money(t1)}    Target 2: {money(t2)}"), ln=1)
-    pdf.ln(4)
-
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 7, _pdf_text("Setup Strength & Verdict"), ln=1)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, _pdf_text(f"Setup strength: {score:.1f}/100"), ln=1)
-    pdf.cell(0, 6, _pdf_text(f"Verdict: {label}"), ln=1)
-
-    level = float(row.get("breakout_level", 0) or 0)
-    p = float(price or 0)
-    distance = ((level - p) / level * 100) if level else 999
-    if p >= level:
-        entry_status = "Breakout Confirmed - Price is trading at or above the detected breakout level."
-    elif distance <= 2:
-        entry_status = "ENTRY ZONE - Price is near the breakout level. Confirmation still matters."
-    elif distance <= 5:
-        entry_status = "Wait - Not near the entry point yet."
-    else:
-        entry_status = "Wait - Not near the entry point."
-
-    pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 7, _pdf_text("Entry Status"), ln=1)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, _pdf_text(entry_status))
-    pdf.ln(3)
-
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 7, _pdf_text("Technical Data"), ln=1)
-
-    data = [
-        ("Current price", money(price)),
-        ("Breakout level", money(row.get("breakout_level"))),
-        ("Breakout trigger", money(row.get("breakout_trigger"))),
-        ("Distance", pct(row.get("distance_pct"))),
-        ("Rating", f"{row.get('rating', '—')}/10"),
-        ("Score", f"{row.get('score', 0):.1f}/100"),
-        ("RVOL", f"{row.get('rvol', 0):.2f}x"),
-        ("RSI", f"{row.get('rsi', 0):.1f}"),
-        ("ADX", f"{row.get('adx', 0):.1f}"),
-        ("EMA structure", row.get("ema_structure", "—")),
-        ("MACD", f"{row.get('macd', 0):.3f}"),
-        ("ATR %", f"{row.get('atr_pct', 0):.2f}%"),
-        ("Squeeze", f"{row.get('squeeze', 0):.2f}"),
-        ("NIFTY relative strength", pct(row.get("nifty_relative_strength"))),
-        ("60D relative strength", pct(row.get("relative_strength"))),
-        ("Sector relative strength", pct(row.get("sector_relative_strength"))),
-        ("Candlestick", row.get("candlestick", "—")),
-        ("Resistance touches", row.get("resistance_touches", "—")),
-        ("Risk / reward", f"{row.get('risk_reward', 0):.2f}"),
-        ("Market regime", row.get("market_regime", "—")),
-        ("Status", row.get("status", "—")),
-        ("False breakout", "Yes" if row.get("false_breakout") else "No"),
-        ("Stop reference", money(row.get("stop_reference"))),
-        ("Target 1", money(t1)),
-        ("Target 2", money(t2)),
-    ]
-
-    shown_keys = {
-        "symbol", "company_name", "rank_score", "rank", "explanation",
-        "price", "breakout_level", "breakout_trigger", "distance_pct",
-        "rating", "score", "rvol", "rsi", "adx", "ema_structure", "macd",
-        "atr_pct", "squeeze", "nifty_relative_strength", "relative_strength",
-        "sector_relative_strength", "candlestick", "resistance_touches",
-        "risk_reward", "market_regime", "status", "false_breakout",
-        "stop_reference", "target1", "target2",
-    }
-    for k, v in row.items():
-        if k in shown_keys:
-            continue
-        value2 = f"{v:.2f}" if isinstance(v, (float, np.floating)) else str(v)
-        data.append((str(k).replace("_", " ").title(), value2))
-
-    pdf.set_font("Helvetica", "", 9)
-    for label2, value2 in data:
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(52, 5.5, _pdf_text(label2))
-        pdf.set_font("Helvetica", "", 9)
-        pdf.multi_cell(0, 5.5, _pdf_text(value2), wrapmode="CHAR")
-
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 7, _pdf_text("Technical Summary"), ln=1)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.multi_cell(0, 5.5, _pdf_text(row.get("explanation", "No technical summary available.")), wrapmode="CHAR")
-
-    return bytes(pdf.output())
-
-
-def build_shortlist_pdf(result, export_dt):
-    """Build an optional shortlist PDF entirely in memory."""
-    pdf = FPDF(orientation="L")
-    pdf.set_auto_page_break(auto=True, margin=10)
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 15)
-    pdf.cell(0, 8, _pdf_text("NIFTY Breakout Scanner - Shortlist"), ln=1)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(0, 6, _pdf_text(f"Exported: {export_dt.strftime('%d %b %Y, %H:%M:%S IST')}"), ln=1)
-    pdf.ln(3)
-
-    headers = ["Rank", "Symbol", "Price", "Distance", "Rating", "Score", "RVOL", "Status"]
-    widths = [15, 38, 28, 28, 20, 25, 22, 55]
-    pdf.set_font("Helvetica", "B", 9)
-    for h, w in zip(headers, widths):
-        pdf.cell(w, 6, _pdf_text(h), border=1)
-    pdf.ln()
-
-    pdf.set_font("Helvetica", "", 8)
-    display = result.copy()
-    if "distance_pct" in display.columns:
-        display = display.sort_values(["distance_pct", "score"], ascending=[True, False], kind="stable")
-    for idx, (_, r) in enumerate(display.iterrows(), 1):
-        vals = [
-            idx, r.get("symbol", "—"), money(r.get("price")), pct(r.get("distance_pct")),
-            f"{r.get('rating', '—')}/10", f"{float(r.get('score', 0)):.1f}",
-            f"{float(r.get('rvol', 0)):.2f}x", r.get("status", "—"),
-        ]
-        for v, w in zip(vals, widths):
-            pdf.cell(w, 6, _pdf_text(v), border=1)
-        pdf.ln()
-    return bytes(pdf.output())
-
 def render_detail(symbol,row):
     render_theme_toggle()
     if st.button("← Back to Top 20"):
@@ -419,16 +262,6 @@ def render_detail(symbol,row):
     t1up=((t1/price)-1)*100 if price else 0; t2up=((t2/price)-1)*100 if price else 0
     note_html=f'<div class="small-muted" style="margin-top:7px">{html.escape(target_note)}</div>' if target_note else ''
     st.markdown(f'''<div class="card"><div class="small-muted">{html.escape(str(company))}</div><div style="font-size:1.15rem;font-weight:900">{html.escape(symbol)}</div><div class="hero-price">{money(price)}</div><div class="{change_cls}" style="font-weight:850">{arrow} {money(change)} ({pct(change_pct)})</div><div style="height:8px"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}% upside</div></div><div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}% upside</div></div></div>{note_html}</div>''',unsafe_allow_html=True)
-    report_dt = datetime.now(IST)
-    report_bytes = build_pdf_report(symbol, row, price, report_dt)
-    st.download_button(
-        "📄 Download PDF report",
-        data=report_bytes,
-        file_name=f"{str(symbol).replace('.NS','')}_breakout_report_{report_dt.strftime('%Y%m%d_%H%M%S')}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-        key=f"pdf_report_{str(symbol).replace('.', '_')}",
-    )
     light=st.session_state.theme_mode=="light"
     fig=go.Figure(go.Indicator(mode="gauge+number",value=score,number={"suffix":" / 100","font":{"size":38,"color":"#111827" if light else "#f1f5f9"}},title={"text":"Technical Setup Strength"},gauge={"axis":{"range":[0,100],"tickwidth":1,"tickcolor":"#64748b"},"bar":{"color":"#079669" if light else "#19d38a","thickness":.22},"bgcolor":"#e5e7eb" if light else "#0b1829","borderwidth":0,"steps":[{"range":[0,40],"color":"#f3c4ca"},{"range":[40,65],"color":"#f5e4ad"},{"range":[65,80],"color":"#d9ecb0"},{"range":[80,100],"color":"#b8efd9"}]}))
     fig.update_layout(template="plotly_white" if light else "plotly_dark",height=245,margin=dict(l=15,r=15,t=45,b=5),paper_bgcolor="#fff" if light else "#0c192b")
@@ -496,49 +329,6 @@ def render_home():
             st.session_state.scan_result=pd.DataFrame(); st.session_state.scan_error=str(exc)
         finally:
             placeholder.empty(); st.session_state.scanning=False
-    st.markdown('<div class="section-title">Search a Stock</div>', unsafe_allow_html=True)
-    with st.form("search_stock_form", clear_on_submit=False):
-        search_symbol = st.text_input(
-            "NSE symbol",
-            placeholder="Enter NSE symbol, e.g. RELIANCE or TCS",
-            label_visibility="collapsed",
-        )
-        check_stock = st.form_submit_button("🔎 Check Stock", use_container_width=True)
-
-    if check_stock:
-        symbol = str(search_symbol).strip().upper()
-        if symbol.endswith(".NS"):
-            symbol = symbol[:-3]
-        if not symbol:
-            st.warning("Please enter an NSE stock symbol.")
-        else:
-            try:
-                searched = scan_single(symbol, max_distance=10.0, period="2y")
-                if searched is None:
-                    st.warning(
-                        f"{symbol} does not meet criteria. "
-                        "The existing scanner criteria were not loosened or changed to force a result."
-                    )
-                else:
-                    if isinstance(searched, pd.Series):
-                        searched = searched.to_dict()
-                    elif isinstance(searched, pd.DataFrame):
-                        searched = None if searched.empty else searched.iloc[0].to_dict()
-                    if searched is None:
-                        st.warning(
-                            f"{symbol} does not meet criteria. "
-                            "The existing scanner criteria were not loosened or changed to force a result."
-                        )
-                    else:
-                        st.session_state.selected_stock = symbol
-                        st.session_state.selected_row = searched
-                        st.session_state.page = "detail"
-                        st.rerun()
-            except Exception:
-                st.warning(
-                    f"{symbol} does not meet criteria or its data is unavailable. "
-                    "The existing scanner criteria were not loosened or changed to force a result."
-                )
     result=st.session_state.get("scan_result")
     if st.session_state.get("scan_error"): st.error("The market scan could not be completed. Please try again. Details: "+st.session_state.scan_error)
     if result is None:
@@ -548,16 +338,6 @@ def render_home():
     display=result.copy()
     if "distance_pct" in display.columns: display=display.sort_values(["distance_pct","score"],ascending=[True,False],kind="stable").reset_index(drop=True)
     st.markdown(f'<div class="section-title">Shortlisted Stocks ({len(display)})</div>',unsafe_allow_html=True); st.markdown('<div class="rank-note">Sorted by distance to breakout: closest first.</div>',unsafe_allow_html=True)
-    shortlist_dt = datetime.now(IST)
-    shortlist_bytes = build_shortlist_pdf(display, shortlist_dt)
-    st.download_button(
-        "📄 Download Shortlist PDF",
-        data=shortlist_bytes,
-        file_name=f"nifty_breakout_shortlist_{shortlist_dt.strftime('%Y%m%d_%H%M%S')}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-        key="pdf_shortlist",
-    )
     for start in range(0,len(display),2):
         cols=st.columns(2)
         for j,col in enumerate(cols):
