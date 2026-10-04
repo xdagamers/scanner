@@ -365,13 +365,13 @@ def build_pdf_report(symbol, row, price, export_dt):
         pdf.set_font("Helvetica", "B", 9)
         pdf.cell(52, 5.5, _pdf_text(label2))
         pdf.set_font("Helvetica", "", 9)
-        pdf.multi_cell(0, 5.5, _pdf_text(value2))
+        pdf.multi_cell(0, 5.5, _pdf_text(value2), wrapmode="CHAR")
 
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 7, _pdf_text("Technical Summary"), ln=1)
     pdf.set_font("Helvetica", "", 9)
-    pdf.multi_cell(0, 5.5, _pdf_text(row.get("explanation", "No technical summary available.")))
+    pdf.multi_cell(0, 5.5, _pdf_text(row.get("explanation", "No technical summary available.")), wrapmode="CHAR")
 
     return bytes(pdf.output())
 
