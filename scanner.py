@@ -5,9 +5,10 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-# NIFTY LargeMidcap 250 = NIFTY 100 + NIFTY Midcap 150.
-# This is the official NSE "top 250" broad large+mid-cap universe.
+# Scanner universe = NIFTY LargeMidcap 250 + NIFTY Smallcap 250.
+# Together these two official NSE universes cover the NIFTY 500 constituents.
 NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftylargemidcap250list.csv"
+SMALLCAP_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftysmallcap250list.csv"
 LEGACY_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
@@ -35,9 +36,13 @@ def _load_csv(url):
 
 
 def load_universe():
-    """Load the official NSE NIFTY LargeMidcap 250 universe."""
+    """Load the official NSE LargeMidcap 250 + Smallcap 250 universe."""
     errors = []
-    for url in (NSE_URL,):
+    frames = []
+    for label, url, minimum in (
+        ("NIFTY LargeMidcap 250", NSE_URL, 200),
+        ("NIFTY Smallcap 250", SMALLCAP_NSE_URL, 200),
+    ):
         try:
             df = _load_csv(url)
             symbol_col = next((c for c in df.columns if c.strip().lower() == "symbol"), None)
@@ -50,12 +55,22 @@ def load_universe():
             })
             out = out[out.symbol.ne("") & out.symbol.ne("nan")]
             out = out.drop_duplicates("symbol").reset_index(drop=True)
-            if len(out) < 200:
-                raise ValueError(f"Expected a large+midcap universe, got only {len(out)} symbols")
-            return out
+            if len(out) < minimum:
+                raise ValueError(f"Expected at least {minimum} symbols in {label}, got only {len(out)}")
+            frames.append(out)
         except Exception as e:
-            errors.append(str(e))
-    raise RuntimeError("Could not load official NIFTY LargeMidcap 250 constituents: " + " | ".join(errors))
+            errors.append(f"{label}: {e}")
+
+    if len(frames) != 2:
+        raise RuntimeError("Could not load the complete LargeMidcap 250 + Smallcap 250 universe: " + " | ".join(errors))
+
+    # Keep the existing LargeMidcap constituents and add Smallcap constituents.
+    # drop_duplicates protects against any temporary overlap during index rebalancing.
+    universe = pd.concat(frames, ignore_index=True)
+    universe = universe.drop_duplicates("symbol", keep="first").reset_index(drop=True)
+    if len(universe) < 400:
+        raise RuntimeError(f"Combined LargeMidcap + Smallcap universe is unexpectedly small: {len(universe)} symbols")
+    return universe
 
 
 def yf_symbol(symbol):
