@@ -191,7 +191,7 @@ def render_ticker():
 
 def render_scan_animation():
     candles = "".join('<span class="candle '+('g' if i%3 else 'r')+'"></span>' for i in range(42))
-    return f'''<div class="scan-shell"><div class="scan-chart"><div class="candle-track">{candles}{candles}</div></div><div class="scan-copy"><span>Scanning NIFTY 500 (Large + Mid + Small Cap)…</span><span>Technical setup analysis</span></div><div class="progress"><div></div></div><div class="small-muted" style="margin-top:8px">Fetching prices → calculating indicators → ranking near-breakout setups</div></div>'''
+    return f'''<div class="scan-shell"><div class="scan-chart"><div class="candle-track">{candles}{candles}</div></div><div class="scan-copy"><span>Scanning NIFTY LargeMidcap 250…</span><span>Technical setup analysis</span></div><div class="progress"><div></div></div><div class="small-muted" style="margin-top:8px">Fetching prices → calculating indicators → ranking near-breakout setups</div></div>'''
 
 
 def metric_card(label, value):
@@ -341,13 +341,13 @@ def render_detail(symbol,row):
 
 def render_home():
     render_theme_toggle()
-    st.markdown("<div style='font-size:1.6rem;font-weight:950'>📈 NIFTY Breakout Scanner</div><div class='small-muted'>Near-breakout technical setups across NIFTY Large Cap 100 + Midcap 150 + Smallcap 250</div>",unsafe_allow_html=True)
+    st.markdown("<div style='font-size:1.6rem;font-weight:950'>📈 NIFTY Breakout Scanner</div><div class='small-muted'>Top 20 near-breakout technical setups from the NIFTY LargeMidcap 250 universe</div>",unsafe_allow_html=True)
     render_market_bar(); render_ticker(); st.markdown("<div style='height:5px'></div>",unsafe_allow_html=True)
     if st.button("🚀 SCAN MARKET",key="scan_market",type="primary",use_container_width=True):
         st.session_state.scanning=True; st.session_state.scan_error=None; placeholder=st.empty(); placeholder.markdown(render_scan_animation(),unsafe_allow_html=True)
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
-                future=executor.submit(scan_universe,max_distance=10.0,period="2y",top_n=500)
+                future=executor.submit(scan_universe,max_distance=10.0,period="2y",top_n=20)
                 while not future.done(): time.sleep(.25)
                 result=future.result()
             st.session_state.scan_result=result
@@ -359,7 +359,7 @@ def render_home():
     result=st.session_state.get("scan_result")
     if st.session_state.get("scan_error"): st.error("The market scan could not be completed. Please try again. Details: "+st.session_state.scan_error)
     if result is None:
-        st.markdown('<div class="card"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch NIFTY Large Cap 100 + Midcap 150 + Smallcap 250 and list qualifying stocks by Rating, highest first.</div></div>',unsafe_allow_html=True); return
+        st.markdown('<div class="card"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch the NIFTY LargeMidcap 250 data and rank the strongest near-breakout setups.</div></div>',unsafe_allow_html=True); return
     if result.empty:
         st.markdown('<div class="card"><b>No qualifying setups found</b><div class="small-muted" style="margin-top:6px">Nothing currently meets the scanner’s near-breakout criteria. Try again after the next market session.</div></div>',unsafe_allow_html=True); return
     export_df = build_scan_export(result, st.session_state.get("scan_timestamp") or datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"))
@@ -373,11 +373,8 @@ def render_home():
         key="export_scan_csv",
     )
     display=result.copy()
-    sort_cols = [c for c in ["rating", "score", "rank_score", "distance_pct"] if c in display.columns]
-    if sort_cols:
-        ascending = [False, False, False, True][:len(sort_cols)]
-        display = display.sort_values(sort_cols, ascending=ascending, kind="stable").reset_index(drop=True)
-    st.markdown(f'<div class="section-title">Scanned Stocks ({len(display)})</div>',unsafe_allow_html=True); st.markdown('<div class="rank-note">Sorted by Rating: highest first. Score is used as the tie-breaker.</div>',unsafe_allow_html=True)
+    if "distance_pct" in display.columns: display=display.sort_values(["distance_pct","score"],ascending=[True,False],kind="stable").reset_index(drop=True)
+    st.markdown(f'<div class="section-title">Shortlisted Stocks ({len(display)})</div>',unsafe_allow_html=True); st.markdown('<div class="rank-note">Sorted by distance to breakout: closest first.</div>',unsafe_allow_html=True)
     for start in range(0,len(display),2):
         cols=st.columns(2)
         for j,col in enumerate(cols):
@@ -389,7 +386,7 @@ def render_home():
                 rating = int(float(row.get("rating", 0) or 0))
                 rating_color = "#19d38a" if rating >= 8 else "#8fd66a" if rating >= 7 else "#f5c451" if rating >= 5 else "#ff9b4a" if rating >= 3 else "#ff5c70"
                 score = float(row.get("score", 0) or 0)
-                st.markdown(f'''<div style="border-radius:14px;border:1px solid rgba(255,255,255,.12);padding:10px 11px 5px;background:linear-gradient(145deg,{color}22,var(--card));margin-bottom:-4px"><div style="font-size:.72rem;font-weight:900;color:{color}">RANK #{idx+1} &nbsp;•&nbsp; {html.escape(str(row.get("cap_category","")))}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="font-weight:950;font-size:1rem;color:var(--text)">{html.escape(str(row.get("company_name",row["symbol"])))}</div><span style="flex:none;padding:4px 7px;border-radius:999px;border:1px solid {rating_color}66;background:{rating_color}18;color:{rating_color};font-size:.68rem;font-weight:950;white-space:nowrap">Strength {rating}/10</span><span style="padding:4px 7px;border-radius:999px;border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.06);color:var(--text);font-size:.68rem;font-weight:950;white-space:nowrap">Score {score:.1f}/100</span></div><div class="small-muted">{html.escape(str(row["symbol"]))}</div><div style="font-weight:950;font-size:1.05rem;margin-top:5px">{money(row.get("price"))}</div><div style="font-size:.75rem;color:{color};font-weight:900">{float(row.get("distance_pct",0)):.2f}% to breakout</div></div>''',unsafe_allow_html=True)
+                st.markdown(f'''<div style="border-radius:14px;border:1px solid rgba(255,255,255,.12);padding:10px 11px 5px;background:linear-gradient(145deg,{color}22,var(--card));margin-bottom:-4px"><div style="font-size:.72rem;font-weight:900;color:{color}">RANK #{idx+1}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="font-weight:950;font-size:1rem;color:var(--text)">{html.escape(str(row.get("company_name",row["symbol"])))}</div><span style="flex:none;padding:4px 7px;border-radius:999px;border:1px solid {rating_color}66;background:{rating_color}18;color:{rating_color};font-size:.68rem;font-weight:950;white-space:nowrap">Strength {rating}/10</span><span style="padding:4px 7px;border-radius:999px;border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.06);color:var(--text);font-size:.68rem;font-weight:950;white-space:nowrap">Score {score:.1f}/100</span></div><div class="small-muted">{html.escape(str(row["symbol"]))}</div><div style="font-weight:950;font-size:1.05rem;margin-top:5px">{money(row.get("price"))}</div><div style="font-size:.75rem;color:{color};font-weight:900">{float(row.get("distance_pct",0)):.2f}% to breakout</div></div>''',unsafe_allow_html=True)
                 if st.button(f"Open {row['symbol']}",key=f"stock_{row['symbol']}",use_container_width=True):
                     st.session_state.selected_stock=row["symbol"]; st.session_state.selected_row=row.to_dict(); st.session_state.page="detail"; st.rerun()
     st.markdown('<div class="small-muted" style="text-align:center;margin-top:12px">Breakout levels are technical reference levels, not guaranteed predictions.</div>',unsafe_allow_html=True)
