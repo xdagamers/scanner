@@ -252,6 +252,32 @@ def target_values(row,price):
         base=max(b-float(price),0); t2=b+2*base if base else b*1.02; note="Targets estimated from the breakout base height."
     return t1,t2,note
 
+
+def build_scan_export(result, scanned_at):
+    """Build the CSV export using existing scan fields; scanner logic is untouched."""
+    rows = []
+    for _, row in result.iterrows():
+        try:
+            t1 = float(row.get("target1"))
+            t2 = float(row.get("target2"))
+            t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
+        except Exception:
+            t1 = t2 = t3 = np.nan
+
+        rating = row.get("rating", "")
+        rows.append({
+            "Scanned Date": scanned_at,
+            "Stock Name": row.get("company_name", row.get("symbol", "")),
+            "Rating": rating,
+            "Strength": rating,
+            "Current Price": row.get("price", ""),
+            "Breakout Level": row.get("breakout_level", ""),
+            "Target 1": t1,
+            "Target 2": t2,
+            "Target 3": t3,
+        })
+    return pd.DataFrame(rows)
+
 def render_detail(symbol,row):
     render_theme_toggle()
     if st.button("← Back to Top 20"):
@@ -325,6 +351,7 @@ def render_home():
                 while not future.done(): time.sleep(.25)
                 result=future.result()
             st.session_state.scan_result=result
+            st.session_state.scan_timestamp=datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
         except Exception as exc:
             st.session_state.scan_result=pd.DataFrame(); st.session_state.scan_error=str(exc)
         finally:
@@ -335,6 +362,16 @@ def render_home():
         st.markdown('<div class="card"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch the NIFTY LargeMidcap 250 data and rank the strongest near-breakout setups.</div></div>',unsafe_allow_html=True); return
     if result.empty:
         st.markdown('<div class="card"><b>No qualifying setups found</b><div class="small-muted" style="margin-top:6px">Nothing currently meets the scanner’s near-breakout criteria. Try again after the next market session.</div></div>',unsafe_allow_html=True); return
+    export_df = build_scan_export(result, st.session_state.get("scan_timestamp") or datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"))
+    csv_data = export_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "📥 EXPORT SCAN RESULTS (CSV)",
+        data=csv_data,
+        file_name=f"stock_scan_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="export_scan_csv",
+    )
     display=result.copy()
     if "distance_pct" in display.columns: display=display.sort_values(["distance_pct","score"],ascending=[True,False],kind="stable").reset_index(drop=True)
     st.markdown(f'<div class="section-title">Shortlisted Stocks ({len(display)})</div>',unsafe_allow_html=True); st.markdown('<div class="rank-note">Sorted by distance to breakout: closest first.</div>',unsafe_allow_html=True)
@@ -360,6 +397,7 @@ def render_home():
 # -----------------------------------------------------------------------------
 if "page" not in st.session_state: st.session_state.page = "home"
 if "scan_result" not in st.session_state: st.session_state.scan_result = None
+if "scan_timestamp" not in st.session_state: st.session_state.scan_timestamp = None
 
 if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
