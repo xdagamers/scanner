@@ -254,15 +254,10 @@ def target_values(row,price):
 
 
 def build_scan_export(result, scanned_at):
-    """Build the CSV export using the same display ordering; scanner logic is untouched."""
-    export_result = result.copy()
-    sort_cols = [c for c in ["rating", "score", "rank_score", "distance_pct"] if c in export_result.columns]
-    if sort_cols:
-        ascending = [False, False, False, True][:len(sort_cols)]
-        export_result = export_result.sort_values(sort_cols, ascending=ascending, kind="stable").reset_index(drop=True)
-
+    """Build the audit CSV from existing scan fields; scanner logic is untouched."""
     rows = []
-    for export_rank, (_, row) in enumerate(export_result.iterrows(), start=1):
+    scan_date = str(scanned_at).split(" ")[0]
+    for _, row in result.iterrows():
         try:
             t1 = float(row.get("target1"))
             t2 = float(row.get("target2"))
@@ -271,20 +266,37 @@ def build_scan_export(result, scanned_at):
             t1 = t2 = t3 = np.nan
 
         rating = row.get("rating", "")
+        targets = " | ".join(
+            [f"T1: {t1:.2f}" if np.isfinite(t1) else "T1: —",
+             f"T2: {t2:.2f}" if np.isfinite(t2) else "T2: —",
+             f"T3: {t3:.2f}" if np.isfinite(t3) else "T3: —"]
+        )
+
+        def rounded_value(key):
+            value = row.get(key)
+            return round(float(value), 2) if pd.notna(value) and str(value).strip() != "" else ""
+
         rows.append({
-            "Scanned Date": scanned_at,
-            "Rank": export_rank,
-            "Stock Name": row.get("company_name", row.get("symbol", "")),
-            "Score": round(float(row.get("score")), 1) if pd.notna(row.get("score")) and str(row.get("score")).strip() != "" else "",
+            "Date": scan_date,
+            "Stock": row.get("company_name", row.get("symbol", "")),
+            "Rank": row.get("rank", ""),
+            "Score": rounded_value("score"),
             "Strength": rating,
-            "Rating": rating,
-            "Current Price": round(float(row.get("price")), 2) if pd.notna(row.get("price")) and str(row.get("price")).strip() != "" else "",
-            "Breakout Level": round(float(row.get("breakout_level")), 2) if pd.notna(row.get("breakout_level")) and str(row.get("breakout_level")).strip() != "" else "",
-            "Target 1": round(t1, 2) if np.isfinite(t1) else "",
-            "Target 2": round(t2, 2) if np.isfinite(t2) else "",
-            "Target 3": round(t3, 2) if np.isfinite(t3) else "",
+            "Price": rounded_value("price"),
+            "Breakout Level": rounded_value("breakout_level"),
+            "Targets": targets,
+            "Stop": rounded_value("stop_reference"),
+            "Distance %": rounded_value("distance_pct"),
+            "RVOL": rounded_value("rvol"),
+            "RSI": rounded_value("rsi"),
+            "ADX": rounded_value("adx"),
+            "Market Regime": row.get("market_regime", ""),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=[
+        "Date", "Stock", "Rank", "Score", "Strength", "Price",
+        "Breakout Level", "Targets", "Stop", "Distance %", "RVOL",
+        "RSI", "ADX", "Market Regime"
+    ])
 
 def render_detail(symbol,row):
     render_theme_toggle()
