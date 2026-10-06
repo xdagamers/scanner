@@ -2,6 +2,7 @@ import io
 import json
 import html
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
@@ -18,6 +19,49 @@ import yfinance as yf
 from scanner import load_universe, scan_universe, scan_single, score_stock, fetch_history
 
 IST = ZoneInfo("Asia/Kolkata")
+
+# -----------------------------------------------------------------------------
+# Persistent background scan jobs.
+# Streamlit reruns re-execute this file, so the executor/job registry must be a
+# cached resource rather than ordinary module globals. This keeps a running scan
+# alive across theme changes, widget reruns and browser reconnects in the same
+# Streamlit process.
+# -----------------------------------------------------------------------------
+@st.cache_resource
+def _scan_runtime():
+    return ThreadPoolExecutor(max_workers=1), {}
+
+_SCAN_EXECUTOR, _SCAN_JOBS = _scan_runtime()
+
+def _start_scan_job():
+    job_id = uuid.uuid4().hex
+    future = _SCAN_EXECUTOR.submit(scan_universe, max_distance=10.0, period="2y", top_n=500)
+    _SCAN_JOBS[job_id] = {"future": future, "started": datetime.now(IST)}
+    return job_id
+
+def _get_scan_job(job_id):
+    job = _SCAN_JOBS.get(job_id)
+    if not job:
+        return None
+    future = job["future"]
+    if future.done():
+        if "result" not in job and "error" not in job:
+            try:
+                job["result"] = future.result()
+            except Exception as exc:
+                job["error"] = str(exc)
+            job["finished"] = datetime.now(IST)
+    return job
+
+def _cleanup_old_scan_jobs(max_jobs=8):
+    if len(_SCAN_JOBS) <= max_jobs:
+        return
+    done = [(jid, j.get("finished", j.get("started", datetime.min.replace(tzinfo=IST)))) for jid,j in _SCAN_JOBS.items() if j["future"].done()]
+    done.sort(key=lambda x:x[1])
+    for jid,_ in done[:max(0, len(_SCAN_JOBS)-max_jobs)]:
+        _SCAN_JOBS.pop(jid, None)
+
+_cleanup_old_scan_jobs()
 NIFTY50_CSV = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv"
 NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
@@ -58,6 +102,70 @@ def apply_theme():
     if st.session_state.theme_mode == "light":
         st.markdown("""<style>:root{--bg:#f5f7fa;--card:#fff;--card2:#f8fafc;--border:rgba(15,23,42,.12);--text:#111827;--muted:#64748b;--accent:#079669;--red:#dc3545;--yellow:#b7791f;--chart-bg:#f5f7fa}</style>""", unsafe_allow_html=True)
 
+def render_reload_guard(active=False):
+    """Best-effort browser warning while a scan is active.
+
+    The scan itself is protected server-side by the persistent background job,
+    so even if the browser does reload, the scan continues and can be recovered.
+    """
+    if not active:
+        return
+    components.html("""
+    <script>
+    (() => {
+      try {
+        if (!window.parent.__niftyScanReloadGuard) {
+          const handler = (event) => {
+            event.preventDefault();
+            event.returnValue = 'A market scan is still running. Leave/reload?';
+            return event.returnValue;
+          };
+          window.parent.addEventListener('beforeunload', handler);
+          window.parent.__niftyScanReloadGuard = handler;
+        }
+      } catch (e) {}
+    })();
+    </script>
+    """, height=0)
+
+
+@st.fragment(run_every="1s")
+def render_scan_job_status():
+    """Refresh only the scan-status area while a background scan is active."""
+    job_id = st.session_state.get("scan_job_id")
+    if not job_id:
+        return False
+    job = _get_scan_job(job_id)
+    if not job:
+        return False
+    if not job["future"].done():
+        render_reload_guard(True)
+        st.markdown(render_scan_animation(), unsafe_allow_html=True)
+        started = job.get("started")
+        elapsed = ""
+        if started:
+            seconds = int((datetime.now(IST) - started).total_seconds())
+            elapsed = f" • elapsed {seconds//60}m {seconds%60:02d}s"
+        st.info(f"🔄 Scan is running in the background{elapsed}. You can switch dark/light theme or interact with the page; the scan will continue.")
+        return True
+
+    if "error" in job:
+        st.session_state.scan_result = pd.DataFrame()
+        st.session_state.scan_error = job["error"]
+    else:
+        st.session_state.scan_result = job["result"]
+        st.session_state.scan_error = None
+    st.session_state.scan_timestamp = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+    st.session_state.scanning = False
+    st.session_state.scan_job_id = None
+    try:
+        st.query_params.pop("scan_job", None)
+    except Exception:
+        pass
+    st.rerun(scope="app")
+    return False
+
+
 def render_theme_toggle():
     _, col = st.columns([5,1])
     with col:
@@ -65,7 +173,8 @@ def render_theme_toggle():
         new_mode = "light" if is_light else "dark"
         if new_mode != st.session_state.theme_mode:
             st.session_state.theme_mode = new_mode
-            st.rerun()
+            # The toggle itself triggers the normal Streamlit rerun. Do not call
+            # st.rerun() again: the active background scan continues independently.
 
 apply_theme()
 
@@ -508,19 +617,22 @@ def render_home():
     st.markdown("<div style='font-size:1.6rem;font-weight:950'>📈 NIFTY Breakout Scanner</div><div class='small-muted'>Near-breakout technical setups across NIFTY Large Cap 100 + Midcap 150 + Smallcap 250</div>",unsafe_allow_html=True)
     render_market_bar(); render_ticker(); st.markdown("<div style='height:5px'></div>",unsafe_allow_html=True)
     render_stock_search()
-    if st.button("🚀 SCAN MARKET",key="scan_market",type="primary",use_container_width=True):
-        st.session_state.scanning=True; st.session_state.scan_error=None; placeholder=st.empty(); placeholder.markdown(render_scan_animation(),unsafe_allow_html=True)
+    active = bool(st.session_state.get("scan_job_id") and _get_scan_job(st.session_state.get("scan_job_id")) and not _get_scan_job(st.session_state.get("scan_job_id"))["future"].done())
+    render_scan_job_status()
+
+    if not active and st.button("🚀 SCAN MARKET",key="scan_market",type="primary",use_container_width=True):
+        st.session_state.scanning = True
+        st.session_state.scan_error = None
+        st.session_state.scan_result = None
+        st.session_state.scan_job_id = _start_scan_job()
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future=executor.submit(scan_universe,max_distance=10.0,period="2y",top_n=500)
-                while not future.done(): time.sleep(.25)
-                result=future.result()
-            st.session_state.scan_result=result
-            st.session_state.scan_timestamp=datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
-        except Exception as exc:
-            st.session_state.scan_result=pd.DataFrame(); st.session_state.scan_error=str(exc)
-        finally:
-            placeholder.empty(); st.session_state.scanning=False
+            st.query_params["scan_job"] = st.session_state.scan_job_id
+        except Exception:
+            pass
+        # This rerun is safe: the actual scan is already running outside the
+        # Streamlit script execution and will survive subsequent reruns.
+        st.rerun()
+
     result=st.session_state.get("scan_result")
     if st.session_state.get("scan_error"): st.error("The market scan could not be completed. Please try again. Details: "+st.session_state.scan_error)
     if result is None:
@@ -567,6 +679,19 @@ def render_home():
 if "page" not in st.session_state: st.session_state.page = "home"
 if "scan_result" not in st.session_state: st.session_state.scan_result = None
 if "scan_timestamp" not in st.session_state: st.session_state.scan_timestamp = None
+if "scan_job_id" not in st.session_state: st.session_state.scan_job_id = None
+if "scanning" not in st.session_state: st.session_state.scanning = False
+
+# Preserve the active job id in the browser URL so an accidental page reload can
+# reconnect to the same background scan instead of starting/cancelling anything.
+try:
+    if not st.session_state.scan_job_id:
+        url_job_id = st.query_params.get("scan_job")
+        if url_job_id and _get_scan_job(url_job_id):
+            st.session_state.scan_job_id = url_job_id
+            st.session_state.scanning = True
+except Exception:
+    pass
 
 if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
