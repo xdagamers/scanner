@@ -15,7 +15,7 @@ import streamlit.components.v1 as components
 import yfinance as yf
 
 # IMPORTANT: scanner.py is the existing engine. This UI only calls its existing functions.
-from scanner import load_universe, scan_universe, scan_single, fetch_history
+from scanner import load_universe, scan_universe, scan_single, score_stock, fetch_history
 
 IST = ZoneInfo("Asia/Kolkata")
 NIFTY50_CSV = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv"
@@ -298,6 +298,150 @@ def build_scan_export(result, scanned_at):
         "RSI", "ADX", "Market Regime"
     ])
 
+
+def build_single_stock_export(symbol, row, scanned_at, rank=""):
+    """Build one audit-ready row from the exact scanner output for a searched stock."""
+    t1 = float(row.get("target1")) if pd.notna(row.get("target1")) else np.nan
+    t2 = float(row.get("target2")) if pd.notna(row.get("target2")) else np.nan
+    t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
+    targets = " | ".join([
+        f"T1: {t1:.2f}" if np.isfinite(t1) else "T1: —",
+        f"T2: {t2:.2f}" if np.isfinite(t2) else "T2: —",
+        f"T3: {t3:.2f}" if np.isfinite(t3) else "T3: —",
+    ])
+    return pd.DataFrame([{
+        "Date": str(scanned_at).split(" ")[0],
+        "Stock": row.get("company_name", symbol),
+        "Symbol": symbol,
+        "Cap": row.get("cap_category", ""),
+        "Rank": rank,
+        "Score": round(float(row.get("score", 0)), 2),
+        "Strength": row.get("rating", ""),
+        "Price": round(float(row.get("price")), 2),
+        "Breakout Level": round(float(row.get("breakout_level")), 2),
+        "Targets": targets,
+        "Stop": round(float(row.get("stop_reference")), 2),
+        "Distance %": round(float(row.get("distance_pct")), 2),
+        "RVOL": round(float(row.get("rvol")), 2),
+        "RSI": round(float(row.get("rsi")), 2),
+        "ADX": round(float(row.get("adx")), 2),
+        "Market Regime": row.get("market_regime", ""),
+        "Breakout Trigger": round(float(row.get("breakout_trigger")), 2),
+        "ATR %": round(float(row.get("atr_pct")), 2),
+        "MACD": round(float(row.get("macd")), 4),
+        "Squeeze": round(float(row.get("squeeze")), 2),
+        "EMA Structure": row.get("ema_structure", ""),
+        "Resistance Touches": row.get("resistance_touches", ""),
+        "Relative Strength 60D %": round(float(row.get("relative_strength")), 2),
+        "NIFTY Relative Strength %": round(float(row.get("nifty_relative_strength")), 2),
+        "Risk / Reward": round(float(row.get("risk_reward")), 2),
+        "False Breakout": "Yes" if row.get("false_breakout") else "No",
+        "Scanner Status": row.get("status", ""),
+    }])
+
+
+def render_stock_search():
+    st.markdown('<div class="section-title">🔎 Search Any Stock</div>', unsafe_allow_html=True)
+    st.markdown('<div class="small-muted">Enter an NSE symbol such as RELIANCE, TCS, SBIN or INFY. The result uses the same scanner calculation engine.</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        query = st.text_input("Stock symbol", placeholder="e.g. RELIANCE", key="stock_search_input", label_visibility="collapsed")
+    with c2:
+        search_clicked = st.button("SEARCH", key="search_stock", use_container_width=True)
+
+    if search_clicked and query.strip():
+        symbol = query.strip().upper().replace(".NS", "")
+        st.session_state.search_error = None
+        with st.spinner(f"Running scanner analysis for {symbol}…"):
+            try:
+                # First use the scanner's public single-stock path. This preserves the
+                # existing distance rule and all scoring/criteria exactly as-is.
+                row = scan_single(symbol, max_distance=10.0, period="2y")
+                if row is None:
+                    # If the stock is outside the scanner's near-breakout window, still
+                    # calculate its exact scanner fields for audit purposes. We do NOT
+                    # change any scanner thresholds or scoring rules.
+                    hist = fetch_history(symbol, "2y")
+                    if hist is None:
+                        raise ValueError("No usable 2-year price/volume history was returned for this symbol.")
+                    nifty = __import__("scanner").fetch_index_history("^NSEI", period="2y")
+                    row = score_stock(hist, nifty_df=nifty)
+                    if row is None:
+                        raise ValueError("The scanner could not calculate the technical setup for this stock.")
+                    row["symbol"] = symbol
+                    row["company_name"] = symbol
+                    row["cap_category"] = ""
+                    row["outside_near_breakout_range"] = True
+                else:
+                    row["outside_near_breakout_range"] = False
+                    try:
+                        universe = load_universe()
+                        m = universe.loc[universe.symbol == symbol]
+                        if not m.empty:
+                            row["company_name"] = m.iloc[0]["company_name"]
+                            row["cap_category"] = m.iloc[0]["cap_category"]
+                    except Exception:
+                        pass
+                st.session_state.search_result = row
+                st.session_state.search_symbol = symbol
+                st.session_state.search_timestamp = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+            except Exception as exc:
+                st.session_state.search_result = None
+                st.session_state.search_error = str(exc)
+
+    if st.session_state.get("search_error"):
+        st.error(st.session_state.search_error)
+    row = st.session_state.get("search_result")
+    if not row:
+        return
+
+    symbol = st.session_state.get("search_symbol", "")
+    if row.get("outside_near_breakout_range"):
+        st.warning("This stock is outside the scanner's normal ≤10% near-breakout window. Its values below are still calculated by the same scanner logic for audit/testing; it would not normally appear in the market scan.")
+
+    # Rank is a universe-relative value. A searched stock is not silently assigned a fake rank.
+    rank_text = "Not ranked individually"
+    company = row.get("company_name", symbol)
+    st.markdown(f'<div class="card"><div class="small-muted">{html.escape(str(company))}</div><div style="font-size:1.25rem;font-weight:950">{html.escape(symbol)}</div><div class="hero-price">{money(row.get("price"))}</div><div class="small-muted">Scanner status: <b>{html.escape(str(row.get("status", "—")))}</b> &nbsp;•&nbsp; {rank_text}</div></div>', unsafe_allow_html=True)
+
+    fields = [
+        ("Score", f"{float(row.get('score', 0)):.1f}/100", "score"),
+        ("Strength", f"{int(float(row.get('rating', 0)))} / 10", "score"),
+        ("Breakout Level", money(row.get("breakout_level")), "distance"),
+        ("Distance", pct(row.get("distance_pct")), "distance"),
+        ("RVOL", f"{float(row.get('rvol', 0)):.2f}x", "rvol"),
+        ("RSI", f"{float(row.get('rsi', 0)):.1f}", "rsi"),
+        ("ADX", f"{float(row.get('adx', 0)):.1f}", "adx"),
+        ("Market Regime", row.get("market_regime", "—"), None),
+        ("Price", money(row.get("price")), None),
+        ("Breakout Trigger", money(row.get("breakout_trigger")), None),
+        ("Stop", money(row.get("stop_reference")), None),
+        ("Target 1", money(row.get("target1")), None),
+        ("Target 2", money(row.get("target2")), None),
+        ("ATR %", f"{float(row.get('atr_pct', 0)):.2f}%", None),
+        ("MACD", f"{float(row.get('macd', 0)):.4f}", None),
+        ("Squeeze", f"{float(row.get('squeeze', 0)):.2f}", None),
+        ("EMA Structure", row.get("ema_structure", "—"), None),
+        ("Resistance Touches", row.get("resistance_touches", "—"), None),
+        ("60D Relative Strength", pct(row.get("relative_strength")), None),
+        ("NIFTY Relative Strength", pct(row.get("nifty_relative_strength")), None),
+        ("Risk / Reward", f"{float(row.get('risk_reward', 0)):.2f}", "rr"),
+        ("False Breakout", "Yes" if row.get("false_breakout") else "No", None),
+    ]
+    for i in range(0, len(fields), 2):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(metric_card(fields[i][0], fields[i][1], fields[i][2]), unsafe_allow_html=True)
+        if i + 1 < len(fields):
+            with c2:
+                st.markdown(metric_card(fields[i+1][0], fields[i+1][1], fields[i+1][2]), unsafe_allow_html=True)
+
+    st.markdown('<div class="section-title">Audit Entry</div>', unsafe_allow_html=True)
+    st.markdown('<div class="small-muted">The downloaded row contains the scanner values plus extra technical fields useful for testing. You only need to add the future outcome later.</div>', unsafe_allow_html=True)
+    audit_df = build_single_stock_export(symbol, row, st.session_state.get("search_timestamp", datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")), rank="")
+    st.download_button("📥 DOWNLOAD THIS STOCK FOR AUDIT", data=audit_df.to_csv(index=False).encode("utf-8-sig"), file_name=f"audit_{symbol}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv", use_container_width=True, key=f"audit_{symbol}")
+
+
 def render_detail(symbol,row):
     render_theme_toggle()
     if st.button("← Back to Top 20"):
@@ -363,6 +507,7 @@ def render_home():
     render_theme_toggle()
     st.markdown("<div style='font-size:1.6rem;font-weight:950'>📈 NIFTY Breakout Scanner</div><div class='small-muted'>Near-breakout technical setups across NIFTY Large Cap 100 + Midcap 150 + Smallcap 250</div>",unsafe_allow_html=True)
     render_market_bar(); render_ticker(); st.markdown("<div style='height:5px'></div>",unsafe_allow_html=True)
+    render_stock_search()
     if st.button("🚀 SCAN MARKET",key="scan_market",type="primary",use_container_width=True):
         st.session_state.scanning=True; st.session_state.scan_error=None; placeholder=st.empty(); placeholder.markdown(render_scan_animation(),unsafe_allow_html=True)
         try:
