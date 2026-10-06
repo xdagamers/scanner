@@ -254,9 +254,15 @@ def target_values(row,price):
 
 
 def build_scan_export(result, scanned_at):
-    """Build the CSV export using existing scan fields; scanner logic is untouched."""
+    """Build the CSV export using the same display ordering; scanner logic is untouched."""
+    export_result = result.copy()
+    sort_cols = [c for c in ["rating", "score", "rank_score", "distance_pct"] if c in export_result.columns]
+    if sort_cols:
+        ascending = [False, False, False, True][:len(sort_cols)]
+        export_result = export_result.sort_values(sort_cols, ascending=ascending, kind="stable").reset_index(drop=True)
+
     rows = []
-    for _, row in result.iterrows():
+    for export_rank, (_, row) in enumerate(export_result.iterrows(), start=1):
         try:
             t1 = float(row.get("target1"))
             t2 = float(row.get("target2"))
@@ -267,9 +273,11 @@ def build_scan_export(result, scanned_at):
         rating = row.get("rating", "")
         rows.append({
             "Scanned Date": scanned_at,
+            "Rank": export_rank,
             "Stock Name": row.get("company_name", row.get("symbol", "")),
-            "Rating": rating,
+            "Score": round(float(row.get("score")), 1) if pd.notna(row.get("score")) and str(row.get("score")).strip() != "" else "",
             "Strength": rating,
+            "Rating": rating,
             "Current Price": round(float(row.get("price")), 2) if pd.notna(row.get("price")) and str(row.get("price")).strip() != "" else "",
             "Breakout Level": round(float(row.get("breakout_level")), 2) if pd.notna(row.get("breakout_level")) and str(row.get("breakout_level")).strip() != "" else "",
             "Target 1": round(t1, 2) if np.isfinite(t1) else "",
