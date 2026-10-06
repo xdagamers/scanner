@@ -5,11 +5,9 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-# Scanner universe = NIFTY 100 Large Cap + NIFTY Midcap 150 + NIFTY Smallcap 250.
-# Together these three official NSE universes cover the NIFTY 500 constituents.
-LARGECAP_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty100list.csv"
-MIDCAP_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap150list.csv"
-SMALLCAP_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftysmallcap250list.csv"
+# NIFTY LargeMidcap 250 = NIFTY 100 + NIFTY Midcap 150.
+# This is the official NSE "top 250" broad large+mid-cap universe.
+NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftylargemidcap250list.csv"
 LEGACY_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
@@ -37,14 +35,9 @@ def _load_csv(url):
 
 
 def load_universe():
-    """Load the official NSE Large Cap 100 + Midcap 150 + Smallcap 250 universe."""
+    """Load the official NSE NIFTY LargeMidcap 250 universe."""
     errors = []
-    frames = []
-    for label, cap_category, url, minimum in (
-        ("NIFTY Large Cap 100", "Large Cap", LARGECAP_NSE_URL, 80),
-        ("NIFTY Midcap 150", "Mid Cap", MIDCAP_NSE_URL, 120),
-        ("NIFTY Smallcap 250", "Small Cap", SMALLCAP_NSE_URL, 200),
-    ):
+    for url in (NSE_URL,):
         try:
             df = _load_csv(url)
             symbol_col = next((c for c in df.columns if c.strip().lower() == "symbol"), None)
@@ -54,26 +47,15 @@ def load_universe():
             out = pd.DataFrame({
                 "symbol": df[symbol_col].astype(str).str.strip(),
                 "company_name": df[name_col].astype(str).str.strip() if name_col else df[symbol_col].astype(str).str.strip(),
-                "cap_category": cap_category,
             })
             out = out[out.symbol.ne("") & out.symbol.ne("nan")]
             out = out.drop_duplicates("symbol").reset_index(drop=True)
-            if len(out) < minimum:
-                raise ValueError(f"Expected at least {minimum} symbols in {label}, got only {len(out)}")
-            frames.append(out)
+            if len(out) < 200:
+                raise ValueError(f"Expected a large+midcap universe, got only {len(out)} symbols")
+            return out
         except Exception as e:
-            errors.append(f"{label}: {e}")
-
-    if len(frames) != 3:
-        raise RuntimeError("Could not load the complete Large Cap + Mid Cap + Small Cap universe: " + " | ".join(errors))
-
-    # Combine the three official NSE cap universes. A stock can temporarily
-    # appear in more than one index during rebalancing, so keep the first match.
-    universe = pd.concat(frames, ignore_index=True)
-    universe = universe.drop_duplicates("symbol", keep="first").reset_index(drop=True)
-    if len(universe) < 400:
-        raise RuntimeError(f"Combined Large Cap + Mid Cap + Small Cap universe is unexpectedly small: {len(universe)} symbols")
-    return universe
+            errors.append(str(e))
+    raise RuntimeError("Could not load official NIFTY LargeMidcap 250 constituents: " + " | ".join(errors))
 
 
 def yf_symbol(symbol):
@@ -441,9 +423,7 @@ def scan_universe(max_distance=10.0, period="2y", top_n=20):
         if row["distance_pct"] < -1 or row["distance_pct"] > max_distance: continue
         row["symbol"] = symbol
         match = universe.loc[universe.symbol == symbol, "company_name"]
-        cap_match = universe.loc[universe.symbol == symbol, "cap_category"]
         row["company_name"] = match.iloc[0] if not match.empty else symbol
-        row["cap_category"] = cap_match.iloc[0] if not cap_match.empty else ""
         row["rank_score"] = _ranking_score(row)
         rows.append(row)
     if not rows: return pd.DataFrame()
