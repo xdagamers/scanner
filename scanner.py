@@ -61,9 +61,12 @@ CFG = {
     "drop_partial_bar": True,          # drop today's unfinished daily candle during market hours
     "retry_missing_max": 80,           # individual retries for symbols the batch download missed
     # scan filters
-    "max_distance_pct": 10.0,          # max distance below resistance
+    "max_distance_pct": 5.0,           # max distance below resistance
+    "min_score": 65,                   # drop anything scoring below this (0-100)
+    "min_setup_checks": 6,             # of the 9 checklist items in SETUP_CHECKS, at least this many must pass
+    "require_uptrend": True,           # price > SMA50 > SMA200 and price > EMA20
     "min_distance_pct": -1.0,          # allow up to 1% above resistance (fresh breakouts)
-    "max_dist_52w_pct": 15.0,          # skip stocks further than this below the 52-week high (0 = off)
+    "max_dist_52w_pct": 10.0,          # skip stocks further than this below the 52-week high (0 = off)
     "trigger_buffer_pct": 0.25,        # close must be this far above resistance to be "confirmed"
     # RSI
     "rsi_base_window": 30,
@@ -827,13 +830,32 @@ def _explain(c, score):
             ". This is a setup-strength ranking, not a guaranteed price prediction.")
 
 
+def setup_checks(c):
+    """The 9-point accumulation -> breakout -> new-high checklist. Each item is True/False."""
+    return {
+        "near_resistance": c["distance_pct"] <= 3,
+        "near_52w_high": c["dist_52w_pct"] <= 5,
+        "base_20d_plus": c["base_days"] >= CFG["base_min_days"],
+        "accumulation_volume": c["volume_dryup_ratio"] <= .85 or c["up_down_volume"] >= 1.2,
+        "money_flow_high": bool(c["obv_new_high"] or c["ad_new_high"]),
+        "uptrend": c["ema_structure"] == "Bullish",
+        "rsi_ok": 50 <= c["rsi_value"] <= CFG["rsi_extreme"] and not c["rsi_divergence"],
+        "beats_nifty": c["nifty_relative_strength"] > 0,
+        "contraction": c["squeeze"] >= .65,
+    }
+
+
 def score_stock(df, nifty_df=None, sector_df=None, weights=None):
     c = component_scores(df, nifty_df=nifty_df, sector_df=sector_df)
     if c is None:
         return None
     score = score_from_components(c, weights)
     d = c["distance_pct"]
+    checks = setup_checks(c)
     return {
+        "setup_checks_passed": int(sum(checks.values())), "setup_checks_total": len(checks),
+        "setup_match": f"{sum(checks.values())}/{len(checks)}",
+        "setup_failed": ", ".join(k for k, v in checks.items() if not v),
         "price": c["price"], "breakout_level": c["breakout_level"], "breakout_trigger": c["breakout_trigger"],
         "distance_pct": d, "score": score, "tech_score": score, "rating": _rating(score), "status": _status(d),
         "rsi": c["rsi_value"], "macd": c["macd_value"], "adx": c["adx_value"], "rvol": c["rvol"],
@@ -1151,10 +1173,13 @@ def apply_fundamentals(row, fund):
 # Scans
 # --------------------------------------------------------------------------- #
 def scan_universe(max_distance=None, period="2y", top_n=20, use_fundamentals=True, fund_mode="score",
-                  fund_top_n=None, as_of=None):
+                  fund_top_n=None, as_of=None, min_score=None, min_setup_checks=None):
     """fund_mode: 'score' blends fundamentals into the score, 'hard' also drops stocks that fail the
     core fundamental checks or lack data. Diagnostics are attached to result.attrs['report']."""
     max_distance = CFG["max_distance_pct"] if max_distance is None else max_distance
+    min_score = CFG["min_score"] if min_score is None else min_score
+    min_checks = CFG["min_setup_checks"] if min_setup_checks is None else min_setup_checks
+    rej = {"distance": 0, "far_from_52w_high": 0, "not_in_uptrend": 0, "too_few_setup_checks": 0, "low_score": 0}
     universe = load_universe()
     industry_map = dict(zip(universe.symbol, universe.industry)) if "industry" in universe else {}
     names = dict(zip(universe.symbol, universe.company_name))
@@ -1173,8 +1198,19 @@ def scan_universe(max_distance=None, period="2y", top_n=20, use_fundamentals=Tru
             continue
         d = row["distance_pct"]
         if d < CFG["min_distance_pct"] or d > max_distance:
+            rej["distance"] += 1
             continue
         if CFG["max_dist_52w_pct"] and row["dist_52w_pct"] > CFG["max_dist_52w_pct"]:
+            rej["far_from_52w_high"] += 1
+            continue
+        if CFG["require_uptrend"] and row["ema_structure"] != "Bullish":
+            rej["not_in_uptrend"] += 1
+            continue
+        if row["setup_checks_passed"] < min_checks:
+            rej["too_few_setup_checks"] += 1
+            continue
+        if row["score"] < min_score:
+            rej["low_score"] += 1
             continue
         row["symbol"] = symbol
         row["company_name"] = names.get(symbol, symbol)
@@ -1183,7 +1219,7 @@ def scan_universe(max_distance=None, period="2y", top_n=20, use_fundamentals=Tru
         rows.append(row)
 
     report = {"universe": len(universe), "downloaded": len(histories), "failed_downloads": LAST_RUN.get("failed_symbols", []),
-              "scoring_errors": errors, "candidates": len(rows), "fundamentals_checked": 0,
+              "scoring_errors": errors, "candidates": len(rows), "fundamentals_checked": 0, "rejected": rej,
               "market_regime": rows[0]["market_regime"] if rows else _market_regime(nifty)[1]}
     if not rows:
         out = pd.DataFrame()
@@ -1201,7 +1237,7 @@ def scan_universe(max_distance=None, period="2y", top_n=20, use_fundamentals=Tru
                 fund = {"fund_status": "INSUFFICIENT", "fund_score": None, "fund_core_pass": False, "fund_notes": str(e)}
             apply_fundamentals(row, fund)
         report["fundamentals_checked"] = len(shortlist)
-        rows = shortlist
+        rows = [r for r in shortlist if r["score"] >= min_score]     # re-check after the fundamentals blend
         if fund_mode == "hard":
             rows = [r for r in rows if r.get("fund_core_pass")]
     result = pd.DataFrame(rows)
@@ -1297,8 +1333,8 @@ if __name__ == "__main__":
           f"failed {len(rep.get('failed_downloads', []))}, candidates {rep.get('candidates')}, "
           f"market {rep.get('market_regime')}")
     if res.empty:
-        print("No candidates.")
+        print("No stocks meet the criteria today. Rejections:", rep.get("rejected"))
     else:
-        cols = [c for c in ["rank", "symbol", "status", "score", "rating", "distance_pct", "dist_52w_pct", "base_days",
+        cols = [c for c in ["rank", "symbol", "status", "score", "rating", "setup_match", "distance_pct", "dist_52w_pct", "base_days",
                             "rvol", "rsi", "fund_status", "q_profit_yoy", "q_revenue_yoy"] if c in res.columns]
         print(res[cols].round(2).to_string(index=False))
