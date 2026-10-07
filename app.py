@@ -597,9 +597,9 @@ def render_home():
         st.session_state.scanning = True
         st.session_state.scan_error = None
         st.session_state.scan_result = None
+        scan_placeholder = st.empty()
         try:
-            with st.container():
-                st.markdown('<div class="scan-shell"><div style="font-weight:950;font-size:1rem">🔎 Scanning market…</div><div class="scan-copy"><span>Analyzing NIFTY 500 universe</span><span>Working</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div><div class="small-muted" style="margin-top:8px">Please keep this page open while the scan is running.</div></div>', unsafe_allow_html=True)
+            scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:950;font-size:1rem">🔎 Scanning market…</div><div class="scan-copy"><span>Analyzing NIFTY 500 universe</span><span>Working</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div><div class="small-muted" style="margin-top:8px">Please keep this page open while the scan is running.</div></div>', unsafe_allow_html=True)
             with st.spinner("Calculating technical setups…"):
                 result = scan_universe(max_distance=10.0, period="2y", top_n=500)
             st.session_state.scan_result = result
@@ -609,6 +609,7 @@ def render_home():
             st.session_state.scan_error = str(exc)
         finally:
             st.session_state.scanning = False
+            scan_placeholder.empty()
 
     result=st.session_state.get("scan_result")
     if st.session_state.get("scan_error"): st.error("The market scan could not be completed. Please try again. Details: "+st.session_state.scan_error)
