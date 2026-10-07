@@ -1,2 +1,0 @@
-# scanner
-for educational purpose
