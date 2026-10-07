@@ -1,15 +1,17 @@
-"""Google Sheets append/read layer for the scanner audit database.
+"""Free Google Sheets bridge using a Google Apps Script Web App.
 
-This module contains NO scanner logic. It only persists audit snapshots and
-reads the accumulated audit/performance data for later analysis.
+No Google Cloud service-account credentials are required. The Streamlit app
+sends audit batches to the Apps Script endpoint, which appends them to the
+Google Sheet. This module contains no scanner logic.
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable
 import uuid
+from typing import Any
 
 import pandas as pd
+import requests
 
 SHEET_ID_DEFAULT = "1Mp1Cper3L7Hiv-JzzNXP_CtlUwJ7PVbHgFPYANlcGNc"
 SIGNALS_TAB = "Audit_Signals"
@@ -18,144 +20,124 @@ PERFORMANCE_TAB = "Daily_Performance"
 ANALYSIS_TAB = "Analysis_Results"
 
 
-def _service_account_client(secrets):
+def _config(secrets):
+    url = str(secrets.get("AUDIT_APPS_SCRIPT_URL", "")).strip()
+    token = str(secrets.get("AUDIT_TOKEN", "")).strip()
+    sheet_id = str(secrets.get("AUDIT_SHEET_ID", SHEET_ID_DEFAULT)).strip()
+    if not url:
+        raise RuntimeError("AUDIT_APPS_SCRIPT_URL is missing from Streamlit Secrets.")
+    if not token:
+        raise RuntimeError("AUDIT_TOKEN is missing from Streamlit Secrets.")
+    return url, token, sheet_id
+
+
+def _post(secrets, payload: dict[str, Any]) -> dict:
+    url, token, _ = _config(secrets)
+    body = dict(payload)
+    body["token"] = token
     try:
-        import gspread
-    except ImportError as exc:
-        raise RuntimeError("gspread is not installed. Add gspread and google-auth to requirements.txt.") from exc
+        response = requests.post(url, json=body, timeout=60)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not reach the Google Apps Script endpoint: {exc}") from exc
 
-    if "gcp_service_account" not in secrets:
-        raise RuntimeError("Google service-account credentials are missing from Streamlit Secrets.")
-
-    creds = dict(secrets["gcp_service_account"])
-    return gspread.service_account_from_dict(creds)
-
-
-def _clean(value):
-    if value is None:
-        return ""
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Google Apps Script returned HTTP {response.status_code}: {response.text[:500]}"
+        )
     try:
-        if pd.isna(value):
-            return ""
-    except Exception:
-        pass
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    return value
+        result = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Google Apps Script returned a non-JSON response: {response.text[:500]}"
+        ) from exc
+    if not result.get("ok", False):
+        raise RuntimeError(str(result.get("error", "Unknown Google Apps Script error.")))
+    return result
 
 
-def _ensure_sheet(spreadsheet, title, headers):
+def _get(secrets, action: str) -> dict:
+    url, token, _ = _config(secrets)
     try:
-        ws = spreadsheet.worksheet(title)
-    except Exception:
-        ws = spreadsheet.add_worksheet(title=title, rows=1000, cols=max(20, len(headers) + 5))
-    existing = ws.row_values(1)
-    if not existing:
-        ws.append_row(headers, value_input_option="USER_ENTERED")
-    return ws
-
-
-def open_audit_book(secrets):
-    client = _service_account_client(secrets)
-    sheet_id = str(secrets.get("AUDIT_SHEET_ID", SHEET_ID_DEFAULT))
-    book = client.open_by_key(sheet_id)
-    return book
-
-
-def ensure_audit_schema(secrets, signal_headers: Iterable[str], performance_headers: Iterable[str]):
-    book = open_audit_book(secrets)
-    _ensure_sheet(book, SIGNALS_TAB, list(signal_headers))
-    _ensure_sheet(book, RUNS_TAB, [
-        "Audit_Run_ID", "Scan_Timestamp_IST", "Scan_Date", "Rows_Expected", "Rows_Appended",
-        "Scanner_Period", "Max_Distance_Pct", "App_Status", "Write_Timestamp_IST"
-    ])
-    _ensure_sheet(book, PERFORMANCE_TAB, list(performance_headers))
-    _ensure_sheet(book, ANALYSIS_TAB, [
-        "Analysis_Timestamp_IST", "Outcome", "Combination", "Signals", "Success_Rate_Pct",
-        "Avg_Return_Pct", "Median_Return_Pct", "Avg_Best_Gain_Pct", "Avg_Max_Drawdown_Pct",
-        "Train_Test_Split", "Notes"
-    ])
-    return book
-
-
-def _batch_exists(runs_ws, run_id: str) -> bool:
-    values = runs_ws.col_values(1)
-    return run_id in set(values)
-
-
-def append_audit_batch(secrets, rows: pd.DataFrame, run_id: str, scan_timestamp_ist: str,
-                       scanner_period: str = "2y", max_distance_pct: float = 10.0) -> dict:
-    """Append one audit scan batch; never overwrite existing rows.
-
-    The run log is created first as PENDING. This makes retries safe: if the
-    signal rows were already appended but the final status update failed, the
-    same run ID is recognized and the rows are not appended twice.
-    """
-    if rows is None or rows.empty:
-        return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_result"}
-
-    from audit_logger import AUDIT_COLUMNS
-
-    book = ensure_audit_schema(secrets, AUDIT_COLUMNS, [
-        "Signal_ID", "Scan_Date", "Tracking_Day", "Tracking_Date", "Open", "High", "Low", "Close",
-        "Breakout_Trigger", "Target_1", "Target_2", "Target_3", "Stop", "Breakout_Hit", "T1_Hit",
-        "T2_Hit", "T3_Hit", "Stop_Hit", "Best_Gain_Pct", "Max_Drawdown_Pct", "Status", "Data_Quality"
-    ])
-    signals_ws = book.worksheet(SIGNALS_TAB)
-    runs_ws = book.worksheet(RUNS_TAB)
-
-    existing_values = runs_ws.col_values(1)
-    if run_id in set(existing_values):
-        return {"saved": True, "duplicate": True, "rows": 0, "run_id": run_id, "reason": "batch_already_exists"}
-
-    # Create an auditable run record first.
-    runs_ws.append_row([
-        run_id,
-        scan_timestamp_ist,
-        str(scan_timestamp_ist).split(" ")[0],
-        len(rows),
-        0,
-        scanner_period,
-        max_distance_pct,
-        "PENDING",
-        "",
-    ], value_input_option="USER_ENTERED", insert_data_option="INSERT_ROWS")
-    run_row_number = len(runs_ws.get_all_values())
-
-    out = rows.copy().reindex(columns=AUDIT_COLUMNS, fill_value="")
-    matrix = [[_clean(v) for v in row] for row in out.itertuples(index=False, name=None)]
-    signals_ws.append_rows(matrix, value_input_option="USER_ENTERED", insert_data_option="INSERT_ROWS")
-
-    runs_ws.update_cell(run_row_number, 5, len(matrix))
-    runs_ws.update_cell(run_row_number, 8, "APPENDED")
-    runs_ws.update_cell(run_row_number, 9, datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"))
-
-    return {"saved": True, "duplicate": False, "rows": len(matrix), "run_id": run_id, "reason": "appended"}
+        response = requests.get(
+            url,
+            params={"action": action, "token": token},
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not reach the Google Apps Script endpoint: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Google Apps Script returned HTTP {response.status_code}: {response.text[:500]}"
+        )
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Google Apps Script returned a non-JSON response: {response.text[:500]}"
+        ) from exc
+    if not result.get("ok", False):
+        raise RuntimeError(str(result.get("error", "Unknown Google Apps Script error.")))
+    return result
 
 
 def new_run_id() -> str:
     return datetime.now().strftime("AUDIT_%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
 
 
+def append_audit_batch(
+    secrets,
+    rows: pd.DataFrame,
+    run_id: str,
+    scan_timestamp_ist: str,
+    scanner_period: str = "2y",
+    max_distance_pct: float = 10.0,
+) -> dict:
+    """Append one complete audit batch; existing batches are never overwritten."""
+    if rows is None or rows.empty:
+        return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_result"}
+
+    try:
+        records = rows.where(pd.notna(rows), "").to_dict(orient="records")
+    except Exception as exc:
+        raise RuntimeError(f"Could not prepare audit rows for Google Sheets: {exc}") from exc
+
+    return _post(
+        secrets,
+        {
+            "action": "append_audit_batch",
+            "run_id": run_id,
+            "scan_timestamp_ist": scan_timestamp_ist,
+            "scanner_period": scanner_period,
+            "max_distance_pct": max_distance_pct,
+            "rows": records,
+        },
+    )
+
+
 def read_audit_signals(secrets) -> pd.DataFrame:
-    book = open_audit_book(secrets)
-    ws = book.worksheet(SIGNALS_TAB)
-    records = ws.get_all_records()
-    return pd.DataFrame(records)
+    result = _get(secrets, "read_signals")
+    return pd.DataFrame(result.get("data", []))
 
 
 def read_daily_performance(secrets) -> pd.DataFrame:
-    book = open_audit_book(secrets)
-    ws = book.worksheet(PERFORMANCE_TAB)
-    records = ws.get_all_records()
-    return pd.DataFrame(records)
+    result = _get(secrets, "read_performance")
+    return pd.DataFrame(result.get("data", []))
+
+
+def append_performance_rows(secrets, rows: pd.DataFrame) -> dict:
+    if rows is None or rows.empty:
+        return {"saved": False, "rows": 0, "reason": "empty_result"}
+    records = rows.where(pd.notna(rows), "").to_dict(orient="records")
+    return _post(secrets, {"action": "append_performance", "rows": records})
 
 
 def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
     if analysis_df is None or analysis_df.empty:
         return 0
-    book = open_audit_book(secrets)
-    ws = book.worksheet(ANALYSIS_TAB)
-    values = [[_clean(v) for v in row] for row in analysis_df.itertuples(index=False, name=None)]
-    ws.append_rows(values, value_input_option="USER_ENTERED", insert_data_option="INSERT_ROWS")
-    return len(values)
+    records = analysis_df.where(pd.notna(analysis_df), "").to_dict(orient="records")
+    result = _post(secrets, {"action": "append_analysis", "rows": records})
+    return int(result.get("rows", 0))
+
+
+def test_connection(secrets) -> dict:
+    return _get(secrets, "ping")
