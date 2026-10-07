@@ -64,7 +64,7 @@ def apply_theme():
     if st.session_state.theme_mode == "light":
         st.markdown("""<style>:root{--bg:#f5f7fa;--card:#fff;--card2:#f8fafc;--border:rgba(15,23,42,.12);--text:#111827;--muted:#64748b;--accent:#079669;--red:#dc3545;--yellow:#b7791f;--chart-bg:#f5f7fa}</style>""", unsafe_allow_html=True)
 
-def render_reload_guard(active=False):
+def render_reload_guard(active=True):
     """Warn before a browser refresh/navigation while a scan is running.
 
     Keyboard refresh (F5/Ctrl+R) gets a custom in-page confirmation with the
@@ -597,9 +597,11 @@ def render_home():
         st.session_state.scanning = True
         st.session_state.scan_error = None
         st.session_state.scan_result = None
-        render_reload_guard(True)
         try:
-            result = scan_universe(max_distance=10.0, period="2y", top_n=500)
+            with st.container():
+                st.markdown('<div class="scan-shell"><div style="font-weight:950;font-size:1rem">🔎 Scanning market…</div><div class="scan-copy"><span>Analyzing NIFTY 500 universe</span><span>Working</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div><div class="small-muted" style="margin-top:8px">Please keep this page open while the scan is running.</div></div>', unsafe_allow_html=True)
+            with st.spinner("Calculating technical setups…"):
+                result = scan_universe(max_distance=10.0, period="2y", top_n=500)
             st.session_state.scan_result = result
             st.session_state.scan_timestamp = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
         except Exception as exc:
@@ -662,6 +664,9 @@ try:
         st.query_params.pop("__reload_home", None)
 except Exception:
     pass
+
+# Global reload/navigation guard: active on every page, not only during a scan.
+render_reload_guard(True)
 
 if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
