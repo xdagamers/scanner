@@ -647,41 +647,83 @@ def render_home():
     pending_rows = st.session_state.get("audit_pending_rows")
     pending_run_id = st.session_state.get("audit_pending_run_id")
     pending_timestamp = st.session_state.get("audit_pending_timestamp")
+    append_in_progress = st.session_state.get("audit_append_in_progress", False)
     if pending_rows is not None:
-        st.warning(
-            f"📊 Audit collection is ready: {len(pending_rows)} signal rows from {pending_timestamp}. "
-            "Nothing has been written yet. Append this batch to the Google Sheet?"
-        )
-        yes_col, no_col = st.columns(2)
-        with yes_col:
-            append_clicked = st.button("✅ YES — APPEND TO AUDIT SHEET", key="audit_yes", use_container_width=True, type="primary")
-        with no_col:
-            discard_clicked = st.button("❌ NO — DISCARD THIS AUDIT", key="audit_no", use_container_width=True)
-        if append_clicked:
+        if append_in_progress:
+            # This is deliberately a separate rerun from the YES click. It prevents
+            # accidental double-clicks and makes the write state visible while the
+            # Google Apps Script request is running. No scanner logic is involved.
+            st.info(
+                f"⏳ Writing {len(pending_rows)} audit rows to Google Sheets… "
+                "Please keep this page open and do not click again."
+            )
             try:
-                audit_info = append_audit_batch(
-                    st.secrets,
-                    pending_rows,
-                    run_id=pending_run_id,
-                    scan_timestamp_ist=pending_timestamp,
-                    scanner_period="2y",
-                    max_distance_pct=10.0,
-                )
+                with st.status("⏳ Appending audit batch…", expanded=True) as status:
+                    status.write("Connecting to Google Sheets…")
+                    audit_info = append_audit_batch(
+                        st.secrets,
+                        pending_rows,
+                        run_id=pending_run_id,
+                        scan_timestamp_ist=pending_timestamp,
+                        scanner_period="2y",
+                        max_distance_pct=10.0,
+                    )
+                    if audit_info.get("reason") == "batch_already_exists":
+                        status.update(
+                            label="ℹ️ This audit batch was already recorded; no duplicate rows were added.",
+                            state="complete",
+                            expanded=False,
+                        )
+                    else:
+                        status.update(
+                            label=f"✅ Audit batch written: {audit_info.get('rows', 0)} new rows.",
+                            state="complete",
+                            expanded=False,
+                        )
                 st.session_state.audit_last_saved = audit_info
                 st.session_state.audit_pending_rows = None
                 st.session_state.audit_pending_run_id = None
                 st.session_state.audit_pending_timestamp = None
-                st.success(f"✅ Audit batch appended: {audit_info.get('rows', 0)} signals. Run ID: {audit_info.get('run_id', '—')}")
+                st.session_state.audit_append_in_progress = False
                 st.rerun()
             except Exception as exc:
-                st.error("The audit batch was NOT confirmed as written. Check your Google Sheets credentials, sheet sharing, and API setup before retrying. Details: " + str(exc))
-        elif discard_clicked:
-            st.session_state.audit_pending_rows = None
-            st.session_state.audit_pending_run_id = None
-            st.session_state.audit_pending_timestamp = None
-            st.session_state.audit_last_saved = {"saved": False, "rows": 0, "reason": "discarded_by_user"}
-            st.success("Audit batch discarded. The normal scan result remains available, and nothing was written to Google Sheets.")
-            st.rerun()
+                st.session_state.audit_append_in_progress = False
+                st.error(
+                    "The audit batch was NOT confirmed as written. Check your Google Sheets "
+                    "connection and Apps Script deployment. Details: " + str(exc)
+                )
+        else:
+            st.warning(
+                f"📊 Audit collection is ready: {len(pending_rows)} signal rows from {pending_timestamp}. "
+                "Nothing has been written yet. Append this batch to the Google Sheet?"
+            )
+            yes_col, no_col = st.columns(2)
+            with yes_col:
+                append_clicked = st.button(
+                    "✅ YES — APPEND TO AUDIT SHEET",
+                    key="audit_yes",
+                    use_container_width=True,
+                    type="primary",
+                )
+            with no_col:
+                discard_clicked = st.button(
+                    "❌ NO — DISCARD THIS AUDIT",
+                    key="audit_no",
+                    use_container_width=True,
+                )
+            if append_clicked:
+                # First rerun changes the UI into an explicit in-progress state.
+                # The actual network write occurs only on the following run.
+                st.session_state.audit_append_in_progress = True
+                st.rerun()
+            elif discard_clicked:
+                st.session_state.audit_pending_rows = None
+                st.session_state.audit_pending_run_id = None
+                st.session_state.audit_pending_timestamp = None
+                st.session_state.audit_append_in_progress = False
+                st.session_state.audit_last_saved = {"saved": False, "rows": 0, "reason": "discarded_by_user"}
+                st.success("Audit batch discarded. The normal scan result remains available, and nothing was written to Google Sheets.")
+                st.rerun()
 
     audit_info = st.session_state.get("audit_last_saved") or {}
     if audit_info.get("saved") and audit_info.get("reason") in {"appended", "batch_already_exists"}:
@@ -748,6 +790,7 @@ if "audit_last_saved" not in st.session_state: st.session_state.audit_last_saved
 if "audit_pending_rows" not in st.session_state: st.session_state.audit_pending_rows = None
 if "audit_pending_run_id" not in st.session_state: st.session_state.audit_pending_run_id = None
 if "audit_pending_timestamp" not in st.session_state: st.session_state.audit_pending_timestamp = None
+if "audit_append_in_progress" not in st.session_state: st.session_state.audit_append_in_progress = False
 
 try:
     if st.query_params.get("__reload_home") == "1":
