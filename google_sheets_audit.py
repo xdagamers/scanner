@@ -124,11 +124,50 @@ def read_daily_performance(secrets) -> pd.DataFrame:
     return pd.DataFrame(result.get("data", []))
 
 
-def append_performance_rows(secrets, rows: pd.DataFrame) -> dict:
+def read_final_performance(secrets) -> pd.DataFrame:
+    """Read only Tracking_Day 20 rows for compact final-outcome analysis."""
+    result = _get(secrets, "read_final_performance")
+    return pd.DataFrame(result.get("data", []))
+
+
+def append_performance_rows(secrets, rows: pd.DataFrame, batch_size: int = 400) -> dict:
+    """Append missing performance rows in small, retry-friendly batches.
+
+    Apps Script also deduplicates (Signal_ID, Tracking_Day), so a timeout/retry
+    will not duplicate already-written tracking days.
+    """
     if rows is None or rows.empty:
-        return {"saved": False, "rows": 0, "reason": "empty_result"}
+        return {"saved": False, "rows": 0, "expected": 0, "reason": "empty_result"}
+
     records = rows.where(pd.notna(rows), "").to_dict(orient="records")
-    return _post(secrets, {"action": "append_performance", "rows": records})
+    written = 0
+    updated = 0
+    skipped = 0
+    results = []
+    size = max(1, int(batch_size))
+    for start in range(0, len(records), size):
+        batch = records[start:start + size]
+        result = _post(secrets, {"action": "append_performance", "rows": batch})
+        written += int(result.get("rows", 0))
+        updated += int(result.get("updated", 0))
+        skipped += int(result.get("skipped_duplicates", 0))
+        results.append(result)
+
+    return {
+        "saved": written > 0 or updated > 0 or len(records) == skipped,
+        "rows": written,
+        "updated": updated,
+        "expected": len(records),
+        "skipped_duplicates": skipped,
+        "batches": len(results),
+        "reason": "appended_or_repaired" if (written or updated) else "already_recorded",
+    }
+
+
+def read_performance_keys(secrets) -> pd.DataFrame:
+    """Read compact (Signal_ID, Tracking_Day) keys only for idempotent updates."""
+    result = _get(secrets, "read_performance_keys")
+    return pd.DataFrame(result.get("data", []), columns=["Signal_ID", "Tracking_Day", "Data_Quality"])
 
 
 def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
