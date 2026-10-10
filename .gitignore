@@ -1,1 +1,13 @@
-
+.streamlit/secrets.toml
+.env
+.env.*
+*.pem
+*.key
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+audit_data/
+scanner_audit_signals.csv
+tracking_gaps_*.csv
+audit_combinations_*.csv
