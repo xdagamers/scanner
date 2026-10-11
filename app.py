@@ -140,8 +140,8 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;colo
 @media(max-width:520px){.result-card{padding:9px;border-radius:12px}.result-header{grid-template-columns:minmax(0,1fr);gap:6px}.result-badges{flex-direction:row;align-items:flex-start;flex-wrap:wrap;min-width:0}.result-badge{font-size:.65rem;padding:3px 6px}.result-price-row{grid-template-columns:minmax(0,1fr);gap:7px;margin-top:8px;padding-top:8px}.result-price{font-size:1.5rem}.result-metrics-rail{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.result-mini-metric{padding:4px 5px;justify-content:center}.result-mini-label{font-size:.63rem}.result-mini-label strong{font-size:.66rem;margin-left:2px}.result-mini-state{display:none}.result-indicator-grid{gap:4px}.result-indicator{padding:6px 5px;border-radius:8px}.result-indicator-label{font-size:.61rem}.result-indicator-value{font-size:.82rem}.result-indicator-state{font-size:.55rem}}
 @keyframes pulse{50%{opacity:.45;transform:scale(.75)}}@keyframes glow{from{box-shadow:0 0 4px rgba(25,211,138,.1)}to{box-shadow:0 0 20px rgba(25,211,138,.45)}}
 @media(max-width:520px){.block-container{padding:.65rem .55rem 4rem!important}.index-wrap{justify-content:flex-start}.hero-price{font-size:1.9rem}.stButton>button{min-height:44px}.target-value{font-size:1rem}.metric-value{font-size:.98rem}}
-/* Result grid: force two equal desktop columns, preventing cards from expanding to full row width. */
-div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.65rem!important;align-items:start!important;width:100%!important;min-width:0!important}
+/* Result grid: four equal desktop columns; stack on narrow screens only. */
+div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:.65rem!important;align-items:start!important;width:100%!important;min-width:0!important}
 div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]>[data-testid="column"]{width:100%!important;min-width:0!important;max-width:100%!important;flex:1 1 0!important;padding:0!important}
 div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]>[data-testid="column"]>div{width:100%!important;min-width:0!important;max-width:100%!important}
 div[class*="st-key-result-grid-"] .stMarkdown,div[class*="st-key-result-grid-"] .stElementContainer{width:100%!important;min-width:0!important;max-width:100%!important}
@@ -1075,15 +1075,16 @@ def render_home():
         except (TypeError, ValueError):
             return default
 
-    # Keep the familiar two-stock grid on desktop while allowing Streamlit to
-    # collapse columns naturally on narrow screens. This is presentation only.
-    for pair_start in range(0, len(display), 2):
-        with st.container(key=f"result-grid-{pair_start}"):
-            card_columns = st.columns([1, 1], gap="small")
-            pair_rows = display.iloc[pair_start:pair_start + 2]
-            for pair_offset, (_, row) in enumerate(pair_rows.iterrows()):
-                idx = pair_start + pair_offset
-                with card_columns[pair_offset]:
+    # Four compact stock cards per row on desktop. On narrow screens, CSS
+    # intentionally stacks/reflows them for readability. Presentation only.
+    for batch_start in range(0, len(display), 4):
+        with st.container(key=f"result-grid-{batch_start}"):
+            card_columns = st.columns([1, 1, 1, 1], gap="small")
+            batch_rows = display.iloc[batch_start:batch_start + 4]
+            for card_offset, (_, row) in enumerate(batch_rows.iterrows()):
+                idx = batch_start + card_offset
+                with card_columns[card_offset]:
+
                     symbol = str(row.get("symbol", "—"))
                     symbol_html = html.escape(symbol)
                     company_html = html.escape(str(row.get("company_name", symbol)))
