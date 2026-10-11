@@ -50,7 +50,7 @@ NSE_HEADERS = {
 st.set_page_config(
     page_title="NIFTY Breakout Scanner",
     page_icon="📈",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="collapsed",
 )
 
@@ -88,91 +88,15 @@ if not password_gate():
 CSS = r"""
 <style>
 :root{--bg:#07111f;--card:#0c192b;--card2:#101f33;--border:rgba(148,163,184,.15);--text:#f1f5f9;--muted:#8fa3ba;--accent:#19d38a;--red:#ff5c70;--yellow:#f5c451;--chart-bg:#07111f}
-html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important}[data-testid="stHeader"],footer,#MainMenu,[data-testid="stToolbar"]{visibility:hidden!important;height:0!important;display:none!important}.block-container{max-width:1480px!important;padding:1rem 1.05rem 5rem!important}section[data-testid="stSidebar"]{display:none!important}*{box-sizing:border-box}
-.stButton>button{width:100%;border-radius:11px;border:1px solid var(--border);background:var(--card);color:var(--text);min-height:39px;font-size:.88rem;font-weight:800;transition:.18s ease}.stButton>button:hover{border-color:rgba(25,211,138,.55);transform:translateY(-1px)}
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important}[data-testid="stHeader"],footer,#MainMenu,[data-testid="stToolbar"]{visibility:hidden!important;height:0!important;display:none!important}.block-container{max-width:720px!important;padding:1rem .75rem 5rem!important}section[data-testid="stSidebar"]{display:none!important}*{box-sizing:border-box}
+.stButton>button{width:100%;border-radius:14px;border:1px solid var(--border);background:var(--card);color:var(--text);min-height:46px;font-weight:800;transition:.18s ease}.stButton>button:hover{border-color:rgba(25,211,138,.55);transform:translateY(-1px)}
 .scan-btn .stButton>button{min-height:58px;border:0;color:white;background:linear-gradient(135deg,#10b981,#0ea5e9);box-shadow:0 12px 30px rgba(16,185,129,.20);font-size:1.08rem}
 .card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:18px;padding:14px;margin:8px 0;box-shadow:0 8px 28px rgba(0,0,0,.12)}.status-card{padding:10px 12px;border-radius:15px;background:var(--card);border:1px solid var(--border)}.status-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.status-left{display:flex;align-items:center;gap:8px;font-weight:800}.dot{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 12px currentColor}.dot.green{background:var(--accent);color:var(--accent);animation:pulse 1.5s infinite}.dot.red{background:var(--red);color:var(--red);animation:pulse 1.5s infinite}.dot.yellow{background:var(--yellow);color:var(--yellow);animation:pulse 1.5s infinite}.index-wrap{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap}.index-item{font-size:.82rem;color:var(--muted)}.index-item b{color:var(--text);font-size:.9rem}.up{color:var(--accent)!important}.down{color:var(--red)!important}.section-title{font-size:1.2rem;font-weight:900;margin:18px 2px 10px}
 .metric-card{min-height:76px;padding:11px;border-radius:14px;border:1px solid var(--border);background:var(--card)}.metric-label{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.metric-value{color:var(--text);font-weight:950;font-size:1.05rem;margin-top:4px;word-break:break-word}.metric-good{background:linear-gradient(135deg,rgba(25,211,138,.25),var(--card));border-color:rgba(25,211,138,.42)}.metric-ok{background:linear-gradient(135deg,rgba(154,211,70,.20),var(--card));border-color:rgba(154,211,70,.32)}.metric-neutral{background:linear-gradient(135deg,rgba(245,196,81,.20),var(--card));border-color:rgba(245,196,81,.30)}.metric-poor{background:linear-gradient(135deg,rgba(255,142,70,.20),var(--card));border-color:rgba(255,142,70,.32)}.metric-bad{background:linear-gradient(135deg,rgba(255,92,112,.22),var(--card));border-color:rgba(255,92,112,.34)}
 .hero-price{font-size:2.15rem;font-weight:950;letter-spacing:-.03em}.badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:.82rem;font-weight:950}.badge-green{background:rgba(25,211,138,.16);color:var(--accent);border:1px solid rgba(25,211,138,.35)}.badge-red{background:rgba(255,92,112,.14);color:var(--red);border:1px solid rgba(255,92,112,.30)}.badge-yellow{background:rgba(245,196,81,.16);color:#a56b00;border:1px solid rgba(245,196,81,.35)}.badge-grey{background:rgba(148,163,184,.10);color:var(--muted);border:1px solid var(--border)}.entry-pulse{animation:glow 1.35s ease-in-out infinite alternate}.target-box{padding:10px 12px;border-radius:14px;background:rgba(25,211,138,.09);border:1px solid rgba(25,211,138,.28)}.target-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;font-weight:800}.target-value{font-size:1.15rem;font-weight:950;color:var(--accent)}.target-upside{font-size:.75rem;color:var(--text);margin-top:2px}
 .scan-shell{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;overflow:hidden}.scan-chart{height:145px;position:relative;overflow:hidden;border-radius:12px;background:linear-gradient(180deg,var(--card2),var(--bg))}.candle-track{position:absolute;inset:0;display:flex;align-items:center;gap:10px;width:max-content;animation:scrollCandles 7s linear infinite}.candle{width:7px;position:relative;border-radius:2px;flex:none;box-shadow:0 0 8px currentColor}.candle:before{content:"";position:absolute;left:2px;width:2px;top:-13px;bottom:-13px;background:currentColor;opacity:.85}.candle.g{height:55px;background:#19d38a;color:#19d38a}.candle.r{height:38px;background:#ff5c70;color:#ff5c70}@keyframes scrollCandles{from{transform:translateX(0)}to{transform:translateX(-50%)}}.scan-copy{display:flex;justify-content:space-between;color:var(--muted);font-size:.82rem;margin:10px 0 7px}.progress{height:7px;background:rgba(148,163,184,.18);border-radius:99px;overflow:hidden}.progress>div{width:65%;height:100%;border-radius:99px;background:linear-gradient(90deg,#10b981,#38bdf8);animation:progress 2.2s ease-in-out infinite}@keyframes progress{0%{width:8%}50%{width:78%}100%{width:94%}}
-.ticker-note,.small-muted{color:var(--muted);font-size:.78rem}.tradingview-btn{display:block;text-align:center;padding:10px 14px;border-radius:12px;background:linear-gradient(135deg,#19d38a,#0ea5e9);color:#fff!important;text-decoration:none!important;font-weight:900;margin:4px 0 8px}.tv-under{text-align:center;margin:5px 0 12px}.tv-under a{color:var(--accent);font-size:.76rem;font-weight:800;text-decoration:none}
-.result-card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:15px;padding:11px;margin:9px 0 0;box-shadow:0 6px 18px rgba(0,0,0,.10)}
-.result-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:start}
-.result-rank{font-size:.69rem;font-weight:900;color:var(--accent);letter-spacing:.025em;text-transform:uppercase;margin-bottom:3px}
-.result-company{font-size:clamp(1.05rem,2.5vw,1.48rem);font-weight:950;line-height:1.06;letter-spacing:-.025em;color:var(--text);overflow-wrap:anywhere}
-.result-symbol{font-size:.84rem;color:var(--muted);font-weight:700;margin-top:3px;letter-spacing:.04em}
-.result-badges{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:106px}
-.result-badge{font-size:.69rem;font-weight:900;white-space:nowrap;padding:4px 7px;border-radius:999px;border:1px solid var(--border);background:rgba(148,163,184,.12);color:var(--text)}
-.result-badge.rating{border-color:rgba(25,211,138,.42);background:rgba(25,211,138,.16);color:var(--accent)}
-.result-price-row{display:grid;grid-template-columns:minmax(92px,.72fr) minmax(132px,1.12fr) minmax(126px,.96fr);align-items:center;gap:9px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
-.result-price{font-size:clamp(1.45rem,3vw,1.9rem);font-weight:950;line-height:1.05;letter-spacing:-.035em;color:var(--text)}
-.result-price-caption{font-size:.61rem;font-weight:800;color:var(--muted);letter-spacing:.04em;margin-top:3px}
-.result-breakout-head{display:flex;align-items:baseline;justify-content:space-between;gap:6px;color:var(--muted);font-size:.7rem;font-weight:800}
-.result-breakout-head strong{font-size:.86rem;color:var(--text);white-space:nowrap}
-.result-distance{font-size:.78rem;font-weight:900;color:var(--accent);margin:5px 0 5px}
-.result-progress{height:6px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.22)}
-.result-progress>div{height:100%;border-radius:999px;background:linear-gradient(90deg,#0f9f6e,#36d399);box-shadow:0 0 10px rgba(25,211,138,.16)}
-.result-section-label{font-size:.78rem;font-weight:900;text-transform:uppercase;letter-spacing:.025em;color:var(--muted);margin:13px 0 6px}
-.result-health-list{display:grid;gap:5px}
-.result-health{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:7px;min-height:35px;padding:5px 9px;border-radius:999px;border:1px solid rgba(25,211,138,.16);background:linear-gradient(90deg,rgba(25,211,138,.13),rgba(25,211,138,.055))}
-.result-health.adx{border-color:rgba(245,196,81,.22);background:linear-gradient(90deg,rgba(245,196,81,.2),rgba(245,196,81,.06))}
-.result-health.macd{border-color:rgba(25,211,138,.16);background:linear-gradient(90deg,rgba(25,211,138,.13),rgba(25,211,138,.045))}
-.result-health-icon{font-size:.98rem;font-weight:950;text-align:center;color:var(--accent)}
-.result-health.adx .result-health-icon{color:#d49a14}
-.result-health-name{font-size:.83rem;font-weight:750;color:var(--text)}
-.result-health-name strong{font-weight:950}
-.result-health-state{font-size:.64rem;font-weight:850;color:var(--muted);text-align:right}
-.result-metrics-rail{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;align-content:center;min-width:0}
-.result-mini-metric{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0;padding:4px 7px;border-radius:7px;border:1px solid rgba(25,211,138,.2);background:rgba(25,211,138,.07);line-height:1.1}
-.result-mini-metric.adx{border-color:rgba(245,196,81,.24);background:rgba(245,196,81,.09)}
-.result-mini-metric.macd{border-color:rgba(25,211,138,.16);background:rgba(25,211,138,.06)}
-.result-mini-label{font-size:.68rem;color:var(--muted);font-weight:800;white-space:nowrap}
-.result-mini-label strong{font-size:.72rem;color:var(--text);font-weight:950;margin-left:3px}
-.result-mini-state{font-size:.56rem;font-weight:850;color:var(--muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.result-target-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.result-target{border:1px solid var(--border);border-radius:10px;padding:8px;background:rgba(148,163,184,.095);min-width:0}
-.result-target-label{font-size:.67rem;color:var(--muted);font-weight:850}
-.result-target-price{font-size:clamp(.88rem,2vw,1.08rem);font-weight:950;color:var(--text);margin-top:2px;overflow-wrap:anywhere}
-.result-target-upside{font-size:.67rem;color:var(--muted);margin-top:1px}
-.result-target.t1{background:rgba(25,211,138,.1);border-color:rgba(25,211,138,.2)}
-.result-target.t3{background:rgba(148,163,184,.12)}
-.result-footnote{font-size:.64rem;color:var(--muted);line-height:1.35;margin-top:6px}
-@media(max-width:520px){.result-card{padding:9px;border-radius:12px}.result-header{grid-template-columns:minmax(0,1fr);gap:6px}.result-badges{flex-direction:row;align-items:flex-start;flex-wrap:wrap;min-width:0}.result-badge{font-size:.65rem;padding:3px 6px}.result-price-row{grid-template-columns:minmax(0,1fr);gap:7px;margin-top:8px;padding-top:8px}.result-price{font-size:1.5rem}.result-metrics-rail{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.result-mini-metric{padding:4px 5px;justify-content:center}.result-mini-label{font-size:.63rem}.result-mini-label strong{font-size:.66rem;margin-left:2px}.result-mini-state{display:none}.result-target-grid{gap:4px}.result-target{padding:6px 5px;border-radius:8px}.result-target-label{font-size:.61rem}.result-target-price{font-size:.82rem}.result-target-upside{font-size:.6rem}}
-@keyframes pulse{50%{opacity:.45;transform:scale(.75)}}@keyframes glow{from{box-shadow:0 0 4px rgba(25,211,138,.1)}to{box-shadow:0 0 20px rgba(25,211,138,.45)}}
+.ticker-note,.small-muted{color:var(--muted);font-size:.78rem}.tradingview-btn{display:block;text-align:center;padding:10px 14px;border-radius:12px;background:linear-gradient(135deg,#19d38a,#0ea5e9);color:#fff!important;text-decoration:none!important;font-weight:900;margin:4px 0 8px}.tv-under{text-align:center;margin:5px 0 12px}.tv-under a{color:var(--accent);font-size:.76rem;font-weight:800;text-decoration:none}.rank-note{font-size:.72rem;color:var(--muted);margin-bottom:8px}@keyframes pulse{50%{opacity:.45;transform:scale(.75)}}@keyframes glow{from{box-shadow:0 0 4px rgba(25,211,138,.1)}to{box-shadow:0 0 20px rgba(25,211,138,.45)}}
 @media(max-width:520px){.block-container{padding:.65rem .55rem 4rem!important}.index-wrap{justify-content:flex-start}.hero-price{font-size:1.9rem}.stButton>button{min-height:44px}.target-value{font-size:1rem}.metric-value{font-size:.98rem}}
-/* Result grid: force two equal desktop columns, preventing cards from expanding to full row width. */
-div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.65rem!important;align-items:start!important;width:100%!important;min-width:0!important}
-div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]>[data-testid="column"]{width:100%!important;min-width:0!important;max-width:100%!important;flex:1 1 0!important;padding:0!important}
-div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]>[data-testid="column"]>div{width:100%!important;min-width:0!important;max-width:100%!important}
-div[class*="st-key-result-grid-"] .stMarkdown,div[class*="st-key-result-grid-"] .stElementContainer{width:100%!important;min-width:0!important;max-width:100%!important}
-.result-card{display:block;width:100%!important;max-width:100%!important;min-width:0!important;overflow:hidden;padding:6px!important;margin:4px 0 0!important;border-radius:10px!important}
-.result-header{grid-template-columns:minmax(0,1fr) auto!important;gap:5px!important}
-.result-rank{font-size:.55rem!important;margin-bottom:2px!important}
-.result-company{font-size:clamp(.78rem,1.05vw,1.02rem)!important;line-height:1.08!important;letter-spacing:-.015em!important}
-.result-symbol{font-size:.66rem!important;margin-top:2px!important}
-.result-badges{gap:3px!important;min-width:0!important}
-.result-badge{font-size:.54rem!important;padding:2px 4px!important;line-height:1.15!important}
-.result-price-row{grid-template-columns:minmax(0,.76fr) minmax(0,1.05fr) minmax(0,.9fr)!important;gap:5px!important;margin-top:6px!important;padding-top:6px!important;min-width:0!important}
-.result-price{font-size:clamp(.95rem,1.25vw,1.28rem)!important;line-height:1.05!important;overflow-wrap:anywhere!important}
-.result-price-caption{font-size:.48rem!important;line-height:1.15!important;letter-spacing:0!important}
-.result-breakout-head{font-size:.56rem!important;gap:3px!important;flex-wrap:wrap!important}
-.result-breakout-head strong{font-size:.64rem!important;white-space:normal!important;overflow-wrap:anywhere!important}
-.result-distance{font-size:.54rem!important;line-height:1.15!important;margin:3px 0!important;overflow-wrap:anywhere!important}
-.result-progress{height:4px!important}
-.result-metrics-rail{grid-template-columns:minmax(0,1fr)!important;gap:2px!important;min-width:0!important}
-.result-mini-metric{gap:2px!important;padding:2px 4px!important;border-radius:5px!important;min-width:0!important}
-.result-mini-label{font-size:.55rem!important}
-.result-mini-label strong{font-size:.58rem!important;margin-left:2px!important}
-.result-mini-state{font-size:.43rem!important;max-width:58px!important}
-.result-section-label{font-size:.59rem!important;margin:7px 0 3px!important}
-.result-target-grid{gap:3px!important}
-.result-target{padding:4px 4px!important;border-radius:6px!important}
-.result-target-label{font-size:.48rem!important;line-height:1.12!important}
-.result-target-price{font-size:clamp(.64rem,.85vw,.82rem)!important;line-height:1.12!important;margin-top:2px!important}
-.result-target-upside{font-size:.46rem!important;line-height:1.1!important;overflow-wrap:anywhere!important}
-.result-footnote{font-size:.48rem!important;line-height:1.15!important;margin-top:4px!important}
-div[class*="st-key-result-open-"] .stButton>button{min-height:29px!important;font-size:.64rem!important;padding:3px 6px!important;border-radius:7px!important}
-@media(max-width:760px){div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]{grid-template-columns:minmax(0,1fr)!important}.result-card{padding:6px!important}.result-price-row{grid-template-columns:minmax(0,1fr)!important;gap:5px!important}.result-metrics-rail{grid-template-columns:repeat(3,minmax(0,1fr))!important}.result-mini-metric{justify-content:center!important}.result-mini-state{display:none!important}.result-target-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -183,9 +107,7 @@ if "theme_mode" not in st.session_state:
 
 def apply_theme():
     if st.session_state.theme_mode == "light":
-        st.markdown("""<style>:root{--bg:#f5f7fa;--card:#fff;--card2:#f8fafc;--border:rgba(15,23,42,.12);--text:#111827;--muted:#64748b;--accent:#079669;--red:#dc3545;--yellow:#b7791f;--chart-bg:#f5f7fa}[class*="st-key-result-open-"] .stButton>button{background:linear-gradient(135deg,#10b981,#0bbf83)!important;border:0!important;color:#062a20!important;font-size:.82rem;font-weight:950;min-height:39px;border-radius:999px;box-shadow:0 4px 12px rgba(16,185,129,.14)}[class*="st-key-result-open-"] .stButton>button:hover{filter:brightness(1.04);transform:translateY(-1px)}</style>""", unsafe_allow_html=True)
-    else:
-        st.markdown("""<style>[class*="st-key-result-open-"] .stButton>button{background:transparent!important;border:1px solid var(--accent)!important;color:var(--accent)!important;font-size:.82rem;font-weight:950;min-height:39px;border-radius:999px;box-shadow:none}[class*="st-key-result-open-"] .stButton>button:hover{background:rgba(25,211,138,.08)!important;transform:translateY(-1px)}</style>""", unsafe_allow_html=True)
+        st.markdown("""<style>:root{--bg:#f5f7fa;--card:#fff;--card2:#f8fafc;--border:rgba(15,23,42,.12);--text:#111827;--muted:#64748b;--accent:#079669;--red:#dc3545;--yellow:#b7791f;--chart-bg:#f5f7fa}</style>""", unsafe_allow_html=True)
 
 def render_reload_guard(active=True):
     """Warn before a browser refresh/navigation while a scan is running.
@@ -1066,117 +988,28 @@ def render_home():
     if sort_cols:
         ascending = [False, False, False, True][:len(sort_cols)]
         display = display.sort_values(sort_cols, ascending=ascending, kind="stable").reset_index(drop=True)
-    st.markdown(f'<div class="section-title">Scanned Stocks ({len(display)})</div>', unsafe_allow_html=True)
-    st.markdown('<div class="rank-note">Ranked by the scanner strength rating, with score as the tie-breaker. Switch between dark and light mode using the sun toggle.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-title">Scanned Stocks ({len(display)})</div>',unsafe_allow_html=True); st.markdown('<div class="rank-note">Sorted by Strength: highest first. Score is used as the tie-breaker.</div>',unsafe_allow_html=True)
+    for start in range(0,len(display),2):
+        cols=st.columns(2)
+        for j,col in enumerate(cols):
+            idx=start+j
+            if idx>=len(display): continue
+            row=display.iloc[idx]; ratio=idx/max(len(display)-1,1)
+            color="#19d38a" if ratio<.2 else "#8fd66a" if ratio<.4 else "#f5c451" if ratio<.6 else "#ff9b4a" if ratio<.8 else "#ff5c70"
+            with col:
+                rating = int(float(row.get("rating", 0) or 0))
+                rating_color = "#19d38a" if rating >= 8 else "#8fd66a" if rating >= 7 else "#f5c451" if rating >= 5 else "#ff9b4a" if rating >= 3 else "#ff5c70"
+                score = float(row.get("score", 0) or 0)
+                t1 = float(row.get("target1", 0) or 0)
+                t2 = float(row.get("target2", 0) or 0)
+                price = float(row.get("price", 0) or 0)
+                t1_up = ((t1 - price) / price * 100) if price else 0.0
+                t2_up = ((t2 - price) / price * 100) if price else 0.0
+                st.markdown(f'''<div style="border-radius:14px;border:1px solid rgba(255,255,255,.12);padding:10px 11px 8px;background:linear-gradient(145deg,{color}22,var(--card));margin-bottom:-4px"><div style="font-size:.72rem;font-weight:900;color:{color}">RANK #{idx+1} &nbsp;•&nbsp; {html.escape(str(row.get("cap_category","")))}</div><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="font-weight:950;font-size:1rem;color:var(--text)">{html.escape(str(row.get("company_name",row["symbol"])))}</div><span style="flex:none;padding:4px 7px;border-radius:999px;border:1px solid {rating_color}66;background:{rating_color}18;color:{rating_color};font-size:.68rem;font-weight:950;white-space:nowrap">Rating {rating}/10</span><span style="padding:4px 7px;border-radius:999px;border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.06);color:var(--text);font-size:.68rem;font-weight:950;white-space:nowrap">Score {score:.1f}/100</span></div><div class="small-muted">{html.escape(str(row["symbol"]))}</div><div style="font-weight:950;font-size:1.05rem;margin-top:5px">{money(price)}</div><div style="font-size:.75rem;color:{color};font-weight:900">{float(row.get("distance_pct",0)):.2f}% to breakout</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px"><div style="border:1px solid rgba(25,211,138,.24);border-radius:10px;padding:7px 8px;background:rgba(25,211,138,.06)"><div style="font-size:.68rem;font-weight:900;color:#19d38a">TARGET 1</div><div style="font-size:.98rem;font-weight:950;margin-top:2px">{money(t1)}</div><div class="small-muted">+{t1_up:.2f}% from price</div></div><div style="border:1px solid rgba(25,211,138,.24);border-radius:10px;padding:7px 8px;background:rgba(25,211,138,.06)"><div style="font-size:.68rem;font-weight:900;color:#19d38a">TARGET 2</div><div style="font-size:.98rem;font-weight:950;margin-top:2px">{money(t2)}</div><div class="small-muted">+{t2_up:.2f}% from price</div></div></div></div>''',unsafe_allow_html=True)
+                if st.button(f"Open {row['symbol']}",key=f"stock_{row['symbol']}",use_container_width=True):
+                    st.session_state.selected_stock=row["symbol"]; st.session_state.selected_row=row.to_dict(); st.session_state.page="detail"; st.rerun()
+    st.markdown('<div class="small-muted" style="text-align:center;margin-top:12px">Breakout levels are technical reference levels, not guaranteed predictions.</div>',unsafe_allow_html=True)
 
-    def display_num(value, default=0.0):
-        try:
-            number = float(value)
-            return number if np.isfinite(number) else default
-        except (TypeError, ValueError):
-            return default
-
-    # Keep the familiar two-stock grid on desktop while allowing Streamlit to
-    # collapse columns naturally on narrow screens. This is presentation only.
-    for pair_start in range(0, len(display), 2):
-        with st.container(key=f"result-grid-{pair_start}"):
-            card_columns = st.columns([1, 1], gap="small")
-            pair_rows = display.iloc[pair_start:pair_start + 2]
-            for pair_offset, (_, row) in enumerate(pair_rows.iterrows()):
-                idx = pair_start + pair_offset
-                with card_columns[pair_offset]:
-                    symbol = str(row.get("symbol", "—"))
-                    symbol_html = html.escape(symbol)
-                    company_html = html.escape(str(row.get("company_name", symbol)))
-                    cap_html = html.escape(str(row.get("cap_category", "")).replace("_", " "))
-                    rating = int(round(display_num(row.get("rating", 0))))
-                    score = display_num(row.get("score", 0))
-                    price = display_num(row.get("price", 0))
-                    distance = display_num(row.get("distance_pct", 0))
-                    breakout = display_num(row.get("breakout_trigger", row.get("breakout_level", 0)))
-                    level = display_num(row.get("breakout_level", breakout))
-                    t1 = display_num(row.get("target1", 0))
-                    t2 = display_num(row.get("target2", 0))
-                    stop = display_num(row.get("stop_reference", 0))
-                    rsi = display_num(row.get("rsi", 0))
-                    adx = display_num(row.get("adx", 0))
-                    macd = display_num(row.get("macd", 0))
-
-                    # UI-only T3: extend the scanner's existing T1-to-T2 interval once more.
-                    # The scanner still returns and saves only its native T1 and T2 values.
-                    t3 = (t2 + (t2 - t1)) if (t1 > 0 and t2 > t1) else 0.0
-                    t1_up = ((t1 - price) / price * 100) if price else 0.0
-                    t2_up = ((t2 - price) / price * 100) if price else 0.0
-                    t3_up = ((t3 - price) / price * 100) if price and t3 else 0.0
-
-                    # A negative distance means price has reached/passed the scanner's breakout level.
-                    progress = 100.0 if distance <= 0 else max(0.0, min(100.0, 100.0 - distance * 10.0))
-                    if price >= level and level > 0:
-                        distance_label = "BREAKOUT CONFIRMED ✓"
-                    else:
-                        distance_label = f"{distance:.2f}% TO BREAKOUT ↗"
-
-                    if 50 <= rsi <= 70:
-                        rsi_state = "CONSTRUCTIVE ↗"
-                    elif rsi > 70:
-                        rsi_state = "EXTENDED"
-                    elif rsi >= 45:
-                        rsi_state = "NEUTRAL"
-                    else:
-                        rsi_state = "WEAK MOMENTUM"
-                    if adx >= 25:
-                        adx_state = "TRENDING"
-                    elif adx >= 20:
-                        adx_state = "TREND BUILDING ↗"
-                    else:
-                        adx_state = "WEAK TREND"
-                    macd_state = "ABOVE ZERO" if macd > 0 else "BELOW ZERO" if macd < 0 else "NEAR ZERO"
-
-                    st.markdown(f'''<div class="result-card">
-                      <div class="result-header">
-                        <div class="result-identity">
-                          <div class="result-rank">RANK #{idx + 1} &nbsp;•&nbsp; {cap_html}</div>
-                          <div class="result-company">{company_html}</div>
-                          <div class="result-symbol">{symbol_html}</div>
-                        </div>
-                        <div class="result-badges">
-                          <span class="result-badge rating">RATING: {rating}/10</span>
-                          <span class="result-badge">SCORE: {score:.1f}/100</span>
-                        </div>
-                      </div>
-                      <div class="result-price-row">
-                        <div>
-                          <div class="result-price">{money(price)}</div>
-                          <div class="result-price-caption">CURRENT SCANNER PRICE</div>
-                        </div>
-                        <div class="result-breakout">
-                          <div class="result-breakout-head"><span>BREAKOUT</span><strong>{money(breakout)}</strong></div>
-                          <div class="result-distance">{distance_label}</div>
-                          <div class="result-progress"><div style="width:{progress:.1f}%"></div></div>
-                        </div>
-                        <div class="result-metrics-rail" aria-label="Momentum indicator values">
-                          <div class="result-mini-metric rsi" title="{rsi_state}"><span class="result-mini-label">RSI <strong>{rsi:.1f}</strong></span><span class="result-mini-state">{rsi_state}</span></div>
-                          <div class="result-mini-metric adx" title="{adx_state}"><span class="result-mini-label">ADX <strong>{adx:.1f}</strong></span><span class="result-mini-state">{adx_state}</span></div>
-                          <div class="result-mini-metric macd" title="{macd_state}"><span class="result-mini-label">MACD <strong>{macd:+.2f}</strong></span><span class="result-mini-state">{macd_state}</span></div>
-                        </div>
-                      </div>
-                      <div class="result-section-label">Targets</div>
-                      <div class="result-target-grid">
-                        <div class="result-target t1"><div class="result-target-label">T-1 Price</div><div class="result-target-price">{money(t1)}</div><div class="result-target-upside">{t1_up:+.2f}% from price</div></div>
-                        <div class="result-target"><div class="result-target-label">T-2 Price</div><div class="result-target-price">{money(t2)}</div><div class="result-target-upside">{t2_up:+.2f}% from price</div></div>
-                        <div class="result-target t3"><div class="result-target-label">T-3 Price · projected</div><div class="result-target-price">{money(t3) if t3 else '—'}</div><div class="result-target-upside">{f'{t3_up:+.2f}% from price' if t3 else 'Not available'}</div></div>
-                      </div>
-                      <div class="result-footnote">T-3 is a display-only extension of the T1–T2 price interval; scanner scoring, native targets, and saved audit values are unchanged. Stop reference: {money(stop)}.</div>
-                    </div>''', unsafe_allow_html=True)
-                    with st.container(key=f"result-open-{symbol.replace('.', '-') }"):
-                        if st.button(f"OPEN {symbol} • VIEW CHART", key=f"stock_{symbol}", use_container_width=True):
-                            st.session_state.selected_stock = symbol
-                            st.session_state.selected_row = row.to_dict()
-                            st.session_state.page = "detail"
-                            st.rerun()
-
-
-    st.markdown('<div class="small-muted" style="text-align:center;margin-top:18px">Breakout levels are technical reference levels, not guaranteed predictions.</div>', unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Session-state navigation: only two pages, no multipage folder.
