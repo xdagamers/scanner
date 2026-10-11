@@ -654,13 +654,10 @@ def render_detail(symbol,row):
         st.session_state.page="home"; st.rerun()
     company=row.get("company_name",symbol); last,change,change_pct=day_change(symbol); price=last if last is not None else row.get("price")
     score=float(row.get("score",0)); label,strong=verdict(score); change_cls="up" if (change_pct or 0)>=0 else "down"; arrow="▲" if (change_pct or 0)>=0 else "▼"
-    t1,t2,target_note=target_values(row,price)  # Retained for the technical-data panel below; not shown in these summary tiles.
-    rsi_value = float(row.get("rsi", 0) or 0)
-    adx_value = float(row.get("adx", 0) or 0)
-    macd_value = float(row.get("macd", 0) or 0)
-    macd_state = "ABOVE ZERO" if macd_value > 0 else "BELOW ZERO" if macd_value < 0 else "NEAR ZERO"
-    note_html=f'<div class="small-muted" style="margin-top:7px">Momentum indicators: RSI, ADX and MACD.</div>' if target_note else ''
-    st.markdown(f'''<div class="card"><div class="small-muted">{html.escape(str(company))}</div><div style="font-size:1.15rem;font-weight:900">{html.escape(symbol)}</div><div class="hero-price">{money(price)}</div><div class="{change_cls}" style="font-weight:850">{arrow} {money(change)} ({pct(change_pct)})</div><div style="height:8px"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="target-box"><div class="target-label">RSI</div><div class="target-value">{rsi_value:.1f}</div><div class="target-upside">ADX: {adx_value:.1f}</div></div><div class="target-box"><div class="target-label">MACD</div><div class="target-value">{macd_value:+.2f}</div><div class="target-upside">{macd_state}</div></div></div>{note_html}</div>''',unsafe_allow_html=True)
+    t1,t2,target_note=target_values(row,price)
+    t1up=((t1/price)-1)*100 if price else 0; t2up=((t2/price)-1)*100 if price else 0
+    note_html=f'<div class="small-muted" style="margin-top:7px">{html.escape(target_note)}</div>' if target_note else ''
+    st.markdown(f'''<div class="card"><div class="small-muted">{html.escape(str(company))}</div><div style="font-size:1.15rem;font-weight:900">{html.escape(symbol)}</div><div class="hero-price">{money(price)}</div><div class="{change_cls}" style="font-weight:850">{arrow} {money(change)} ({pct(change_pct)})</div><div style="height:8px"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}% upside</div></div><div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}% upside</div></div></div>{note_html}</div>''',unsafe_allow_html=True)
     light=st.session_state.theme_mode=="light"
     fig=go.Figure(go.Indicator(mode="gauge+number",value=score,number={"suffix":" / 100","font":{"size":38,"color":"#111827" if light else "#f1f5f9"}},title={"text":"Technical Setup Strength"},gauge={"axis":{"range":[0,100],"tickwidth":1,"tickcolor":"#64748b"},"bar":{"color":"#079669" if light else "#19d38a","thickness":.22},"bgcolor":"#e5e7eb" if light else "#0b1829","borderwidth":0,"steps":[{"range":[0,40],"color":"#f3c4ca"},{"range":[40,65],"color":"#f5e4ad"},{"range":[65,80],"color":"#d9ecb0"},{"range":[80,100],"color":"#b8efd9"}]}))
     fig.update_layout(template="plotly_white" if light else "plotly_dark",height=245,margin=dict(l=15,r=15,t=45,b=5),paper_bgcolor="#fff" if light else "#0c192b")
