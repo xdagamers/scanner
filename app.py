@@ -140,6 +140,39 @@ html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;colo
 @media(max-width:520px){.result-card{padding:9px;border-radius:12px}.result-header{grid-template-columns:minmax(0,1fr);gap:6px}.result-badges{flex-direction:row;align-items:flex-start;flex-wrap:wrap;min-width:0}.result-badge{font-size:.65rem;padding:3px 6px}.result-price-row{grid-template-columns:minmax(0,1fr);gap:7px;margin-top:8px;padding-top:8px}.result-price{font-size:1.5rem}.result-metrics-rail{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.result-mini-metric{padding:4px 5px;justify-content:center}.result-mini-label{font-size:.63rem}.result-mini-label strong{font-size:.66rem;margin-left:2px}.result-mini-state{display:none}.result-target-grid{gap:4px}.result-target{padding:6px 5px;border-radius:8px}.result-target-label{font-size:.61rem}.result-target-price{font-size:.82rem}.result-target-upside{font-size:.6rem}}
 @keyframes pulse{50%{opacity:.45;transform:scale(.75)}}@keyframes glow{from{box-shadow:0 0 4px rgba(25,211,138,.1)}to{box-shadow:0 0 20px rgba(25,211,138,.45)}}
 @media(max-width:520px){.block-container{padding:.65rem .55rem 4rem!important}.index-wrap{justify-content:flex-start}.hero-price{font-size:1.9rem}.stButton>button{min-height:44px}.target-value{font-size:1rem}.metric-value{font-size:.98rem}}
+/* Result grid: force two equal desktop columns, preventing cards from expanding to full row width. */
+div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.65rem!important;align-items:start!important;width:100%!important;min-width:0!important}
+div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]>[data-testid="column"]{width:100%!important;min-width:0!important;max-width:100%!important;flex:1 1 0!important;padding:0!important}
+div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]>[data-testid="column"]>div{width:100%!important;min-width:0!important;max-width:100%!important}
+div[class*="st-key-result-grid-"] .stMarkdown,div[class*="st-key-result-grid-"] .stElementContainer{width:100%!important;min-width:0!important;max-width:100%!important}
+.result-card{display:block;width:100%!important;max-width:100%!important;min-width:0!important;overflow:hidden;padding:6px!important;margin:4px 0 0!important;border-radius:10px!important}
+.result-header{grid-template-columns:minmax(0,1fr) auto!important;gap:5px!important}
+.result-rank{font-size:.55rem!important;margin-bottom:2px!important}
+.result-company{font-size:clamp(.78rem,1.05vw,1.02rem)!important;line-height:1.08!important;letter-spacing:-.015em!important}
+.result-symbol{font-size:.66rem!important;margin-top:2px!important}
+.result-badges{gap:3px!important;min-width:0!important}
+.result-badge{font-size:.54rem!important;padding:2px 4px!important;line-height:1.15!important}
+.result-price-row{grid-template-columns:minmax(0,.76fr) minmax(0,1.05fr) minmax(0,.9fr)!important;gap:5px!important;margin-top:6px!important;padding-top:6px!important;min-width:0!important}
+.result-price{font-size:clamp(.95rem,1.25vw,1.28rem)!important;line-height:1.05!important;overflow-wrap:anywhere!important}
+.result-price-caption{font-size:.48rem!important;line-height:1.15!important;letter-spacing:0!important}
+.result-breakout-head{font-size:.56rem!important;gap:3px!important;flex-wrap:wrap!important}
+.result-breakout-head strong{font-size:.64rem!important;white-space:normal!important;overflow-wrap:anywhere!important}
+.result-distance{font-size:.54rem!important;line-height:1.15!important;margin:3px 0!important;overflow-wrap:anywhere!important}
+.result-progress{height:4px!important}
+.result-metrics-rail{grid-template-columns:minmax(0,1fr)!important;gap:2px!important;min-width:0!important}
+.result-mini-metric{gap:2px!important;padding:2px 4px!important;border-radius:5px!important;min-width:0!important}
+.result-mini-label{font-size:.55rem!important}
+.result-mini-label strong{font-size:.58rem!important;margin-left:2px!important}
+.result-mini-state{font-size:.43rem!important;max-width:58px!important}
+.result-section-label{font-size:.59rem!important;margin:7px 0 3px!important}
+.result-target-grid{gap:3px!important}
+.result-target{padding:4px 4px!important;border-radius:6px!important}
+.result-target-label{font-size:.48rem!important;line-height:1.12!important}
+.result-target-price{font-size:clamp(.64rem,.85vw,.82rem)!important;line-height:1.12!important;margin-top:2px!important}
+.result-target-upside{font-size:.46rem!important;line-height:1.1!important;overflow-wrap:anywhere!important}
+.result-footnote{font-size:.48rem!important;line-height:1.15!important;margin-top:4px!important}
+div[class*="st-key-result-open-"] .stButton>button{min-height:29px!important;font-size:.64rem!important;padding:3px 6px!important;border-radius:7px!important}
+@media(max-width:760px){div[class*="st-key-result-grid-"] [data-testid="stHorizontalBlock"]{grid-template-columns:minmax(0,1fr)!important}.result-card{padding:6px!important}.result-price-row{grid-template-columns:minmax(0,1fr)!important;gap:5px!important}.result-metrics-rail{grid-template-columns:repeat(3,minmax(0,1fr))!important}.result-mini-metric{justify-content:center!important}.result-mini-state{display:none!important}.result-target-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -1046,100 +1079,101 @@ def render_home():
     # Keep the familiar two-stock grid on desktop while allowing Streamlit to
     # collapse columns naturally on narrow screens. This is presentation only.
     for pair_start in range(0, len(display), 2):
-        card_columns = st.columns(2, gap="medium")
-        pair_rows = display.iloc[pair_start:pair_start + 2]
-        for pair_offset, (_, row) in enumerate(pair_rows.iterrows()):
-            idx = pair_start + pair_offset
-            with card_columns[pair_offset]:
-                symbol = str(row.get("symbol", "—"))
-                symbol_html = html.escape(symbol)
-                company_html = html.escape(str(row.get("company_name", symbol)))
-                cap_html = html.escape(str(row.get("cap_category", "")).replace("_", " "))
-                rating = int(round(display_num(row.get("rating", 0))))
-                score = display_num(row.get("score", 0))
-                price = display_num(row.get("price", 0))
-                distance = display_num(row.get("distance_pct", 0))
-                breakout = display_num(row.get("breakout_trigger", row.get("breakout_level", 0)))
-                level = display_num(row.get("breakout_level", breakout))
-                t1 = display_num(row.get("target1", 0))
-                t2 = display_num(row.get("target2", 0))
-                stop = display_num(row.get("stop_reference", 0))
-                rsi = display_num(row.get("rsi", 0))
-                adx = display_num(row.get("adx", 0))
-                macd = display_num(row.get("macd", 0))
+        with st.container(key=f"result-grid-{pair_start}"):
+            card_columns = st.columns([1, 1], gap="small")
+            pair_rows = display.iloc[pair_start:pair_start + 2]
+            for pair_offset, (_, row) in enumerate(pair_rows.iterrows()):
+                idx = pair_start + pair_offset
+                with card_columns[pair_offset]:
+                    symbol = str(row.get("symbol", "—"))
+                    symbol_html = html.escape(symbol)
+                    company_html = html.escape(str(row.get("company_name", symbol)))
+                    cap_html = html.escape(str(row.get("cap_category", "")).replace("_", " "))
+                    rating = int(round(display_num(row.get("rating", 0))))
+                    score = display_num(row.get("score", 0))
+                    price = display_num(row.get("price", 0))
+                    distance = display_num(row.get("distance_pct", 0))
+                    breakout = display_num(row.get("breakout_trigger", row.get("breakout_level", 0)))
+                    level = display_num(row.get("breakout_level", breakout))
+                    t1 = display_num(row.get("target1", 0))
+                    t2 = display_num(row.get("target2", 0))
+                    stop = display_num(row.get("stop_reference", 0))
+                    rsi = display_num(row.get("rsi", 0))
+                    adx = display_num(row.get("adx", 0))
+                    macd = display_num(row.get("macd", 0))
 
-                # UI-only T3: extend the scanner's existing T1-to-T2 interval once more.
-                # The scanner still returns and saves only its native T1 and T2 values.
-                t3 = (t2 + (t2 - t1)) if (t1 > 0 and t2 > t1) else 0.0
-                t1_up = ((t1 - price) / price * 100) if price else 0.0
-                t2_up = ((t2 - price) / price * 100) if price else 0.0
-                t3_up = ((t3 - price) / price * 100) if price and t3 else 0.0
+                    # UI-only T3: extend the scanner's existing T1-to-T2 interval once more.
+                    # The scanner still returns and saves only its native T1 and T2 values.
+                    t3 = (t2 + (t2 - t1)) if (t1 > 0 and t2 > t1) else 0.0
+                    t1_up = ((t1 - price) / price * 100) if price else 0.0
+                    t2_up = ((t2 - price) / price * 100) if price else 0.0
+                    t3_up = ((t3 - price) / price * 100) if price and t3 else 0.0
 
-                # A negative distance means price has reached/passed the scanner's breakout level.
-                progress = 100.0 if distance <= 0 else max(0.0, min(100.0, 100.0 - distance * 10.0))
-                if price >= level and level > 0:
-                    distance_label = "BREAKOUT CONFIRMED ✓"
-                else:
-                    distance_label = f"{distance:.2f}% TO BREAKOUT ↗"
+                    # A negative distance means price has reached/passed the scanner's breakout level.
+                    progress = 100.0 if distance <= 0 else max(0.0, min(100.0, 100.0 - distance * 10.0))
+                    if price >= level and level > 0:
+                        distance_label = "BREAKOUT CONFIRMED ✓"
+                    else:
+                        distance_label = f"{distance:.2f}% TO BREAKOUT ↗"
 
-                if 50 <= rsi <= 70:
-                    rsi_state = "CONSTRUCTIVE ↗"
-                elif rsi > 70:
-                    rsi_state = "EXTENDED"
-                elif rsi >= 45:
-                    rsi_state = "NEUTRAL"
-                else:
-                    rsi_state = "WEAK MOMENTUM"
-                if adx >= 25:
-                    adx_state = "TRENDING"
-                elif adx >= 20:
-                    adx_state = "TREND BUILDING ↗"
-                else:
-                    adx_state = "WEAK TREND"
-                macd_state = "ABOVE ZERO" if macd > 0 else "BELOW ZERO" if macd < 0 else "NEAR ZERO"
+                    if 50 <= rsi <= 70:
+                        rsi_state = "CONSTRUCTIVE ↗"
+                    elif rsi > 70:
+                        rsi_state = "EXTENDED"
+                    elif rsi >= 45:
+                        rsi_state = "NEUTRAL"
+                    else:
+                        rsi_state = "WEAK MOMENTUM"
+                    if adx >= 25:
+                        adx_state = "TRENDING"
+                    elif adx >= 20:
+                        adx_state = "TREND BUILDING ↗"
+                    else:
+                        adx_state = "WEAK TREND"
+                    macd_state = "ABOVE ZERO" if macd > 0 else "BELOW ZERO" if macd < 0 else "NEAR ZERO"
 
-                st.markdown(f'''<div class="result-card">
-                  <div class="result-header">
-                    <div class="result-identity">
-                      <div class="result-rank">RANK #{idx + 1} &nbsp;•&nbsp; {cap_html}</div>
-                      <div class="result-company">{company_html}</div>
-                      <div class="result-symbol">{symbol_html}</div>
-                    </div>
-                    <div class="result-badges">
-                      <span class="result-badge rating">RATING: {rating}/10</span>
-                      <span class="result-badge">SCORE: {score:.1f}/100</span>
-                    </div>
-                  </div>
-                  <div class="result-price-row">
-                    <div>
-                      <div class="result-price">{money(price)}</div>
-                      <div class="result-price-caption">CURRENT SCANNER PRICE</div>
-                    </div>
-                    <div class="result-breakout">
-                      <div class="result-breakout-head"><span>BREAKOUT</span><strong>{money(breakout)}</strong></div>
-                      <div class="result-distance">{distance_label}</div>
-                      <div class="result-progress"><div style="width:{progress:.1f}%"></div></div>
-                    </div>
-                    <div class="result-metrics-rail" aria-label="Momentum indicator values">
-                      <div class="result-mini-metric rsi" title="{rsi_state}"><span class="result-mini-label">RSI <strong>{rsi:.1f}</strong></span><span class="result-mini-state">{rsi_state}</span></div>
-                      <div class="result-mini-metric adx" title="{adx_state}"><span class="result-mini-label">ADX <strong>{adx:.1f}</strong></span><span class="result-mini-state">{adx_state}</span></div>
-                      <div class="result-mini-metric macd" title="{macd_state}"><span class="result-mini-label">MACD <strong>{macd:+.2f}</strong></span><span class="result-mini-state">{macd_state}</span></div>
-                    </div>
-                  </div>
-                  <div class="result-section-label">Targets</div>
-                  <div class="result-target-grid">
-                    <div class="result-target t1"><div class="result-target-label">T-1 Price</div><div class="result-target-price">{money(t1)}</div><div class="result-target-upside">{t1_up:+.2f}% from price</div></div>
-                    <div class="result-target"><div class="result-target-label">T-2 Price</div><div class="result-target-price">{money(t2)}</div><div class="result-target-upside">{t2_up:+.2f}% from price</div></div>
-                    <div class="result-target t3"><div class="result-target-label">T-3 Price · projected</div><div class="result-target-price">{money(t3) if t3 else '—'}</div><div class="result-target-upside">{f'{t3_up:+.2f}% from price' if t3 else 'Not available'}</div></div>
-                  </div>
-                  <div class="result-footnote">T-3 is a display-only extension of the T1–T2 price interval; scanner scoring, native targets, and saved audit values are unchanged. Stop reference: {money(stop)}.</div>
-                </div>''', unsafe_allow_html=True)
-                with st.container(key=f"result-open-{symbol.replace('.', '-') }"):
-                    if st.button(f"OPEN {symbol} • VIEW CHART", key=f"stock_{symbol}", use_container_width=True):
-                        st.session_state.selected_stock = symbol
-                        st.session_state.selected_row = row.to_dict()
-                        st.session_state.page = "detail"
-                        st.rerun()
+                    st.markdown(f'''<div class="result-card">
+                      <div class="result-header">
+                        <div class="result-identity">
+                          <div class="result-rank">RANK #{idx + 1} &nbsp;•&nbsp; {cap_html}</div>
+                          <div class="result-company">{company_html}</div>
+                          <div class="result-symbol">{symbol_html}</div>
+                        </div>
+                        <div class="result-badges">
+                          <span class="result-badge rating">RATING: {rating}/10</span>
+                          <span class="result-badge">SCORE: {score:.1f}/100</span>
+                        </div>
+                      </div>
+                      <div class="result-price-row">
+                        <div>
+                          <div class="result-price">{money(price)}</div>
+                          <div class="result-price-caption">CURRENT SCANNER PRICE</div>
+                        </div>
+                        <div class="result-breakout">
+                          <div class="result-breakout-head"><span>BREAKOUT</span><strong>{money(breakout)}</strong></div>
+                          <div class="result-distance">{distance_label}</div>
+                          <div class="result-progress"><div style="width:{progress:.1f}%"></div></div>
+                        </div>
+                        <div class="result-metrics-rail" aria-label="Momentum indicator values">
+                          <div class="result-mini-metric rsi" title="{rsi_state}"><span class="result-mini-label">RSI <strong>{rsi:.1f}</strong></span><span class="result-mini-state">{rsi_state}</span></div>
+                          <div class="result-mini-metric adx" title="{adx_state}"><span class="result-mini-label">ADX <strong>{adx:.1f}</strong></span><span class="result-mini-state">{adx_state}</span></div>
+                          <div class="result-mini-metric macd" title="{macd_state}"><span class="result-mini-label">MACD <strong>{macd:+.2f}</strong></span><span class="result-mini-state">{macd_state}</span></div>
+                        </div>
+                      </div>
+                      <div class="result-section-label">Targets</div>
+                      <div class="result-target-grid">
+                        <div class="result-target t1"><div class="result-target-label">T-1 Price</div><div class="result-target-price">{money(t1)}</div><div class="result-target-upside">{t1_up:+.2f}% from price</div></div>
+                        <div class="result-target"><div class="result-target-label">T-2 Price</div><div class="result-target-price">{money(t2)}</div><div class="result-target-upside">{t2_up:+.2f}% from price</div></div>
+                        <div class="result-target t3"><div class="result-target-label">T-3 Price · projected</div><div class="result-target-price">{money(t3) if t3 else '—'}</div><div class="result-target-upside">{f'{t3_up:+.2f}% from price' if t3 else 'Not available'}</div></div>
+                      </div>
+                      <div class="result-footnote">T-3 is a display-only extension of the T1–T2 price interval; scanner scoring, native targets, and saved audit values are unchanged. Stop reference: {money(stop)}.</div>
+                    </div>''', unsafe_allow_html=True)
+                    with st.container(key=f"result-open-{symbol.replace('.', '-') }"):
+                        if st.button(f"OPEN {symbol} • VIEW CHART", key=f"stock_{symbol}", use_container_width=True):
+                            st.session_state.selected_stock = symbol
+                            st.session_state.selected_row = row.to_dict()
+                            st.session_state.page = "detail"
+                            st.rerun()
 
 
     st.markdown('<div class="small-muted" style="text-align:center;margin-top:18px">Breakout levels are technical reference levels, not guaranteed predictions.</div>', unsafe_allow_html=True)
