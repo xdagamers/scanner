@@ -8,10 +8,14 @@ import yfinance as yf
 # NIFTY LargeMidcap 250 = NIFTY 100 + NIFTY Midcap 150.
 # This is the official NSE "top 250" broad large+mid-cap universe.
 NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftylargemidcap250list.csv"
+NIFTYINDICES_URL = "https://www.niftyindices.com/IndexConstituent/ind_niftylargemidcap250list.csv"
 LEGACY_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
     "Accept": "text/csv,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "Referer": "https://www.nseindia.com/market-data/live-equity-market",
 }
 
 DEFAULT_WEIGHTS = {
@@ -29,15 +33,38 @@ DEFAULT_WEIGHTS = {
 
 
 def _load_csv(url):
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    r.raise_for_status()
-    return pd.read_csv(io.StringIO(r.text))
+    """Download a CSV with an NSE session warm-up and browser-like headers."""
+    with requests.Session() as session:
+        session.headers.update(HEADERS)
+        try:
+            session.get(
+                "https://www.nseindia.com/",
+                timeout=15,
+                allow_redirects=True,
+            )
+        except Exception:
+            pass
+
+        r = session.get(
+            url,
+            headers={"Referer": "https://www.nseindia.com/"},
+            timeout=30,
+            allow_redirects=True,
+        )
+        r.raise_for_status()
+        content = r.content.decode("utf-8-sig", errors="replace")
+        return pd.read_csv(io.StringIO(content))
 
 
 def load_universe():
-    """Load the official NSE NIFTY LargeMidcap 250 universe."""
+    """Load the official NIFTY LargeMidcap 250 universe.
+
+    The constituent source is attempted from NSE first and from the official
+    Nifty Indices host second if NSE's archive server returns 403/other errors.
+    Scanner scoring/ranking/criteria are unchanged.
+    """
     errors = []
-    for url in (NSE_URL,):
+    for url in (NSE_URL, NIFTYINDICES_URL):
         try:
             df = _load_csv(url)
             symbol_col = next((c for c in df.columns if c.strip().lower() == "symbol"), None)
@@ -133,13 +160,18 @@ def ema(s, n):
 
 
 def rsi(close, n=14):
+    """RSI with explicit behaviour for zero-loss and flat-price windows."""
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     avg_gain = gain.ewm(alpha=1 / n, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / n, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+    out = 100 - (100 / (1 + rs))
+    only_gains = (avg_loss == 0) & (avg_gain > 0)
+    no_movement = (avg_loss == 0) & (avg_gain == 0)
+    out = out.mask(only_gains, 100.0).mask(no_movement, 50.0)
+    return out
 
 
 def macd(close):
@@ -255,11 +287,22 @@ def fetch_index_history(symbol="^NSEI", period="2y"):
 
 
 def relative_strength_vs_index(stock_df, index_df, window=60):
-    if index_df is None or len(stock_df) <= window or len(index_df) <= window:
+    """Calculate excess return over a common set of stock/index dates."""
+    if index_df is None or stock_df is None or stock_df.empty or index_df.empty:
         return 0.0
-    a = float(stock_df.Close.iloc[-1] / stock_df.Close.iloc[-window - 1] - 1)
-    b = float(index_df.Close.iloc[-1] / index_df.Close.iloc[-window - 1] - 1)
-    return (a - b) * 100
+    try:
+        aligned = pd.concat(
+            [stock_df["Close"].rename("stock"), index_df["Close"].rename("index")],
+            axis=1,
+            join="inner",
+        ).dropna().sort_index()
+        if len(aligned) <= window:
+            return 0.0
+        stock_return = float(aligned["stock"].iloc[-1] / aligned["stock"].iloc[-window - 1] - 1)
+        index_return = float(aligned["index"].iloc[-1] / aligned["index"].iloc[-window - 1] - 1)
+        return (stock_return - index_return) * 100
+    except Exception:
+        return 0.0
 
 
 def _market_regime(index_df):
@@ -300,7 +343,9 @@ def component_scores(df, nifty_df=None, sector_df=None):
     adx_v, plus_v, minus_v = map(_safe_float, [adx_series.iloc[-1], plus_di.iloc[-1], minus_di.iloc[-1]])
     e20, e50 = _safe_float(ema(close, 20).iloc[-1]), _safe_float(ema(close, 50).iloc[-1])
     e200 = _safe_float(close.rolling(200).mean().iloc[-1])
-    rvol = _safe_float(volume.iloc[-1] / volume.rolling(20).mean().iloc[-1], 0)
+    # Compare the current session with the previous 20 completed sessions.
+    prior_20d_avg_volume = volume.rolling(20, min_periods=20).mean().shift(1).iloc[-1]
+    rvol = _safe_float(volume.iloc[-1] / prior_20d_avg_volume, 0) if _safe_float(prior_20d_avg_volume) > 0 else 0.0
     candle = candle_pattern(df)
     ret60 = _safe_float(close.iloc[-1] / close.iloc[-61] - 1) * 100 if len(close) > 61 else 0
     nifty_rs = relative_strength_vs_index(df, nifty_df, 60)
@@ -340,7 +385,8 @@ def component_scores(df, nifty_df=None, sector_df=None):
     elif nifty_rs >= 0: rs_score = .35
     if sector_rs > 5: rs_score = min(1, rs_score + .2)
 
-    candle_score = {"Bullish Engulfing":1,"Bullish Marubozu":1,"Morning Star":1,"Three White Soldiers":1,"Hammer":.8,"Piercing Line":.8,"Inside Bar":.6,"None":0}.get(candle, 0)
+    # An inside bar is direction-neutral until its range breaks.
+    candle_score = {"Bullish Engulfing":1,"Bullish Marubozu":1,"Morning Star":1,"Three White Soldiers":1,"Hammer":.8,"Piercing Line":.8,"Inside Bar":0,"None":0}.get(candle, 0)
 
     # A 0.25% trigger buffer avoids treating tiny intraday pierces as confirmed breakouts.
     breakout_trigger = breakout * 1.0025
@@ -384,7 +430,9 @@ def score_stock(df, nifty_df=None, sector_df=None, weights=None):
     score = score_from_components(c, weights)
     rating = _rating(score)
     d = c["distance_pct"]
-    status = "BREAKOUT CONFIRMED" if d < 0 else "VERY NEAR" if d <= 1 else "NEAR BREAKOUT" if d <= 3 else "DEVELOPING" if d <= 5 else "WATCH" if d <= 10 else "WEAK"
+    # Require the same 0.25% trigger buffer before confirming a breakout.
+    trigger_confirmed = float(c["price"]) >= float(c["breakout_trigger"])
+    status = "BREAKOUT CONFIRMED" if trigger_confirmed else "TESTING RESISTANCE" if d < 0 else "VERY NEAR" if d <= 1 else "NEAR BREAKOUT" if d <= 3 else "DEVELOPING" if d <= 5 else "WATCH" if d <= 10 else "WEAK"
     reasons = []
     if d <= 3: reasons.append("close to resistance")
     if c["touches"] >= 3: reasons.append(f"{c['touches']} resistance touches")
@@ -448,26 +496,69 @@ def scan_single(symbol, max_distance=10.0, period="2y"):
     if df is None: return None
     nifty = fetch_index_history("^NSEI", period=period)
     row = score_stock(df, nifty_df=nifty)
-    if row is None or row["distance_pct"] > max_distance: return None
+    if row is None or row["distance_pct"] < -1 or row["distance_pct"] > max_distance: return None
     row["symbol"] = symbol
     row["rank_score"] = _ranking_score(row)
     return row
 
 
 def backtest_symbol(symbol, period="5y", min_rating=7, hold_days=10):
+    """Diagnostic backtest using only data available on each signal date.
+
+    The signal is formed after the close and hypothetical returns start at the
+    next session open. This avoids future benchmark leakage and same-close
+    execution assumptions. It is still not a survivorship- or cost-adjusted
+    portfolio backtest.
+    """
     df = fetch_history(symbol, period)
     nifty = fetch_index_history("^NSEI", period=period)
-    if df is None: return {"summary":{},"trades":pd.DataFrame()}
-    trades=[]
-    for i in range(220, len(df)-hold_days-1):
-        hist=df.iloc[:i+1]
-        row=score_stock(hist, nifty_df=nifty)
-        if row is None or row["distance_pct"] < -1 or row["distance_pct"] > 10 or row["rating"] < min_rating: continue
-        future=df.iloc[i+1:i+1+hold_days]; entry=float(hist.Close.iloc[-1]); level=float(row["breakout_level"])
-        trades.append({"date":hist.index[-1],"breakout_hit":bool(future.High.max()>=level),"final_return_pct":(float(future.Close.iloc[-1])/entry-1)*100,"max_return_pct":(float(future.High.max())/entry-1)*100,"min_return_pct":(float(future.Low.min())/entry-1)*100,"rating":row["rating"]})
-    t=pd.DataFrame(trades)
-    if t.empty: return {"summary":{},"trades":t}
-    return {"summary":{"signals":len(t),"breakout_hit_rate_pct":t.breakout_hit.mean()*100,"avg_final_return_pct":t.final_return_pct.mean(),"median_final_return_pct":t.final_return_pct.median(),"avg_max_return_pct":t.max_return_pct.mean(),"stop_5pct_rate_pct":(t.min_return_pct<=-5).mean()*100},"trades":t}
+    if df is None:
+        return {"summary": {}, "trades": pd.DataFrame()}
+    trades = []
+    for i in range(220, len(df) - hold_days):
+        hist = df.iloc[:i + 1]
+        signal_date = hist.index[-1]
+        if nifty is not None and not nifty.empty:
+            nifty_asof = nifty.loc[nifty.index <= signal_date]
+        else:
+            nifty_asof = nifty
+        row = score_stock(hist, nifty_df=nifty_asof)
+        if row is None or row["distance_pct"] < -1 or row["distance_pct"] > 10 or row["rating"] < min_rating:
+            continue
+        future = df.iloc[i + 1:i + 1 + hold_days]
+        if future.empty:
+            continue
+        entry = float(future.Open.iloc[0])
+        if not np.isfinite(entry) or entry <= 0:
+            continue
+        final_close = float(future.Close.iloc[-1])
+        max_high = float(future.High.max())
+        min_low = float(future.Low.min())
+        trigger = float(row.get("breakout_trigger", row["breakout_level"]))
+        level = float(row["breakout_level"])
+        trades.append({
+            "date": signal_date,
+            "entry_date": future.index[0],
+            "entry_price": entry,
+            "breakout_hit": bool(max_high >= trigger),
+            "breakout_level": level,
+            "breakout_trigger": trigger,
+            "final_return_pct": (final_close / entry - 1) * 100,
+            "max_return_pct": (max_high / entry - 1) * 100,
+            "min_return_pct": (min_low / entry - 1) * 100,
+            "rating": row["rating"],
+        })
+    t = pd.DataFrame(trades)
+    if t.empty:
+        return {"summary": {}, "trades": t}
+    return {"summary": {
+        "signals": len(t),
+        "breakout_hit_rate_pct": t.breakout_hit.mean() * 100,
+        "avg_final_return_pct": t.final_return_pct.mean(),
+        "median_final_return_pct": t.final_return_pct.median(),
+        "avg_max_return_pct": t.max_return_pct.mean(),
+        "stop_5pct_rate_pct": (t.min_return_pct <= -5).mean() * 100,
+    }, "trades": t}
 
 
 def optimize_weights(*args, **kwargs):
