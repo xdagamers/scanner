@@ -130,34 +130,77 @@ def read_final_performance(secrets) -> pd.DataFrame:
     return pd.DataFrame(result.get("data", []))
 
 
-def append_performance_rows(secrets, rows: pd.DataFrame, batch_size: int = 400) -> dict:
-    """Append missing performance rows in small, retry-friendly batches.
+def append_performance_rows(
+    secrets,
+    rows: pd.DataFrame,
+    batch_size: int = 400,
+    progress_callback=None,
+) -> dict:
+    """Append missing performance rows in bounded, auditable batches.
 
-    Apps Script also deduplicates (Signal_ID, Tracking_Day), so a timeout/retry
-    will not duplicate already-written tracking days.
+    Each request is handled once and the function stops immediately on an API
+    error or inconsistent server counts. The Apps Script endpoint is idempotent
+    on (Signal_ID, Tracking_Day), so a later manual retry is safe after checking
+    the sheet; no automatic retry loop is performed here.
+
+    progress_callback, when provided, receives (completed_rows, total_rows,
+    message) before and after each HTTP write so the UI never hides batch work.
     """
     if rows is None or rows.empty:
-        return {"saved": False, "rows": 0, "expected": 0, "reason": "empty_result"}
+        return {"saved": False, "rows": 0, "expected": 0, "reason": "empty_result", "batches": 0}
 
     records = rows.where(pd.notna(rows), "").to_dict(orient="records")
     written = 0
     updated = 0
     skipped = 0
     results = []
-    size = max(1, int(batch_size))
-    for start in range(0, len(records), size):
+    # Keep the request size bounded even if a caller supplies a larger value.
+    size = min(400, max(1, int(batch_size)))
+    total_rows = len(records)
+    total_batches = (total_rows + size - 1) // size
+
+    for batch_index, start in enumerate(range(0, total_rows, size), start=1):
         batch = records[start:start + size]
+        end = start + len(batch)
+        if progress_callback:
+            progress_callback(
+                start,
+                total_rows,
+                f"Writing Daily_Performance batch {batch_index}/{total_batches} (rows {start + 1:,}–{end:,} of {total_rows:,})…",
+            )
+
+        # Fail fast on an unsuccessful response; do not run further batches.
         result = _post(secrets, {"action": "append_performance", "rows": batch})
-        written += int(result.get("rows", 0))
-        updated += int(result.get("updated", 0))
-        skipped += int(result.get("skipped_duplicates", 0))
+        batch_written = int(result.get("rows", 0))
+        batch_updated = int(result.get("updated", 0))
+        batch_skipped = int(result.get("skipped_duplicates", 0))
+        batch_expected = int(result.get("expected", len(batch)))
+        accounted = batch_written + batch_updated + batch_skipped
+        if batch_expected != len(batch) or accounted != len(batch):
+            raise RuntimeError(
+                "Daily_Performance write verification failed for batch "
+                f"{batch_index}/{total_batches}: sent {len(batch)} rows, "
+                f"server expected {batch_expected} and accounted for {accounted}. "
+                "The batch may have partially completed. Do not clear the sheet; "
+                "inspect the keys and rerun tracking only after confirming the state."
+            )
+
+        written += batch_written
+        updated += batch_updated
+        skipped += batch_skipped
         results.append(result)
+        if progress_callback:
+            progress_callback(
+                end,
+                total_rows,
+                f"Completed Daily_Performance batch {batch_index}/{total_batches} ({end:,}/{total_rows:,} rows reconciled).",
+            )
 
     return {
-        "saved": written > 0 or updated > 0 or len(records) == skipped,
+        "saved": written > 0 or updated > 0 or total_rows == skipped,
         "rows": written,
         "updated": updated,
-        "expected": len(records),
+        "expected": total_rows,
         "skipped_duplicates": skipped,
         "batches": len(results),
         "reason": "appended_or_repaired" if (written or updated) else "already_recorded",
