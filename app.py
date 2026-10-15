@@ -774,8 +774,28 @@ def render_home():
                     )
                     tracking_report["missing_symbols_from_fetch"] = missing_symbols
                     if not new_performance.empty:
-                        tracking_status.write(f"Appending/reconciling {len(new_performance):,} daily rows in safe batches…")
-                        write_result = append_performance_rows(st.secrets, new_performance)
+                        tracking_status.write(f"Preparing to reconcile {len(new_performance):,} daily rows in bounded batches…")
+                        progress_bar.progress(0)
+
+                        def write_progress(done, total, message):
+                            total = max(1, int(total))
+                            done = max(0, min(int(done), total))
+                            progress_bar.progress(min(100, int(done / total * 100)))
+                            total_steps.caption(message)
+
+                        write_result = append_performance_rows(
+                            st.secrets,
+                            new_performance,
+                            batch_size=400,
+                            progress_callback=write_progress,
+                        )
+                        progress_bar.progress(100)
+                        total_steps.caption(
+                            f"Write stage complete: {write_result.get('batches', 0)} batches; "
+                            f"{write_result.get('rows', 0):,} appended, "
+                            f"{write_result.get('updated', 0):,} repaired, "
+                            f"{write_result.get('skipped_duplicates', 0):,} already present."
+                        )
                     else:
                         write_result = {"saved": False, "rows": 0, "expected": 0, "reason": "no_new_rows"}
                     tracking_status.update(label="✅ Performance tracking update finished", state="complete", expanded=False)
