@@ -8,6 +8,7 @@ levels remain comparable to the prices actually traded after a split.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from bisect import bisect_right
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -235,6 +236,7 @@ def build_performance_rows(
     market_sessions: list[date] | None = None,
     calendar_source: str = "provided market session calendar",
     now: datetime | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Build/reconcile up to 20 tracking days per signal, including explicit gaps.
 
@@ -250,15 +252,23 @@ def build_performance_rows(
     # regenerated so late provider data can repair the outcome and its metrics.
     existing_quality: dict[tuple[str, int], str] = {}
     if existing_performance is not None and not existing_performance.empty:
-        for _, old in existing_performance.iterrows():
-            sid = str(old.get("Signal_ID", "")).strip()
-            try:
-                day_num = int(float(old.get("Tracking_Day")))
-            except Exception:
-                continue
-            quality = str(old.get("Data_Quality", "OK") or "OK").strip().upper()
-            if sid and day_num > 0:
-                existing_quality[(sid, day_num)] = quality
+        key_columns = {name: existing_performance.columns.get_loc(name)
+                       for name in ("Signal_ID", "Tracking_Day", "Data_Quality")
+                       if name in existing_performance.columns}
+        if "Signal_ID" in key_columns and "Tracking_Day" in key_columns:
+            sid_idx = key_columns["Signal_ID"]
+            day_idx = key_columns["Tracking_Day"]
+            quality_idx = key_columns.get("Data_Quality")
+            for old in existing_performance.itertuples(index=False, name=None):
+                sid = str(old[sid_idx] if old[sid_idx] is not None else "").strip()
+                try:
+                    day_num = int(float(old[day_idx]))
+                except Exception:
+                    continue
+                quality_value = old[quality_idx] if quality_idx is not None else "OK"
+                quality = str(quality_value or "OK").strip().upper()
+                if sid and day_num > 0:
+                    existing_quality[(sid, day_num)] = quality
 
     empty_report = {
         "signals": int(len(signals)) if signals is not None else 0,
@@ -278,7 +288,46 @@ def build_performance_rows(
         sessions = sorted({stamp.date() for frame in histories.values() for stamp in frame.index if stamp.date() <= as_of_date})
         calendar_source = "Fallback: union of stock OHLC dates"
 
-    rows: list[dict] = []
+    # Cache each symbol's date -> OHLC tuple once. The previous implementation
+    # copied and iterated the full history again for every saved signal. When a
+    # symbol appears in many audit runs, that repeated work becomes expensive.
+    history_lookup_cache: dict[str, dict] = {}
+
+    def get_date_lookup(symbol: str) -> dict:
+        if symbol in history_lookup_cache:
+            return history_lookup_cache[symbol]
+        history = histories.get(symbol)
+        lookup: dict = {}
+        if history is not None and not history.empty:
+            frame = history.copy()
+            idx = pd.to_datetime(frame.index, errors="coerce")
+            if getattr(idx, "tz", None) is not None:
+                idx = idx.tz_convert("Asia/Kolkata").tz_localize(None)
+            frame.index = pd.DatetimeIndex(idx)
+            frame = frame[~frame.index.isna()].sort_index()
+            required = [c for c in OHLC_COLUMNS if c in frame.columns]
+            if len(required) == len(OHLC_COLUMNS):
+                split_values = (frame["Stock Splits"].to_numpy()
+                                if "Stock Splits" in frame.columns
+                                else np.zeros(len(frame)))
+                for stamp, op, high, low, close, split_event in zip(
+                    frame.index, frame["Open"].to_numpy(), frame["High"].to_numpy(),
+                    frame["Low"].to_numpy(), frame["Close"].to_numpy(), split_values
+                ):
+                    lookup[stamp.date()] = (op, high, low, close, split_event)
+        history_lookup_cache[symbol] = lookup
+        return lookup
+
+    signal_records = signals.to_dict(orient="records") if signals is not None else []
+    total_signals = len(signal_records)
+    progress_every = max(1, (total_signals + 99) // 100)
+    if progress_callback:
+        progress_callback(0, max(1, total_signals),
+                          f"Preparing to build up to 20 tracking days for {total_signals:,} saved signals…")
+
+    # Store completed output rows as compact tuples rather than 41-key dicts.
+    # This substantially reduces peak memory for large audit batches.
+    rows: list[tuple] = []
     missing_signals: list[dict] = []
     pending_no_future: list[dict] = []
     missing_candles: list[dict] = []
@@ -290,7 +339,13 @@ def build_performance_rows(
     expected_keys: set[tuple[str, int]] = set()
     timestamp = (now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=IST)).strftime("%Y-%m-%d %H:%M:%S IST")
 
-    for _, signal in signals.iterrows():
+    for signal_number, signal in enumerate(signal_records, start=1):
+        if progress_callback and (signal_number == 1 or signal_number % progress_every == 0):
+            progress_callback(
+                signal_number - 1, max(1, total_signals),
+                f"Building Day 1–20 records: {signal_number - 1:,}/{total_signals:,} signals processed; "
+                f"{len(rows):,} new/repair rows prepared…"
+            )
         sid = str(signal.get("Signal_ID", "")).strip()
         symbol = str(signal.get("Symbol", "")).strip()
         scan_date = _to_date(signal.get("Scan_Date"))
@@ -301,18 +356,15 @@ def build_performance_rows(
             pending_no_future.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No completed trading session after this signal date yet"})
             continue
 
-        expected_dates = [d for d in sessions if scan_date < d <= as_of_date][:20]
+        # Sessions are sorted and already capped at as_of_date. Binary search
+        # avoids scanning the full historical calendar for every signal.
+        first_future = bisect_right(sessions, scan_date)
+        expected_dates = sessions[first_future:first_future + 20]
         if not expected_dates:
             pending_no_future.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No market sessions available after this signal date yet"})
             continue
 
-        history = histories.get(symbol)
-        date_lookup = {}
-        if history is not None and not history.empty:
-            frame = history.copy()
-            frame.index = pd.to_datetime(frame.index, errors="coerce")
-            frame = frame[~frame.index.isna()].sort_index()
-            date_lookup = {stamp.date(): candle for stamp, candle in frame.iterrows()}
+        date_lookup = get_date_lookup(symbol)
 
         price = _num(signal.get("Price"))
         trigger = _num(signal.get("Breakout_Trigger"))
@@ -340,10 +392,12 @@ def build_performance_rows(
             candle = date_lookup.get(tracking_date)
             available = candle is not None
             if available:
-                op, high, low, close = (_num(candle.get(c)) for c in OHLC_COLUMNS)
+                op, high, low, close, split_event_value = candle
+                op, high, low, close = (_num(v) for v in (op, high, low, close))
                 available = all(np.isfinite(v) for v in (op, high, low, close))
             else:
                 op = high = low = close = np.nan
+                split_event_value = 0.0
 
             if not available:
                 if first_missing_day is None:
@@ -356,7 +410,7 @@ def build_performance_rows(
                 status = "MISSING_OHLC_RETRY"
             else:
                 valid_ohlc_days += 1
-                split_event = _num(candle.get("Stock Splits", 0.0))
+                split_event = _num(split_event_value)
                 if np.isfinite(split_event) and split_event > 0:
                     cumulative_split_ratio *= split_event
 
@@ -474,9 +528,16 @@ def build_performance_rows(
             if old_quality and old_quality not in {"MISSING_OHLC_FOR_MARKET_SESSION", "INCOMPLETE_20D_HISTORY"}:
                 skipped_existing += 1
                 continue
-            rows.append(record)
+            rows.append(tuple(record.get(column, "") for column in PERFORMANCE_COLUMNS))
 
     result = pd.DataFrame(rows, columns=PERFORMANCE_COLUMNS)
+    if progress_callback:
+        progress_callback(
+            total_signals, max(1, total_signals),
+            f"Record building complete: {total_signals:,} signals checked; "
+            f"{len(result):,} new/repair rows prepared; "
+            f"{skipped_existing:,} existing records skipped."
+        )
     empty_report.update({
         "signals_with_history": len(with_history_ids),
         "signals_without_history": len({r.get("Signal_ID") for r in missing_signals if r.get("Signal_ID") and "No OHLC history" in r.get("Reason", "")}),
