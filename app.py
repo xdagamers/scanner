@@ -764,6 +764,14 @@ def render_home():
                     )
                     progress_bar.progress(100)
                     tracking_status.write("Building Day 1–20 rows and checking existing tracking keys…")
+                    progress_bar.progress(0)
+
+                    def build_progress(done, total, message):
+                        total = max(1, int(total))
+                        done = max(0, min(int(done), total))
+                        progress_bar.progress(min(100, int(done / total * 100)))
+                        total_steps.caption(message)
+
                     new_performance, tracking_report = build_performance_rows(
                         signal_df,
                         price_histories,
@@ -771,6 +779,7 @@ def render_home():
                         as_of_date=cutoff_date,
                         market_sessions=market_sessions,
                         calendar_source=calendar_source,
+                        progress_callback=build_progress,
                     )
                     tracking_report["missing_symbols_from_fetch"] = missing_symbols
                     if not new_performance.empty:
