@@ -42,9 +42,41 @@ def latest_completed_market_date(now: datetime | None = None) -> date:
 
 
 def _to_date(value) -> date | None:
-    """Parse Sheets dates without shifting naive YYYY-MM-DD values by timezone."""
-    if value is None or (isinstance(value, float) and np.isnan(value)):
+    """Parse dates from Google Sheets, including its numeric date serials.
+
+    Google Sheets stores dates as day counts from 1899-12-30. Passing a
+    numeric serial directly to pd.Timestamp treats it as nanoseconds from
+    1970-01-01, which can silently produce an incorrect 1970 date.
+    """
+    if value is None or isinstance(value, (bool, np.bool_)):
         return None
+
+    # Handle numeric Sheets serials (including NumPy numeric values).
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        try:
+            serial = float(value)
+            if not np.isfinite(serial) or serial < 20000 or serial > 100000:
+                return None
+            return (pd.Timestamp("1899-12-30") +
+                    pd.to_timedelta(serial, unit="D")).date()
+        except Exception:
+            return None
+
+    # Some Sheets/API responses provide the serial as text, sometimes with
+    # thousands separators (for example, "46,302.00").
+    if isinstance(value, str):
+        text_value = value.strip()
+        if not text_value:
+            return None
+        numeric_text = text_value.replace(",", "")
+        try:
+            serial = float(numeric_text)
+            if np.isfinite(serial) and 20000 <= serial <= 100000:
+                return (pd.Timestamp("1899-12-30") +
+                        pd.to_timedelta(serial, unit="D")).date()
+        except (TypeError, ValueError, OverflowError):
+            pass
+
     try:
         ts = pd.Timestamp(value)
         if pd.isna(ts):
