@@ -208,9 +208,12 @@ def append_performance_rows(
 
 
 def read_performance_keys(secrets) -> pd.DataFrame:
-    """Read compact (Signal_ID, Tracking_Day) keys only for idempotent updates."""
+    """Read performance keys and Scan_Date for invalid-date repair."""
     result = _get(secrets, "read_performance_keys")
-    return pd.DataFrame(result.get("data", []), columns=["Signal_ID", "Tracking_Day", "Data_Quality"])
+    return pd.DataFrame(
+        result.get("data", []),
+        columns=["Signal_ID", "Tracking_Day", "Data_Quality", "Scan_Date"]
+    )
 
 
 def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
