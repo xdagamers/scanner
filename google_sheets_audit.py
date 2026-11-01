@@ -36,7 +36,7 @@ def _post(secrets, payload: dict[str, Any]) -> dict:
     body = dict(payload)
     body["token"] = token
     try:
-        response = requests.post(url, json=body, timeout=60)
+        response = requests.post(url, json=body, timeout=180)
     except requests.RequestException as exc:
         raise RuntimeError(f"Could not reach the Google Apps Script endpoint: {exc}") from exc
 
@@ -61,7 +61,7 @@ def _get(secrets, action: str) -> dict:
         response = requests.get(
             url,
             params={"action": action, "token": token},
-            timeout=30,
+            timeout=180,
         )
     except requests.RequestException as exc:
         raise RuntimeError(f"Could not reach the Google Apps Script endpoint: {exc}") from exc
