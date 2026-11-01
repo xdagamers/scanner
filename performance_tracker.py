@@ -559,11 +559,20 @@ def build_performance_rows(
 
         for record in signal_rows:
             key = (sid, int(record["Tracking_Day"]))
-            old_quality = existing_quality.get(key)
-            # Existing good records do not get resent. Missing/incomplete rows
-            # are deliberately resent so Apps Script can repair them in place.
-            if old_quality and old_quality not in {"MISSING_OHLC_FOR_MARKET_SESSION", "INCOMPLETE_20D_HISTORY"}:
+                       old_quality = existing_quality.get(key)
+            old_scan_date = existing_scan_dates.get(key)
+
+            invalid_old_date = (
+                old_scan_date is not None and old_scan_date.year < 2000
+            )
+
+            # Repair missing, incomplete, and incorrectly dated records.
+            if old_quality and old_quality not in {
+                "MISSING_OHLC_FOR_MARKET_SESSION",
+                "INCOMPLETE_20D_HISTORY"
+            } and not invalid_old_date:
                 skipped_existing += 1
+                continue
                 continue
             rows.append(tuple(record.get(column, "") for column in PERFORMANCE_COLUMNS))
 
