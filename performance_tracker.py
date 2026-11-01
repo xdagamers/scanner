@@ -18,7 +18,6 @@ import pandas as pd
 IST = ZoneInfo("Asia/Kolkata")
 OHLC_COLUMNS = ["Open", "High", "Low", "Close"]
 PERFORMANCE_COLUMNS = [
-    # Original columns retained in order for safe migration of the existing tab.
     "Signal_ID", "Scan_Date", "Tracking_Day", "Tracking_Date",
     "Open", "High", "Low", "Close", "Breakout_Trigger", "Target_1",
     "Target_2", "Target_3", "Stop", "Breakout_Hit", "T1_Hit", "T2_Hit",
@@ -42,16 +41,10 @@ def latest_completed_market_date(now: datetime | None = None) -> date:
 
 
 def _to_date(value) -> date | None:
-    """Parse dates from Google Sheets, including its numeric date serials.
-
-    Google Sheets stores dates as day counts from 1899-12-30. Passing a
-    numeric serial directly to pd.Timestamp treats it as nanoseconds from
-    1970-01-01, which can silently produce an incorrect 1970 date.
-    """
+    """Parse dates from Google Sheets, including its numeric date serials."""
     if value is None or isinstance(value, (bool, np.bool_)):
         return None
 
-    # Handle numeric Sheets serials (including NumPy numeric values).
     if isinstance(value, (int, float, np.integer, np.floating)):
         try:
             serial = float(value)
@@ -62,8 +55,6 @@ def _to_date(value) -> date | None:
         except Exception:
             return None
 
-    # Some Sheets/API responses provide the serial as text, sometimes with
-    # thousands separators (for example, "46,302.00").
     if isinstance(value, str):
         text_value = value.strip()
         if not text_value:
@@ -97,7 +88,6 @@ def _num(value) -> float:
 
 
 def _ticker_for_symbol(symbol: str) -> str:
-    # Matches scanner.py's current ticker conversion.
     return str(symbol).strip().replace("&", "%26") + ".NS"
 
 
@@ -131,8 +121,6 @@ def _extract_ticker_frame(downloaded: pd.DataFrame, ticker: str) -> pd.DataFrame
         return None
     out = df[[normalized[c] for c in OHLC_COLUMNS]].copy()
     out.columns = OHLC_COLUMNS
-    # Keep raw traded OHLC plus split events, if available. This prevents future
-    # dividend adjustments from retrospectively shifting stored signal targets.
     split_column = normalized.get("Stock Splits")
     if split_column is not None:
         out["Stock Splits"] = pd.to_numeric(df[split_column], errors="coerce").fillna(0.0).to_numpy()
@@ -159,12 +147,7 @@ def fetch_ohlc_histories(
     chunk_size: int = 15,
     progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], list[str], list[date], str]:
-    """Fetch OHLC for unique signal symbols and an index-derived trading calendar.
-
-    Returns histories, symbols with no usable OHLC, market session dates, and
-    calendar source. The index calendar allows missing stock candles to be
-    flagged instead of silently shifting that stock's tracking-day numbering.
-    """
+    """Fetch OHLC for unique signal symbols and an index-derived trading calendar."""
     if signals is None or signals.empty or "Symbol" not in signals.columns:
         return {}, [], [], "no_signals"
     try:
@@ -209,8 +192,6 @@ def fetch_ohlc_histories(
             else:
                 missing_in_chunk.append(ticker)
 
-        # Retry missing tickers individually, since Yahoo batch responses can
-        # omit one or more symbols even when other columns are returned.
         for ticker in missing_in_chunk:
             one_kwargs = dict(kwargs)
             one_kwargs["tickers"] = ticker
@@ -228,10 +209,6 @@ def fetch_ohlc_histories(
             progress_callback(chunk_num, len(chunks) + 1, f"Processed OHLC batch {chunk_num}/{len(chunks)}")
 
     missing = sorted(set(symbols) - set(histories))
-
-    # Fetch the NIFTY 50 daily index as the trading-session calendar. If this
-    # endpoint fails, fall back to the union of dates returned for stock OHLC;
-    # the UI reports which calendar source was used.
     calendar: list[date] = []
     calendar_source = "NIFTY 50 index (^NSEI)"
     if progress_callback:
@@ -270,18 +247,11 @@ def build_performance_rows(
     now: datetime | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
-    """Build/reconcile up to 20 tracking days per signal, including explicit gaps.
-
-    Every market session after the signal date has a stable day number. If a
-    stock candle is missing, a blank placeholder is recorded with Data_Quality
-    set to MISSING_OHLC_FOR_MARKET_SESSION. When data arrives later, that row and
-    dependent incomplete rows are repaired in place by the Apps Script endpoint.
-    """
+    """Build/reconcile up to 20 tracking days per signal, including explicit gaps."""
     now = now or datetime.now(IST)
     as_of_date = as_of_date or latest_completed_market_date(now)
 
-    # Existing OK keys are immutable/idempotent. Missing/incomplete keys are
-    # regenerated so late provider data can repair the outcome and its metrics.
+    # Read existing keys and dates so invalid historical dates can be repaired.
     existing_quality: dict[tuple[str, int], str] = {}
     existing_scan_dates: dict[tuple[str, int], date | None] = {}
 
@@ -302,10 +272,7 @@ def build_performance_rows(
                 existing_quality[key] = str(
                     old.get("Data_Quality", "OK") or "OK"
                 ).strip().upper()
-
-                existing_scan_dates[key] = _to_date(
-                    old.get("Scan_Date")
-                )
+                existing_scan_dates[key] = _to_date(old.get("Scan_Date"))
 
     empty_report = {
         "signals": int(len(signals)) if signals is not None else 0,
@@ -325,9 +292,6 @@ def build_performance_rows(
         sessions = sorted({stamp.date() for frame in histories.values() for stamp in frame.index if stamp.date() <= as_of_date})
         calendar_source = "Fallback: union of stock OHLC dates"
 
-    # Cache each symbol's date -> OHLC tuple once. The previous implementation
-    # copied and iterated the full history again for every saved signal. When a
-    # symbol appears in many audit runs, that repeated work becomes expensive.
     history_lookup_cache: dict[str, dict] = {}
 
     def get_date_lookup(symbol: str) -> dict:
@@ -342,8 +306,8 @@ def build_performance_rows(
                 idx = idx.tz_convert("Asia/Kolkata").tz_localize(None)
             frame.index = pd.DatetimeIndex(idx)
             frame = frame[~frame.index.isna()].sort_index()
-            required = [c for c in OHLC_COLUMNS if c in frame.columns]
-            if len(required) == len(OHLC_COLUMNS):
+            required_columns = [c for c in OHLC_COLUMNS if c in frame.columns]
+            if len(required_columns) == len(OHLC_COLUMNS):
                 split_values = (frame["Stock Splits"].to_numpy()
                                 if "Stock Splits" in frame.columns
                                 else np.zeros(len(frame)))
@@ -355,15 +319,13 @@ def build_performance_rows(
         history_lookup_cache[symbol] = lookup
         return lookup
 
-    signal_records = signals.to_dict(orient="records") if signals is not None else []
+    signal_records = signals.to_dict(orient="records")
     total_signals = len(signal_records)
     progress_every = max(1, (total_signals + 99) // 100)
     if progress_callback:
         progress_callback(0, max(1, total_signals),
                           f"Preparing to build up to 20 tracking days for {total_signals:,} saved signals…")
 
-    # Store completed output rows as compact tuples rather than 41-key dicts.
-    # This substantially reduces peak memory for large audit batches.
     rows: list[tuple] = []
     missing_signals: list[dict] = []
     pending_no_future: list[dict] = []
@@ -393,8 +355,6 @@ def build_performance_rows(
             pending_no_future.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No completed trading session after this signal date yet"})
             continue
 
-        # Sessions are sorted and already capped at as_of_date. Binary search
-        # avoids scanning the full historical calendar for every signal.
         first_future = bisect_right(sessions, scan_date)
         expected_dates = sessions[first_future:first_future + 20]
         if not expected_dates:
@@ -402,7 +362,6 @@ def build_performance_rows(
             continue
 
         date_lookup = get_date_lookup(symbol)
-
         price = _num(signal.get("Price"))
         trigger = _num(signal.get("Breakout_Trigger"))
         t1, t2, t3, stop = (_num(signal.get(k)) for k in ("Target_1", "Target_2", "Target_3", "Stop"))
@@ -413,8 +372,6 @@ def build_performance_rows(
             missing_signals.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No OHLC history available for expected post-signal sessions; placeholder rows created"})
 
         breakout_day = t1_day = t2_day = t3_day = stop_day = None
-        # Normalize post-signal prices to the original signal-share basis. This
-        # makes fixed targets comparable across stock splits.
         cumulative_split_ratio = 1.0
         max_high = price if np.isfinite(price) else np.nan
         prior_peak = price if np.isfinite(price) else np.nan
@@ -451,9 +408,6 @@ def build_performance_rows(
                 if np.isfinite(split_event) and split_event > 0:
                     cumulative_split_ratio *= split_event
 
-                # The Sheet retains raw prices; calculations use original signal
-                # price basis. For a 2-for-1 split, for example, 55 raw becomes
-                # 110 in the original-share basis after the split.
                 norm_high = high * cumulative_split_ratio if np.isfinite(high) else np.nan
                 norm_low = low * cumulative_split_ratio if np.isfinite(low) else np.nan
                 if np.isfinite(norm_high):
@@ -478,8 +432,6 @@ def build_performance_rows(
                     elif target_today:
                         first_event, first_event_day = "TARGET_FIRST", tracking_day
 
-                # Conservative intraday drawdown estimate: treat the daily high as
-                # a possible peak before its low. Daily OHLC cannot establish order.
                 day_peak = max(prior_peak, norm_high) if np.isfinite(prior_peak) and np.isfinite(norm_high) else (norm_high if np.isfinite(norm_high) else prior_peak)
                 if np.isfinite(norm_low) and np.isfinite(day_peak) and day_peak > 0:
                     worst_drawdown = min(worst_drawdown, (norm_low / day_peak - 1.0) * 100.0)
@@ -487,8 +439,6 @@ def build_performance_rows(
                 quality = "OK"
                 status = first_event if first_event != "NONE" else "OPEN_NO_TARGET_OR_STOP_YET"
 
-            # An unresolved earlier missing candle makes the order and cumulative
-            # path after that date provisional until the next update repairs it.
             if first_missing_day is not None and tracking_day > first_missing_day and available:
                 quality = "INCOMPLETE_20D_HISTORY"
                 status = "INCOMPLETE_20D_HISTORY"
@@ -536,8 +486,6 @@ def build_performance_rows(
             signal_rows.append(record)
             expected_keys.add((sid, tracking_day))
 
-        # If any required OHLC is missing, all later rows are provisional so a
-        # subsequent backfill can recalculate the cumulative metrics correctly.
         missing_day_nums = [r["Tracking_Day"] for r in signal_rows if r["Data_Quality"] == "MISSING_OHLC_FOR_MARKET_SESSION"]
         if missing_day_nums:
             first_gap = min(missing_day_nums)
@@ -559,12 +507,9 @@ def build_performance_rows(
 
         for record in signal_rows:
             key = (sid, int(record["Tracking_Day"]))
-                old_quality = existing_quality.get(key)
+            old_quality = existing_quality.get(key)
             old_scan_date = existing_scan_dates.get(key)
-
-            invalid_old_date = (
-                old_scan_date is not None and old_scan_date.year < 2000
-            )
+            invalid_old_date = old_scan_date is not None and old_scan_date.year < 2000
 
             # Repair missing, incomplete, and incorrectly dated records.
             if old_quality and old_quality not in {
@@ -573,7 +518,7 @@ def build_performance_rows(
             } and not invalid_old_date:
                 skipped_existing += 1
                 continue
-                continue
+
             rows.append(tuple(record.get(column, "") for column in PERFORMANCE_COLUMNS))
 
     result = pd.DataFrame(rows, columns=PERFORMANCE_COLUMNS)
