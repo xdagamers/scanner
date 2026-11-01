@@ -282,25 +282,30 @@ def build_performance_rows(
 
     # Existing OK keys are immutable/idempotent. Missing/incomplete keys are
     # regenerated so late provider data can repair the outcome and its metrics.
-    existing_quality: dict[tuple[str, int], str] = {}
+        existing_quality: dict[tuple[str, int], str] = {}
+    existing_scan_dates: dict[tuple[str, int], date | None] = {}
+
     if existing_performance is not None and not existing_performance.empty:
-        key_columns = {name: existing_performance.columns.get_loc(name)
-                       for name in ("Signal_ID", "Tracking_Day", "Data_Quality")
-                       if name in existing_performance.columns}
-        if "Signal_ID" in key_columns and "Tracking_Day" in key_columns:
-            sid_idx = key_columns["Signal_ID"]
-            day_idx = key_columns["Tracking_Day"]
-            quality_idx = key_columns.get("Data_Quality")
-            for old in existing_performance.itertuples(index=False, name=None):
-                sid = str(old[sid_idx] if old[sid_idx] is not None else "").strip()
+        required = ["Signal_ID", "Tracking_Day"]
+        if all(name in existing_performance.columns for name in required):
+            for old in existing_performance.to_dict(orient="records"):
+                sid = str(old.get("Signal_ID", "") or "").strip()
                 try:
-                    day_num = int(float(old[day_idx]))
-                except Exception:
+                    day_num = int(float(old.get("Tracking_Day")))
+                except (TypeError, ValueError):
                     continue
-                quality_value = old[quality_idx] if quality_idx is not None else "OK"
-                quality = str(quality_value or "OK").strip().upper()
-                if sid and day_num > 0:
-                    existing_quality[(sid, day_num)] = quality
+
+                if not sid or day_num <= 0:
+                    continue
+
+                key = (sid, day_num)
+                existing_quality[key] = str(
+                    old.get("Data_Quality", "OK") or "OK"
+                ).strip().upper()
+
+                existing_scan_dates[key] = _to_date(
+                    old.get("Scan_Date")
+                )
 
     empty_report = {
         "signals": int(len(signals)) if signals is not None else 0,
