@@ -559,7 +559,7 @@ def build_performance_rows(
 
         for record in signal_rows:
             key = (sid, int(record["Tracking_Day"]))
-                       old_quality = existing_quality.get(key)
+                old_quality = existing_quality.get(key)
             old_scan_date = existing_scan_dates.get(key)
 
             invalid_old_date = (
