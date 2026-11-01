@@ -282,7 +282,7 @@ def build_performance_rows(
 
     # Existing OK keys are immutable/idempotent. Missing/incomplete keys are
     # regenerated so late provider data can repair the outcome and its metrics.
-        existing_quality: dict[tuple[str, int], str] = {}
+    existing_quality: dict[tuple[str, int], str] = {}
     existing_scan_dates: dict[tuple[str, int], date | None] = {}
 
     if existing_performance is not None and not existing_performance.empty:
