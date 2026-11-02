@@ -296,4 +296,482 @@ def verdict(score):
 def score_class(value,kind):
     try:v=float(value)
     except Exception:return "metric-neutral"
-    if kind=="rsi": return "metric
+    if kind=="rsi": return "metric-good" if 52<=v<=68 else "metric-ok" if 48<=v<=72 else "metric-poor"
+    if kind=="rvol": return "metric-good" if v>=1.5 else "metric-ok" if v>=1.1 else "metric-poor" if v>=.8 else "metric-bad"
+    if kind=="adx": return "metric-good" if v>=25 else "metric-ok" if v>=18 else "metric-poor"
+    if kind=="distance": return "metric-good" if v<=1 else "metric-ok" if v<=3 else "metric-neutral" if v<=5 else "metric-poor" if v<=10 else "metric-bad"
+    if kind=="rr": return "metric-good" if v>=2 else "metric-ok" if v>=1.5 else "metric-neutral" if v>=1 else "metric-poor"
+    if kind=="score": return "metric-good" if v>=80 else "metric-ok" if v>=65 else "metric-neutral" if v>=50 else "metric-poor" if v>=35 else "metric-bad"
+    return "metric-neutral"
+
+def metric_card(label,value,kind=None):
+    cls=score_class(value,kind) if kind else "metric-neutral"
+    return f'<div class="metric-card {cls}"><div class="metric-label">{html.escape(str(label))}</div><div class="metric-value">{html.escape(str(value))}</div></div>'
+
+def target_values(row,price):
+    b=float(row.get("breakout_level",0) or 0); note=""
+    try:t1=float(row.get("target1"))
+    except Exception:t1=None
+    try:t2=float(row.get("target2"))
+    except Exception:t2=None
+    if t1 is None or not np.isfinite(t1):
+        base=max(b-float(price),0); t1=b+base if base else b*1.01; note="Targets estimated from the breakout base height."
+    if t2 is None or not np.isfinite(t2):
+        base=max(b-float(price),0); t2=b+2*base if base else b*1.02; note="Targets estimated from the breakout base height."
+    return t1,t2,note
+
+def build_scan_export(result, scanned_at):
+    rows = []
+    scan_date = str(scanned_at).split(" ")[0]
+    for _, row in result.iterrows():
+        try:
+            t1 = float(row.get("target1"))
+            t2 = float(row.get("target2"))
+            t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
+        except Exception:
+            t1 = t2 = t3 = np.nan
+        rating = row.get("rating", "")
+        targets = " | ".join([f"T1: {t1:.2f}" if np.isfinite(t1) else "T1: —", f"T2: {t2:.2f}" if np.isfinite(t2) else "T2: —", f"T3: {t3:.2f}" if np.isfinite(t3) else "T3: —"])
+        def rounded_value(key):
+            value = row.get(key)
+            return round(float(value), 2) if pd.notna(value) and str(value).strip() != "" else ""
+        rows.append({
+            "Date": scan_date, "Stock": row.get("company_name", row.get("symbol", "")), "Rank": row.get("rank", ""), "Score": rounded_value("score"),
+            "Strength": rating, "Price": rounded_value("price"), "Breakout Level": rounded_value("breakout_level"), "Targets": targets,
+            "Stop": rounded_value("stop_reference"), "Distance %": rounded_value("distance_pct"), "RVOL": rounded_value("rvol"),
+            "RSI": rounded_value("rsi"), "ADX": rounded_value("adx"), "Market Regime": row.get("market_regime", "")
+        })
+    return pd.DataFrame(rows, columns=["Date", "Stock", "Rank", "Score", "Strength", "Price", "Breakout Level", "Targets", "Stop", "Distance %", "RVOL", "RSI", "ADX", "Market Regime"])
+
+
+def build_single_stock_export(symbol, row, scanned_at, rank=""):
+    t1 = float(row.get("target1")) if pd.notna(row.get("target1")) else np.nan
+    t2 = float(row.get("target2")) if pd.notna(row.get("target2")) else np.nan
+    t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
+    targets = " | ".join([f"T1: {t1:.2f}" if np.isfinite(t1) else "T1: —", f"T2: {t2:.2f}" if np.isfinite(t2) else "T2: —", f"T3: {t3:.2f}" if np.isfinite(t3) else "T3: —"])
+    return pd.DataFrame([{
+        "Date": str(scanned_at).split(" ")[0], "Stock": row.get("company_name", symbol), "Symbol": symbol, "Cap": row.get("cap_category", ""),
+        "Rank": rank, "Score": round(float(row.get("score", 0)), 2), "Strength": row.get("rating", ""), "Price": round(float(row.get("price")), 2),
+        "Breakout Level": round(float(row.get("breakout_level")), 2), "Targets": targets, "Stop": round(float(row.get("stop_reference")), 2),
+        "Distance %": round(float(row.get("distance_pct")), 2), "RVOL": round(float(row.get("rvol")), 2), "RSI": round(float(row.get("rsi")), 2),
+        "ADX": round(float(row.get("adx")), 2), "Market Regime": row.get("market_regime", ""), "Breakout Trigger": round(float(row.get("breakout_trigger")), 2),
+        "ATR %": round(float(row.get("atr_pct")), 2), "MACD": round(float(row.get("macd")), 4), "Squeeze": round(float(row.get("squeeze")), 2),
+        "EMA Structure": row.get("ema_structure", ""), "Resistance Touches": row.get("resistance_touches", ""),
+        "Relative Strength 60D %": round(float(row.get("relative_strength")), 2), "NIFTY Relative Strength %": round(float(row.get("nifty_relative_strength")), 2),
+        "Risk / Reward": round(float(row.get("risk_reward")), 2), "False Breakout": "Yes" if row.get("false_breakout") else "No", "Scanner Status": row.get("status", "")
+    }])
+
+# -----------------------------------------------------------------------------
+# DETAILED DASHBOARD WITH TABS (Phase 1 & 2 layout)
+# -----------------------------------------------------------------------------
+def render_detail(symbol,row):
+    render_theme_toggle()
+    
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("← Back"):
+            st.session_state.page="home"; st.rerun()
+
+    # Top Hero Section
+    company=row.get("company_name",symbol); last,change,change_pct=day_change(symbol); price=last if last is not None else row.get("price")
+    score=float(row.get("score",0)); label,strong=verdict(score); change_cls="up" if (change_pct or 0)>=0 else "down"; arrow="▲" if (change_pct or 0)>=0 else "▼"
+    t1,t2,target_note=target_values(row,price)
+    t1up=((t1/price)-1)*100 if price else 0; t2up=((t2/price)-1)*100 if price else 0
+    
+    st.markdown(f'''
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 20px; padding: 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border);">
+        <div>
+            <div class="small-muted" style="font-size:1rem; margin-bottom:4px;">{html.escape(str(company))}</div>
+            <div style="font-size:2.2rem;font-weight:900; line-height: 1.1;">{html.escape(symbol)}</div>
+            <div style="display:flex; align-items:center; gap: 12px; margin-top: 8px;">
+                <div class="hero-price" style="font-size:1.8rem;">{money(price)}</div>
+                <div class="{change_cls}" style="font-weight:850; font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>
+            </div>
+        </div>
+        <div style="display:flex; gap: 16px;">
+            <div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}%</div></div>
+            <div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}%</div></div>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    # TABBED INTERFACE FOR NEW MULTI-ENGINE ARCHITECTURE
+    tab_tech, tab_fund, tab_news, tab_audit = st.tabs(["📈 Technical Setup", "🏛️ Fundamentals (Coming Soon)", "📰 News & Events (Coming Soon)", "📊 Audit Details"])
+    
+    # ------------------ TAB 1: TECHNICALS ------------------
+    with tab_tech:
+        c_left, c_right = st.columns([3, 1])
+        with c_left:
+            st.markdown('<div class="section-title" style="margin-top:0;">Price Chart</div>',unsafe_allow_html=True)
+            tv_symbol=str(symbol).replace(".NS","").upper(); tv_url=f"https://www.tradingview.com/chart/?symbol=NSE:{tv_symbol}"
+            detail_chart(symbol,row)
+            st.markdown(f'<div class="tv-under"><a href="{tv_url}" target="_blank" rel="noopener">Open in TradingView Full ↗</a></div>',unsafe_allow_html=True)
+            
+        with c_right:
+            st.markdown('<div class="section-title" style="margin-top:0;">Momentum Score</div>',unsafe_allow_html=True)
+            light=st.session_state.theme_mode=="light"
+            fig=go.Figure(go.Indicator(mode="gauge+number",value=score,number={"suffix":"","font":{"size":44,"color":"#111827" if light else "#f1f5f9"}},gauge={"axis":{"range":[0,100],"tickwidth":1,"tickcolor":"#64748b"},"bar":{"color":"#079669" if light else "#19d38a","thickness":.25},"bgcolor":"#e5e7eb" if light else "#0b1829","borderwidth":0,"steps":[{"range":[0,40],"color":"#f3c4ca"},{"range":[40,65],"color":"#f5e4ad"},{"range":[65,80],"color":"#d9ecb0"},{"range":[80,100],"color":"#b8efd9"}]}))
+            fig.update_layout(template="plotly_white" if light else "plotly_dark",height=280,margin=dict(l=15,r=15,t=20,b=0),paper_bgcolor="#fff" if light else "#0c192b")
+            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+            
+            level=float(row.get("breakout_level",0) or 0); p=float(price or 0); distance=((level-p)/level*100) if level else 999
+            if p>=level: title,msg,cls="Breakout Confirmed","Trading above detected breakout level.","badge-green"
+            elif distance<=2: title,msg,cls="ENTRY ZONE","Near breakout level. Confirmation matters.","badge-green entry-pulse"
+            elif distance<=5: title,msg,cls="Wait","Not near the entry point yet.","badge-yellow"
+            else: title,msg,cls="Wait","Not near the entry point.","badge-grey"
+            st.markdown(f'''<div class="card" style="text-align:center;"><span class="badge {cls}">{title}</span><div style="font-size:1.05rem;font-weight:900;margin-top:12px">{msg}</div><div class="small-muted" style="margin-top:7px">Distance: {distance:.2f}% &nbsp; • &nbsp; Trigger: {money(row.get("breakout_trigger"))}</div></div>''',unsafe_allow_html=True)
+            
+            if row.get("explanation"):
+                st.markdown(f'<div class="card"><b>Setup Summary</b><div class="small-muted" style="margin-top:8px">{html.escape(str(row["explanation"]))}</div></div>',unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">Technical Parameters</div>',unsafe_allow_html=True)
+        hist=fetch_history(symbol,"2y"); extra={}
+        if hist is not None and len(hist):
+            last52=hist.tail(252); extra={"52-week high":money(float(last52.High.max())),"52-week low":money(float(last52.Low.min()))}
+        fields=[
+          ("Breakout level",money(row.get("breakout_level")),"distance"),("Breakout trigger",money(row.get("breakout_trigger")),None),
+          ("Distance",pct(row.get("distance_pct")),"distance"),("Rating",f"{row.get('rating','—')}/10","score"),
+          ("Score",f"{row.get('score',0):.1f}/100","score"),("RVOL",f"{row.get('rvol',0):.2f}x","rvol"),
+          ("RSI",f"{row.get('rsi',0):.1f}","rsi"),("ADX",f"{row.get('adx',0):.1f}","adx"),
+          ("EMA structure",row.get("ema_structure","—"),None),("MACD",f"{row.get('macd',0):.3f}",None),
+          ("ATR %",f"{row.get('atr_pct',0):.2f}%",None),("Squeeze",f"{row.get('squeeze',0):.2f}",None),
+          ("NIFTY relative strength",pct(row.get("nifty_relative_strength")),None),("60D relative strength",pct(row.get("relative_strength")),None),
+          ("Candlestick",row.get("candlestick","—"),None),("Resistance touches",row.get("resistance_touches","—"),None),
+          ("Risk / reward",f"{row.get('risk_reward',0):.2f}","rr"),("Market regime",row.get("market_regime","—"),None),
+          ("Stop reference",money(row.get("stop_reference")),None),("False breakout","Yes" if row.get("false_breakout") else "No",None),
+          ("52-week high",extra.get("52-week high","—"),None),("52-week low",extra.get("52-week low","—"),None)]
+        
+        # 6 Column grid for desktop metrics
+        for start in range(0,len(fields),6):
+            cols=st.columns(6)
+            for j,col in enumerate(cols):
+                idx=start+j
+                if idx>=len(fields): continue
+                with col: st.markdown(metric_card(fields[idx][0],fields[idx][1],fields[idx][2]),unsafe_allow_html=True)
+
+    # ------------------ TAB 2: FUNDAMENTALS (Placeholder) ------------------
+    with tab_fund:
+        st.markdown('<div class="section-title" style="margin-top:0;">Fundamental Health & Governance</div>', unsafe_allow_html=True)
+        st.info("The fundamental analysis engine is pending deployment (Phase 2). Once active, this tab will display Tier 1 metrics (Quarterly Revenue/Profit Growth, Operating Margins, Debt-to-Equity) and Cap-specific liquidity checks.")
+        st.markdown('''
+        <div style="opacity: 0.5;">
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+                <div class="card"><b>QoQ Revenue Growth</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
+                <div class="card"><b>QoQ Net Profit Growth</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
+                <div class="card"><b>Operating Margin</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
+                <div class="card"><b>Debt to Equity</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
+            </div>
+            <br>
+            <div class="card"><b>Institutional Holding (FII/DII)</b><br>Awaiting Phase 3 data integration...</div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+    # ------------------ TAB 3: NEWS (Placeholder) ------------------
+    with tab_news:
+        st.markdown('<div class="section-title" style="margin-top:0;">News & Corporate Announcements</div>', unsafe_allow_html=True)
+        st.info("The News Intelligence engine is pending deployment (Phase 4). Once active, this tab will display verified NSE/BSE corporate filings, sentiment classification, and original source URLs.")
+        st.markdown('''
+        <div style="opacity: 0.5;">
+            <div class="card">
+                <span class="badge badge-grey">Awaiting Data</span>
+                <div style="margin-top:8px; font-weight:800;">Recent corporate announcements will appear here.</div>
+                <div class="small-muted">Sources: NSE Corporate Filings, Recognized Financial Media.</div>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+    # ------------------ TAB 4: AUDIT EXPORT ------------------
+    with tab_audit:
+        st.markdown('<div class="section-title" style="margin-top:0;">Snapshot Audit Data</div>', unsafe_allow_html=True)
+        st.markdown('<div class="small-muted" style="margin-bottom:16px;">Raw technical properties formatted for the Google Sheets tracker.</div>', unsafe_allow_html=True)
+        
+        audit_df = build_single_stock_export(symbol, row, st.session_state.get("search_timestamp", datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")), rank="")
+        st.dataframe(audit_df, use_container_width=True, hide_index=True)
+        
+        st.download_button("📥 DOWNLOAD AUDIT ROW (CSV)", data=audit_df.to_csv(index=False).encode("utf-8-sig"), file_name=f"audit_{symbol}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv", use_container_width=False, key=f"audit_{symbol}")
+
+
+
+def render_home():
+    render_theme_toggle()
+    
+    st.markdown("<div style='font-size:1.8rem;font-weight:950'>📈 NIFTY Momentum Intelligence Platform</div><div class='small-muted'>Multi-horizon scanning across NIFTY Large Cap 100 + Midcap 150</div>",unsafe_allow_html=True)
+    render_market_bar(); render_ticker(); st.markdown("<div style='height:12px'></div>",unsafe_allow_html=True)
+    
+    audit_pending = st.session_state.get("audit_pending_rows") is not None
+    
+    # -------------------------------------------------------
+    # WIDE SCREEN ACTION BAR
+    # -------------------------------------------------------
+    col_search, col_scan, col_audit, col_track = st.columns([3, 2, 2, 2])
+    with col_search:
+        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px;">Search Stock</div>', unsafe_allow_html=True)
+        sc1, sc2 = st.columns([3, 1])
+        with sc1:
+            query = st.text_input("Stock symbol", placeholder="e.g. RELIANCE", key="stock_search_input", label_visibility="collapsed")
+        with sc2:
+            search_clicked = st.button("SEARCH", key="search_stock", use_container_width=True)
+            
+    with col_scan:
+        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px; color:transparent;">-</div>', unsafe_allow_html=True)
+        normal_clicked = st.button("🚀 SCAN MARKET", key="scan_market", type="primary", use_container_width=True, disabled=audit_pending)
+    with col_audit:
+        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px; color:transparent;">-</div>', unsafe_allow_html=True)
+        audit_clicked = st.button("📊 COLLECT AUDIT", key="collect_audit", use_container_width=True, disabled=audit_pending)
+    with col_track:
+        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px; color:transparent;">-</div>', unsafe_allow_html=True)
+        tracking_clicked = st.button("📈 UPDATE TRACKING", key="update_performance_tracking", use_container_width=True, disabled=audit_pending, help="Backfill historical OHLC for saved signals.")
+
+    # Search Execution
+    if search_clicked and query.strip():
+        symbol = query.strip().upper().replace(".NS", "")
+        st.session_state.search_error = None
+        with st.spinner(f"Running scanner analysis for {symbol}…"):
+            try:
+                row = scan_single(symbol, max_distance=10.0, period="2y")
+                if row is None:
+                    hist = fetch_history(symbol, "2y")
+                    if hist is None: raise ValueError("No usable 2-year price/volume history was returned for this symbol.")
+                    nifty = __import__("scanner").fetch_index_history("^NSEI", period="2y")
+                    row = score_stock(hist, nifty_df=nifty)
+                    if row is None: raise ValueError("The scanner could not calculate the technical setup for this stock.")
+                    row["symbol"] = symbol
+                    row["company_name"] = symbol
+                    row["cap_category"] = ""
+                    row["outside_near_breakout_range"] = True
+                else:
+                    row["outside_near_breakout_range"] = False
+                    try:
+                        universe = load_universe()
+                        m = universe.loc[universe.symbol == symbol]
+                        if not m.empty:
+                            row["company_name"] = m.iloc[0]["company_name"]
+                            row["cap_category"] = m.iloc[0]["cap_category"]
+                    except Exception: pass
+                st.session_state.selected_stock = symbol
+                st.session_state.selected_row = row
+                st.session_state.page = "detail"
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+    st.markdown("<div style='height:20px'></div>",unsafe_allow_html=True)
+
+
+    with st.expander("🔬 Research: analyse completed 20-trading-day outcomes", expanded=False):
+        outcome_labels = {
+            "Target 1 reached before Stop": "T1_Before_Stop", "Target 2 reached before Stop": "T2_Before_Stop",
+            "Target 3 reached before Stop": "T3_Before_Stop", "Stop reached before any target": "Stop_Before_Target",
+            "Target 1 touched at any time": "T1_Hit", "Target 2 touched at any time": "T2_Hit",
+            "Target 3 touched at any time": "T3_Hit", "Breakout trigger reached": "Breakout_Hit",
+        }
+        selected_outcome_label = st.selectbox("Outcome to evaluate", list(outcome_labels.keys()), key="audit_research_outcome_choice")
+        if st.button("🔬 RUN COMBINATION ANALYSIS", key="run_audit_combination_analysis"):
+            try:
+                with st.status("Reading matured audit outcomes and testing combinations…", expanded=True) as analysis_status:
+                    all_signals = read_audit_signals(st.secrets)
+                    final_rows = read_final_performance(st.secrets)
+                    analysis_status.write(f"Loaded {len(all_signals):,} saved signal snapshots and {len(final_rows):,} Day-20 performance rows.")
+                    completed_outcomes, completion_report = build_completed_outcomes(all_signals, final_rows)
+                    if completed_outcomes.empty:
+                        st.session_state.audit_analysis_result = None
+                        st.session_state.audit_analysis_report = completion_report
+                        st.session_state.audit_analysis_saved = False
+                        analysis_status.update(label="Not enough signals have completed 20 trading days yet", state="complete", expanded=False)
+                    else:
+                        analysis_df = analyze_outcome_combinations(completed_outcomes, outcome_col=outcome_labels[selected_outcome_label], min_signals=max(25, int(len(completed_outcomes) * 0.05)), max_order=3)
+                        st.session_state.audit_analysis_result = analysis_df
+                        st.session_state.audit_analysis_report = completion_report
+                        st.session_state.audit_analysis_outcome = outcome_labels[selected_outcome_label]
+                        st.session_state.audit_analysis_saved = False
+                        analysis_status.update(label=f"Analysis complete: {len(completed_outcomes):,} matured signals evaluated", state="complete", expanded=False)
+            except Exception as exc: st.error("Combination analysis failed. Details: " + str(exc))
+
+        stored_report = st.session_state.get("audit_analysis_report")
+        stored_analysis = st.session_state.get("audit_analysis_result")
+        if stored_report is not None:
+            st.caption(f"Matured signals: {stored_report.get('signals_matured_20d', 0):,} / {stored_report.get('signals_total', 0):,}; pending 20-day outcome: {stored_report.get('signals_pending', 0):,}.")
+        if isinstance(stored_analysis, pd.DataFrame) and not stored_analysis.empty:
+            st.dataframe(stored_analysis.head(50), use_container_width=True, hide_index=True)
+            if not st.session_state.get("audit_analysis_saved", False):
+                if st.button("💾 APPEND ANALYSIS RESULTS TO GOOGLE SHEET"):
+                    try:
+                        with st.spinner("Appending analysis rows to Analysis_Results…"): saved_count = append_analysis_rows(st.secrets, stored_analysis)
+                        st.session_state.audit_analysis_saved = True
+                        st.success(f"Saved {saved_count:,} analysis rows to Analysis_Results.")
+                        st.rerun()
+                    except Exception as exc: st.error("Could not save analysis results. Details: " + str(exc))
+
+
+    # Tracking Update Action
+    if tracking_clicked:
+        try:
+            with st.status("📈 Updating 20-day performance tracking…", expanded=True) as tracking_status:
+                tracking_status.write("Reading saved audit signals from Google Sheets…")
+                signal_df = read_audit_signals(st.secrets)
+                existing_keys = read_performance_keys(st.secrets)
+                if signal_df.empty: st.warning("No saved audit signals were found.")
+                else:
+                    cutoff_date = latest_completed_market_date()
+                    total_steps = st.empty(); progress_bar = st.progress(0); last_progress = {"value": -1}
+                    def progress_update(done, total, message):
+                        pct_value = min(100, int((done / max(1, int(total))) * 100))
+                        if pct_value != last_progress["value"]: progress_bar.progress(pct_value); last_progress["value"] = pct_value
+                        total_steps.caption(message)
+                    price_histories, missing_symbols, market_sessions, calendar_source = fetch_ohlc_histories(signal_df, as_of_date=cutoff_date, progress_callback=progress_update)
+                    progress_bar.progress(100)
+                    new_performance, tracking_report = build_performance_rows(signal_df, price_histories, existing_performance=existing_keys, as_of_date=cutoff_date, market_sessions=market_sessions, calendar_source=calendar_source, progress_callback=lambda d, t, m: total_steps.caption(m))
+                    tracking_report["missing_symbols_from_fetch"] = missing_symbols
+                    if not new_performance.empty:
+                        write_result = append_performance_rows(st.secrets, new_performance, batch_size=400, progress_callback=lambda d, t, m: total_steps.caption(m))
+                    else: write_result = {"saved": False, "rows": 0, "expected": 0, "reason": "no_new_rows"}
+                    tracking_status.update(label="✅ Performance tracking update finished", state="complete", expanded=False)
+                    st.success(f"Finished. {write_result.get('rows', 0):,} new rows appended; {write_result.get('updated', 0):,} repaired.")
+        except Exception as exc: st.error("Performance tracking update failed. Details: " + str(exc))
+
+    if audit_pending:
+        st.info("📌 An audit scan is waiting for your confirmation below. Resolve it before starting another scan.")
+
+    # Scan Execution
+    scan_mode = "audit" if audit_clicked else "normal" if normal_clicked else None
+    if scan_mode:
+        st.session_state.scanning = True
+        st.session_state.scan_error = None
+        st.session_state.scan_result = None
+        scan_placeholder = st.empty()
+        try:
+            scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:950;font-size:1rem">🔎 Scanning market…</div><div class="scan-copy"><span>Analyzing NIFTY Universe</span><span>Working</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
+            with st.spinner("Calculating technical setups…"):
+                result = scan_universe(max_distance=10.0, period="2y", top_n=500)
+            st.session_state.scan_result = result
+            st.session_state.scan_timestamp = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+
+            if scan_mode == "audit" and result is not None and not result.empty:
+                run_id = new_run_id()
+                st.session_state.audit_pending_run_id = run_id
+                st.session_state.audit_pending_timestamp = st.session_state.scan_timestamp
+                st.session_state.audit_pending_rows = build_scan_snapshot(result, run_id=run_id, scan_timestamp_ist=st.session_state.scan_timestamp, scanner_period="2y", max_distance_pct=10.0)
+                st.session_state.audit_last_saved = None
+        except Exception as exc:
+            st.session_state.scan_result = pd.DataFrame()
+            st.session_state.scan_error = str(exc)
+        finally:
+            st.session_state.scanning = False
+            scan_placeholder.empty()
+
+
+    result=st.session_state.get("scan_result")
+    if st.session_state.get("scan_error"): st.error(st.session_state.scan_error)
+    if result is None:
+        st.markdown('<div class="card" style="text-align:center; padding: 40px;"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch the universe and list qualifying technical setups.</div></div>',unsafe_allow_html=True); return
+    if result.empty:
+        st.markdown('<div class="card" style="text-align:center; padding: 40px;"><b>No qualifying setups found</b><div class="small-muted" style="margin-top:6px">Nothing currently meets the near-breakout criteria.</div></div>',unsafe_allow_html=True); return
+
+    # Audit Confirmation
+    pending_rows = st.session_state.get("audit_pending_rows")
+    pending_run_id = st.session_state.get("audit_pending_run_id")
+    pending_timestamp = st.session_state.get("audit_pending_timestamp")
+    append_in_progress = st.session_state.get("audit_append_in_progress", False)
+    if pending_rows is not None:
+        if append_in_progress:
+            st.info(f"⏳ Writing {len(pending_rows)} audit rows to Google Sheets… Please keep this page open.")
+            try:
+                with st.status("⏳ Appending audit batch…", expanded=True) as status:
+                    audit_info = append_audit_batch(st.secrets, pending_rows, run_id=pending_run_id, scan_timestamp_ist=pending_timestamp, scanner_period="2y", max_distance_pct=10.0)
+                    status.update(label=f"✅ Audit batch written: {audit_info.get('rows', 0)} new rows.", state="complete", expanded=False)
+                st.session_state.audit_last_saved = audit_info
+                st.session_state.audit_pending_rows = None; st.session_state.audit_append_in_progress = False
+                st.rerun()
+            except Exception as exc:
+                st.session_state.audit_append_in_progress = False
+                st.error("Audit batch failed. Details: " + str(exc))
+        else:
+            st.warning(f"📊 Audit collection ready: {len(pending_rows)} signal rows. Append to Google Sheet?")
+            y_col, n_col = st.columns([1,1])
+            if y_col.button("✅ YES — APPEND TO AUDIT SHEET", type="primary", use_container_width=True):
+                st.session_state.audit_append_in_progress = True; st.rerun()
+            if n_col.button("❌ NO — DISCARD THIS AUDIT", use_container_width=True):
+                st.session_state.audit_pending_rows = None; st.rerun()
+
+    audit_info = st.session_state.get("audit_last_saved") or {}
+    if audit_info.get("saved") and audit_info.get("reason") in {"appended", "batch_already_exists"}:
+        st.success(f"✅ Audit batch recorded: {audit_info.get('rows', 0)} new signal rows.")
+
+    display = result.copy()
+    sort_cols = [c for c in ["rating", "score", "rank_score", "distance_pct"] if c in display.columns]
+    if sort_cols:
+        display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind="stable").reset_index(drop=True)
+    
+    st.markdown(f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-top: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px;"><div class="section-title" style="border:none; margin:0; padding:0;">Scanned Stocks ({len(display)})</div><div class="rank-note" style="margin:0;">Sorted by Strength (highest first)</div></div>',unsafe_allow_html=True)
+    
+    # -------------------------------------------------------
+    # DENSE 4-COLUMN DESKTOP GRID FOR RESULTS
+    # -------------------------------------------------------
+    for start in range(0,len(display),4):
+        cols=st.columns(4)
+        for j,col in enumerate(cols):
+            idx=start+j
+            if idx>=len(display): continue
+            row=display.iloc[idx]; ratio=idx/max(len(display)-1,1)
+            color="#19d38a" if ratio<.2 else "#8fd66a" if ratio<.4 else "#f5c451" if ratio<.6 else "#ff9b4a" if ratio<.8 else "#ff5c70"
+            with col:
+                rating = int(float(row.get("rating", 0) or 0))
+                rating_color = "#19d38a" if rating >= 8 else "#8fd66a" if rating >= 7 else "#f5c451" if rating >= 5 else "#ff9b4a" if rating >= 3 else "#ff5c70"
+                score = float(row.get("score", 0) or 0)
+                price = float(row.get("price", 0) or 0)
+                st.markdown(f'''
+                <div style="border-radius:12px;border:1px solid rgba(255,255,255,.08);padding:14px;background:linear-gradient(145deg,{color}15,var(--card));margin-bottom:-4px; height: 100%;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div style="font-size:.72rem;font-weight:900;color:{color}">RANK #{idx+1} &nbsp;•&nbsp; {html.escape(str(row.get("cap_category","")))}</div>
+                    </div>
+                    <div style="font-weight:950;font-size:1.15rem;color:var(--text); margin-top: 4px; line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>
+                    <div class="small-muted" style="margin-bottom:8px;">{html.escape(str(row["symbol"]))}</div>
+                    
+                    <div style="display:flex; gap:6px; margin-bottom:12px;">
+                        <span style="padding:4px 8px;border-radius:6px;border:1px solid {rating_color}40;background:{rating_color}18;color:{rating_color};font-size:.7rem;font-weight:950;">Strength {rating}/10</span>
+                        <span style="padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:.7rem;font-weight:950;">Score {score:.1f}</span>
+                    </div>
+
+                    <div style="font-weight:950;font-size:1.2rem;">{money(price)}</div>
+                    <div style="font-size:.8rem;color:{color};font-weight:900; margin-bottom: 12px;">{float(row.get("distance_pct",0)):.2f}% to breakout</div>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                        <div style="border:1px solid rgba(25,211,138,.24);border-radius:8px;padding:6px;background:rgba(25,211,138,.06);text-align:center;">
+                            <div style="font-size:.65rem;font-weight:900;color:#19d38a;text-transform:uppercase;">RSI</div>
+                            <div style="font-size:.95rem;font-weight:950;">{float(row.get("rsi", 0) or 0):.1f}</div>
+                        </div>
+                        <div style="border:1px solid rgba(25,211,138,.24);border-radius:8px;padding:6px;background:rgba(25,211,138,.06);text-align:center;">
+                            <div style="font-size:.65rem;font-weight:900;color:#19d38a;text-transform:uppercase;">ADX</div>
+                            <div style="font-size:.95rem;font-weight:950;">{float(row.get("adx", 0) or 0):.1f}</div>
+                        </div>
+                        <div style="border:1px solid rgba(25,211,138,.24);border-radius:8px;padding:6px;background:rgba(25,211,138,.06);text-align:center;">
+                            <div style="font-size:.65rem;font-weight:900;color:#19d38a;text-transform:uppercase;">MACD</div>
+                            <div style="font-size:.95rem;font-weight:950;">{float(row.get("macd", 0) or 0):.3f}</div>
+                        </div>
+                    </div>
+                </div>''',unsafe_allow_html=True)
+                if st.button(f"Research {row['symbol']}",key=f"stock_{row['symbol']}",use_container_width=True):
+                    st.session_state.selected_stock=row["symbol"]; st.session_state.selected_row=row.to_dict(); st.session_state.page="detail"; st.rerun()
+
+
+# -----------------------------------------------------------------------------
+# Session-state navigation
+# -----------------------------------------------------------------------------
+if "page" not in st.session_state: st.session_state.page = "home"
+if "scan_result" not in st.session_state: st.session_state.scan_result = None
+if "scan_timestamp" not in st.session_state: st.session_state.scan_timestamp = None
+if "scanning" not in st.session_state: st.session_state.scanning = False
+if "audit_last_saved" not in st.session_state: st.session_state.audit_last_saved = None
+if "audit_pending_rows" not in st.session_state: st.session_state.audit_pending_rows = None
+if "audit_pending_run_id" not in st.session_state: st.session_state.audit_pending_run_id = None
+if "audit_pending_timestamp" not in st.session_state: st.session_state.audit_pending_timestamp = None
+if "audit_append_in_progress" not in st.session_state: st.session_state.audit_append_in_progress = False
+
+render_reload_guard(True)
+
+if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
+    render_detail(st.session_state.selected_stock, st.session_state.selected_row)
+else:
+    render_home()
+
+st.markdown('<div style="text-align:center;color:#71839a;font-size:.8rem;margin-top:40px; border-top:1px solid var(--border); padding-top:20px;">For educational purposes only. Not investment advice.</div>', unsafe_allow_html=True)
