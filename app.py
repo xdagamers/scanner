@@ -82,25 +82,61 @@ if not password_gate():
 
 
 # -----------------------------------------------------------------------------
-# UI-only CSS. Wide-screen specific tweaks applied.
+# UI-only CSS. Sotex-inspired Lite Fintech Theme applied.
 # -----------------------------------------------------------------------------
 CSS = r"""
 <style>
-:root{--bg:#07111f;--card:#0c192b;--card2:#101f33;--border:rgba(148,163,184,.15);--text:#f1f5f9;--muted:#8fa3ba;--accent:#19d38a;--red:#ff5c70;--yellow:#f5c451;--chart-bg:#07111f}
-html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important}[data-testid="stHeader"],footer,#MainMenu,[data-testid="stToolbar"]{visibility:hidden!important;height:0!important;display:none!important}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+    --bg: #0c0e12;
+    --card: #14171d;
+    --card2: #1b1f27;
+    --border: #242933;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #10b981; 
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --brand: #6366f1;
+}
+
+html,body,[data-testid="stAppViewContainer"]{background:var(--bg)!important;color:var(--text)!important; font-family: 'Inter', sans-serif !important;}
+[data-testid="stHeader"],footer,#MainMenu,[data-testid="stToolbar"]{visibility:hidden!important;height:0!important;display:none!important}
 .block-container{max-width:1800px!important;padding:2rem 2.5rem 5rem!important}
 section[data-testid="stSidebar"]{display:none!important}*{box-sizing:border-box}
-.stButton>button{width:100%;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);min-height:46px;font-weight:800;transition:.18s ease}.stButton>button:hover{border-color:rgba(25,211,138,.55);transform:translateY(-1px)}
-.scan-btn .stButton>button{min-height:58px;border:0;color:white;background:linear-gradient(135deg,#10b981,#0ea5e9);box-shadow:0 12px 30px rgba(16,185,129,.20);font-size:1.08rem}
-.card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:14px;padding:16px;margin:8px 0;box-shadow:0 8px 28px rgba(0,0,0,.12)}.status-card{padding:10px 16px;border-radius:12px;background:var(--card);border:1px solid var(--border)}.status-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.status-left{display:flex;align-items:center;gap:8px;font-weight:800}.dot{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 12px currentColor}.dot.green{background:var(--accent);color:var(--accent);animation:pulse 1.5s infinite}.dot.red{background:var(--red);color:var(--red);animation:pulse 1.5s infinite}.dot.yellow{background:var(--yellow);color:var(--yellow);animation:pulse 1.5s infinite}.index-wrap{display:flex;gap:16px;justify-content:flex-end;flex-wrap:wrap}.index-item{font-size:.9rem;color:var(--muted)}.index-item b{color:var(--text);font-size:.95rem}.up{color:var(--accent)!important}.down{color:var(--red)!important}.section-title{font-size:1.3rem;font-weight:900;margin:18px 2px 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;}
-.metric-card{min-height:76px;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--card)}.metric-label{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}.metric-value{color:var(--text);font-weight:950;font-size:1.15rem;margin-top:4px;word-break:break-word}.metric-good{background:linear-gradient(135deg,rgba(25,211,138,.20),var(--card));border-color:rgba(25,211,138,.35)}.metric-ok{background:linear-gradient(135deg,rgba(154,211,70,.15),var(--card));border-color:rgba(154,211,70,.28)}.metric-neutral{background:linear-gradient(135deg,rgba(245,196,81,.15),var(--card));border-color:rgba(245,196,81,.28)}.metric-poor{background:linear-gradient(135deg,rgba(255,142,70,.15),var(--card));border-color:rgba(255,142,70,.28)}.metric-bad{background:linear-gradient(135deg,rgba(255,92,112,.18),var(--card));border-color:rgba(255,92,112,.30)}
-.hero-price{font-size:2.4rem;font-weight:950;letter-spacing:-.03em}.badge{display:inline-block;padding:6px 12px;border-radius:6px;font-size:.85rem;font-weight:900}.badge-green{background:rgba(25,211,138,.16);color:var(--accent);border:1px solid rgba(25,211,138,.35)}.badge-red{background:rgba(255,92,112,.14);color:var(--red);border:1px solid rgba(255,92,112,.30)}.badge-yellow{background:rgba(245,196,81,.16);color:#a56b00;border:1px solid rgba(245,196,81,.35)}.badge-grey{background:rgba(148,163,184,.10);color:var(--muted);border:1px solid var(--border)}.entry-pulse{animation:glow 1.35s ease-in-out infinite alternate}.target-box{padding:12px;border-radius:12px;background:rgba(25,211,138,.09);border:1px solid rgba(25,211,138,.28)}.target-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;font-weight:800}.target-value{font-size:1.3rem;font-weight:950;color:var(--accent)}.target-upside{font-size:.8rem;color:var(--text);margin-top:2px}
-.scan-shell{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;overflow:hidden}.scan-chart{height:145px;position:relative;overflow:hidden;border-radius:10px;background:linear-gradient(180deg,var(--card2),var(--bg))}.candle-track{position:absolute;inset:0;display:flex;align-items:center;gap:12px;width:max-content;animation:scrollCandles 7s linear infinite}.candle{width:8px;position:relative;border-radius:2px;flex:none;box-shadow:0 0 8px currentColor}.candle:before{content:"";position:absolute;left:3px;width:2px;top:-13px;bottom:-13px;background:currentColor;opacity:.85}.candle.g{height:55px;background:#19d38a;color:#19d38a}.candle.r{height:38px;background:#ff5c70;color:#ff5c70}@keyframes scrollCandles{from{transform:translateX(0)}to{transform:translateX(-50%)}}.scan-copy{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin:12px 0 8px}.progress{height:7px;background:rgba(148,163,184,.18);border-radius:99px;overflow:hidden}.progress>div{width:65%;height:100%;border-radius:99px;background:linear-gradient(90deg,#10b981,#38bdf8);animation:progress 2.2s ease-in-out infinite}@keyframes progress{0%{width:8%}50%{width:78%}100%{width:94%}}
-.ticker-note,.small-muted{color:var(--muted);font-size:.82rem}.tradingview-btn{display:block;text-align:center;padding:12px 16px;border-radius:10px;background:linear-gradient(135deg,#19d38a,#0ea5e9);color:#fff!important;text-decoration:none!important;font-weight:900;margin:6px 0 10px}.tv-under{text-align:center;margin:5px 0 14px}.tv-under a{color:var(--accent);font-size:.8rem;font-weight:800;text-decoration:none}.rank-note{font-size:.8rem;color:var(--muted);margin-bottom:12px}@keyframes pulse{50%{opacity:.45;transform:scale(.75)}}@keyframes glow{from{box-shadow:0 0 4px rgba(25,211,138,.1)}to{box-shadow:0 0 20px rgba(25,211,138,.45)}}
-.stTabs [data-baseweb="tab-list"] {gap: 8px;}
-.stTabs [data-baseweb="tab"] {padding: 10px 24px; background: var(--card); border-radius: 8px 8px 0 0; border: 1px solid var(--border); border-bottom: none;}
-.stTabs [aria-selected="true"] {background: var(--card2); border-top: 3px solid var(--accent) !important;}
-@media(max-width:768px){.block-container{padding:.8rem 1rem 4rem!important}.index-wrap{justify-content:flex-start}.hero-price{font-size:2rem}.metric-value{font-size:1rem}}
+
+/* Clean, flat buttons (Sotex style) */
+.stButton>button{width:100%;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);min-height:44px;font-weight:600;transition:all .15s ease; font-family: 'Inter', sans-serif;}
+.stButton>button:hover{border-color:var(--brand);color:var(--brand);transform:translateY(-1px)}
+.scan-btn .stButton>button{min-height:54px;border:0;color:white;background:var(--brand);font-size:1.05rem}
+.scan-btn .stButton>button:hover{background:#4f46e5;color:white;}
+
+/* Flat cards with sharp borders */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin:8px 0;box-shadow:none;}
+.status-card{padding:10px 16px;border-radius:10px;background:var(--card);border:1px solid var(--border)}.status-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.status-left{display:flex;align-items:center;gap:8px;font-weight:600}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;}.dot.green{background:var(--accent);color:var(--accent);}.dot.red{background:var(--red);color:var(--red);}.dot.yellow{background:var(--yellow);color:var(--yellow);}.index-wrap{display:flex;gap:16px;justify-content:flex-end;flex-wrap:wrap}.index-item{font-size:.85rem;color:var(--muted)}.index-item b{color:var(--text);font-size:.9rem;font-weight:600;}.up{color:var(--accent)!important}.down{color:var(--red)!important}.section-title{font-size:1.15rem;font-weight:700;margin:24px 2px 14px; border-bottom: 1px solid var(--border); padding-bottom: 10px; color:var(--text);}
+
+/* Metrics */
+.metric-card{min-height:76px;padding:14px;border-radius:10px;border:1px solid var(--border);background:var(--card);box-shadow:none;}
+.metric-label{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
+.metric-value{color:var(--text);font-weight:700;font-size:1.1rem;margin-top:6px;word-break:break-word}
+.metric-good{border-left: 3px solid var(--accent);}.metric-ok{border-left: 3px solid #84cc16;}.metric-neutral{border-left: 3px solid var(--border);}.metric-poor{border-left: 3px solid var(--yellow);}.metric-bad{border-left: 3px solid var(--red);}
+
+.hero-price{font-size:2.2rem;font-weight:800;letter-spacing:-.02em; color:var(--text);}.badge{display:inline-block;padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:700;letter-spacing:.02em;text-transform:uppercase;}
+.badge-green{background:rgba(16,185,129,.12);color:var(--accent);border:1px solid rgba(16,185,129,.25)}.badge-red{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}.badge-yellow{background:rgba(245,158,11,.12);color:var(--yellow);border:1px solid rgba(245,158,11,.25)}.badge-brand{background:rgba(99,102,241,.12);color:var(--brand);border:1px solid rgba(99,102,241,.25)}.badge-grey{background:var(--card2);color:var(--muted);border:1px solid var(--border)}
+.target-box{padding:14px;border-radius:10px;background:var(--card2);border:1px solid var(--border)}.target-label{font-size:.7rem;color:var(--muted);text-transform:uppercase;font-weight:700}.target-value{font-size:1.2rem;font-weight:800;color:var(--text);margin-top:4px;}.target-upside{font-size:.8rem;color:var(--accent);margin-top:2px;font-weight:600;}
+
+/* Scanner loading state */
+.scan-shell{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;overflow:hidden}.scan-chart{height:145px;position:relative;overflow:hidden;border-radius:8px;background:var(--card2)}.candle-track{position:absolute;inset:0;display:flex;align-items:center;gap:12px;width:max-content;animation:scrollCandles 7s linear infinite}.candle{width:6px;position:relative;border-radius:2px;flex:none;box-shadow:none;}.candle:before{content:"";position:absolute;left:2px;width:2px;top:-13px;bottom:-13px;background:currentColor;opacity:.6}.candle.g{height:55px;background:var(--accent);color:var(--accent)}.candle.r{height:38px;background:var(--red);color:var(--red)}@keyframes scrollCandles{from{transform:translateX(0)}to{transform:translateX(-50%)}}.scan-copy{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin:16px 0 10px}.progress{height:6px;background:var(--card2);border-radius:99px;overflow:hidden}.progress>div{width:65%;height:100%;border-radius:99px;background:var(--brand);animation:progress 2.2s ease-in-out infinite}@keyframes progress{0%{width:8%}50%{width:78%}100%{width:94%}}
+
+.ticker-note,.small-muted{color:var(--muted);font-size:.82rem}.tradingview-btn{display:block;text-align:center;padding:12px 16px;border-radius:8px;background:var(--brand);color:#fff!important;text-decoration:none!important;font-weight:600;margin:6px 0 10px; transition: background .15s;}.tradingview-btn:hover{background:#4f46e5;}.tv-under{text-align:center;margin:5px 0 14px}.tv-under a{color:var(--brand);font-size:.8rem;font-weight:600;text-decoration:none}.rank-note{font-size:.8rem;color:var(--muted);margin-bottom:12px}
+
+/* Tabs overriding to look like Sotex pills */
+.stTabs [data-baseweb="tab-list"] {gap: 12px; border-bottom: 1px solid var(--border) !important;}
+.stTabs [data-baseweb="tab"] {padding: 10px 20px; background: transparent; border-radius: 6px 6px 0 0; border: none; font-weight: 600; color: var(--muted);}
+.stTabs [aria-selected="true"] {background: transparent; border-bottom: 3px solid var(--brand) !important; color: var(--text) !important;}
+
+@media(max-width:768px){.block-container{padding:.8rem 1rem 4rem!important}.index-wrap{justify-content:flex-start}.hero-price{font-size:1.8rem}.metric-value{font-size:1rem}}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -111,18 +147,18 @@ if "theme_mode" not in st.session_state:
 
 def apply_theme():
     if st.session_state.theme_mode == "light":
-        st.markdown("""<style>:root{--bg:#f5f7fa;--card:#fff;--card2:#f8fafc;--border:rgba(15,23,42,.12);--text:#111827;--muted:#64748b;--accent:#079669;--red:#dc3545;--yellow:#b7791f;--chart-bg:#f5f7fa}</style>""", unsafe_allow_html=True)
+        st.markdown("""<style>:root{--bg:#f8fafc;--card:#ffffff;--card2:#f1f5f9;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--accent:#10b981;--red:#ef4444;--yellow:#f59e0b;--brand:#4f46e5;}</style>""", unsafe_allow_html=True)
 
 def render_reload_guard(active=True):
     if not active: return
     components.html("""
-    <div id="reload-confirm" style="display:none;position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.58);align-items:center;justify-content:center;font-family:Arial,sans-serif">
-      <div style="width:min(420px,90vw);background:#fff;color:#111827;border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center">
-        <div style="font-size:20px;font-weight:800;margin-bottom:8px">Reload application?</div>
-        <div style="font-size:14px;color:#4b5563;line-height:1.5;margin-bottom:18px">The current scan/data will be lost if you reload. Do you want to reload?</div>
+    <div id="reload-confirm" style="display:none;position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);align-items:center;justify-content:center;font-family:'Inter',sans-serif">
+      <div style="width:min(400px,90vw);background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,.2);text-align:center">
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px">Reload Application?</div>
+        <div style="font-size:14px;color:var(--muted);line-height:1.5;margin-bottom:20px">The current scan and un-saved audit data will be lost if you reload.</div>
         <div style="display:flex;gap:12px;justify-content:center">
-          <button id="reload-yes" style="border:0;border-radius:10px;padding:11px 22px;background:#dc3545;color:#fff;font-weight:800;cursor:pointer">YES, RELOAD</button>
-          <button id="reload-no" style="border:0;border-radius:10px;padding:11px 22px;background:#198754;color:#fff;font-weight:800;cursor:pointer">NO, STAY</button>
+          <button id="reload-yes" style="flex:1;border:0;border-radius:8px;padding:12px;background:#ef4444;color:#fff;font-weight:600;cursor:pointer">Reload</button>
+          <button id="reload-no" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--card2);color:var(--text);font-weight:600;cursor:pointer">Stay</button>
         </div>
       </div>
     </div>
@@ -135,7 +171,7 @@ def render_reload_guard(active=True):
         const modal = d.getElementById('reload-confirm');
         const yes = d.getElementById('reload-yes');
         const no = d.getElementById('reload-no');
-        const show = () => { if (modal) modal.style.display='flex'; };
+        const show = () => { if (modal) { modal.style.display='flex'; modal.style.background = w.matchMedia('(prefers-color-scheme: dark)').matches ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)'; } };
         const hide = () => { if (modal) modal.style.display='none'; };
         if (yes) yes.onclick = () => { w.location.href = w.location.origin + w.location.pathname + '?__reload_home=1'; };
         if (no) no.onclick = hide;
@@ -166,7 +202,7 @@ def render_reload_guard(active=True):
 def render_theme_toggle():
     c1, c2 = st.columns([15, 1])
     with c2:
-        is_light = st.toggle("☀️ Theme", value=(st.session_state.theme_mode=="light"), key="theme_toggle", help="Switch light/dark mode")
+        is_light = st.toggle("☀️ Light", value=(st.session_state.theme_mode=="light"), key="theme_toggle")
         new_mode = "light" if is_light else "dark"
         if new_mode != st.session_state.theme_mode:
             st.session_state.theme_mode = new_mode
@@ -264,9 +300,9 @@ def render_ticker():
         cls="up" if r.pct>=0 else "down"; arrow="▲" if r.pct>=0 else "▼"
         items.append(f'<span class="tick"><b>{html.escape(r.symbol)}</b> {money(r.price)} <span class="{cls}">{arrow} {r.pct:+.2f}%</span></span>')
     content="".join(items); light=st.session_state.theme_mode=="light"
-    bg="#fff" if light else "#07111f"; viewport="#fff" if light else "#091727"; textc="#111827" if light else "#dbe7f3"; muted="#64748b" if light else "#9fb1c5"; border="rgba(15,23,42,.12)" if light else "rgba(148,163,184,.12)"; green="#079669" if light else "#19d38a"; red="#dc3545" if light else "#ff5c70"
-    markup=f"""<html><head><style>*{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:Arial,sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:13px;background:{viewport}}}.track{{display:flex;width:max-content;animation:marquee 144s linear infinite;padding:10px 0}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;margin-right:28px;font-size:12px;color:{muted}}}.tick b{{color:{textc};margin-right:5px}}.up{{color:{green}}}.down{{color:{red}}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport" id="v"><div class="track" id="t">{content}{content}</div></div><script>const v=document.getElementById('v'),t=document.getElementById('t');v.addEventListener('touchstart',()=>t.style.animationPlayState='paused',{{passive:true}});v.addEventListener('touchend',()=>t.style.animationPlayState='running',{{passive:true}});</script></body></html>"""
-    components.html(markup,height=43,scrolling=False)
+    bg="#ffffff" if light else "#0c0e12"; viewport="#ffffff" if light else "#0c0e12"; textc="#0f172a" if light else "#f1f5f9"; muted="#64748b" if light else "#94a3b8"; border="#e2e8f0" if light else "#242933"; green="#10b981"; red="#ef4444"
+    markup=f"""<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:10px;background:{viewport}}}.track{{display:flex;width:max-content;animation:marquee 144s linear infinite;padding:12px 0}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;margin-right:32px;font-size:12px;color:{muted};font-weight:400;}}.tick b{{color:{textc};margin-right:6px;font-weight:600;}}.up{{color:{green}}}.down{{color:{red}}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport" id="v"><div class="track" id="t">{content}{content}</div></div><script>const v=document.getElementById('v'),t=document.getElementById('t');v.addEventListener('touchstart',()=>t.style.animationPlayState='paused',{{passive:true}});v.addEventListener('touchend',()=>t.style.animationPlayState='running',{{passive:true}});</script></body></html>"""
+    components.html(markup,height=45,scrolling=False)
 
 def day_change(symbol, period="2y"):
     hist = fetch_history(symbol, period)
@@ -281,9 +317,9 @@ def detail_chart(symbol,row,period="2y"):
     light=st.session_state.theme_mode=="light"
     fig=go.Figure()
     fig.add_trace(go.Candlestick(x=hist.index,open=hist.Open,high=hist.High,low=hist.Low,close=hist.Close,name=symbol))
-    fig.add_trace(go.Bar(x=hist.index,y=hist.Volume,name="Volume",yaxis="y2",opacity=.25))
-    fig.add_hline(y=float(row["breakout_level"]),line_dash="dash",line_color="#079669" if light else "#19d38a",annotation_text=f"Breakout: ₹{row['breakout_level']:.2f}",annotation_position="top left")
-    fig.update_layout(template="plotly_white" if light else "plotly_dark",height=550,margin=dict(l=8,r=8,t=30,b=10),xaxis_rangeslider_visible=False,hovermode="x unified",paper_bgcolor="#fff" if light else "#0c192b",plot_bgcolor="#f5f7fa" if light else "#07111f",yaxis=dict(title="Price"),yaxis2=dict(title="Volume",overlaying="y",side="right",showgrid=False,rangemode="tozero"),legend=dict(orientation="h",y=1.02,x=0))
+    fig.add_trace(go.Bar(x=hist.index,y=hist.Volume,name="Volume",yaxis="y2",opacity=.2, marker_color="#6366f1"))
+    fig.add_hline(y=float(row["breakout_level"]),line_dash="dash",line_color="#10b981",annotation_text=f"Breakout: ₹{row['breakout_level']:.2f}",annotation_position="top left")
+    fig.update_layout(template="plotly_white" if light else "plotly_dark",height=550,margin=dict(l=5,r=5,t=25,b=10),xaxis_rangeslider_visible=False,hovermode="x unified",paper_bgcolor="#ffffff" if light else "#14171d",plot_bgcolor="#f8fafc" if light else "#0c0e12",yaxis=dict(title="Price", gridcolor="#e2e8f0" if light else "#242933"),yaxis2=dict(title="Volume",overlaying="y",side="right",showgrid=False,rangemode="tozero"),legend=dict(orientation="h",y=1.02,x=0))
     st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False,"responsive":True})
 
 def verdict(score):
@@ -362,7 +398,7 @@ def build_single_stock_export(symbol, row, scanned_at, rank=""):
     }])
 
 # -----------------------------------------------------------------------------
-# DETAILED DASHBOARD WITH TABS (Phase 1 & 2 layout)
+# DETAILED DASHBOARD WITH TABS 
 # -----------------------------------------------------------------------------
 def render_detail(symbol,row):
     render_theme_toggle()
@@ -379,13 +415,13 @@ def render_detail(symbol,row):
     t1up=((t1/price)-1)*100 if price else 0; t2up=((t2/price)-1)*100 if price else 0
     
     st.markdown(f'''
-    <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 20px; padding: 20px; background: var(--card); border-radius: 14px; border: 1px solid var(--border);">
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 24px; padding: 24px; background: var(--card); border-radius: 12px; border: 1px solid var(--border);">
         <div>
-            <div class="small-muted" style="font-size:1rem; margin-bottom:4px;">{html.escape(str(company))}</div>
-            <div style="font-size:2.2rem;font-weight:900; line-height: 1.1;">{html.escape(symbol)}</div>
-            <div style="display:flex; align-items:center; gap: 12px; margin-top: 8px;">
+            <div class="small-muted" style="font-size:.9rem; font-weight:600; margin-bottom:6px; letter-spacing:.02em; text-transform:uppercase;">{html.escape(str(company))}</div>
+            <div style="font-size:2.4rem;font-weight:800; line-height: 1.1; color:var(--text);">{html.escape(symbol)}</div>
+            <div style="display:flex; align-items:center; gap: 14px; margin-top: 10px;">
                 <div class="hero-price" style="font-size:1.8rem;">{money(price)}</div>
-                <div class="{change_cls}" style="font-weight:850; font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>
+                <div class="{change_cls}" style="font-weight:700; font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>
             </div>
         </div>
         <div style="display:flex; gap: 16px;">
@@ -395,34 +431,33 @@ def render_detail(symbol,row):
     </div>
     ''', unsafe_allow_html=True)
 
-    # TABBED INTERFACE FOR NEW MULTI-ENGINE ARCHITECTURE
-    tab_tech, tab_fund, tab_news, tab_audit = st.tabs(["📈 Technical Setup", "🏛️ Fundamentals (Coming Soon)", "📰 News & Events (Coming Soon)", "📊 Audit Details"])
+    tab_tech, tab_fund, tab_news, tab_audit = st.tabs(["📈 Technical Setup", "🏛️ Fundamentals", "📰 News & Events", "📊 Audit Details"])
     
     # ------------------ TAB 1: TECHNICALS ------------------
     with tab_tech:
         c_left, c_right = st.columns([3, 1])
         with c_left:
-            st.markdown('<div class="section-title" style="margin-top:0;">Price Chart</div>',unsafe_allow_html=True)
+            st.markdown('<div class="section-title" style="margin-top:0;">Price Action</div>',unsafe_allow_html=True)
             tv_symbol=str(symbol).replace(".NS","").upper(); tv_url=f"https://www.tradingview.com/chart/?symbol=NSE:{tv_symbol}"
             detail_chart(symbol,row)
-            st.markdown(f'<div class="tv-under"><a href="{tv_url}" target="_blank" rel="noopener">Open in TradingView Full ↗</a></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="tv-under"><a href="{tv_url}" target="_blank" rel="noopener">Open Full Interactive Chart ↗</a></div>',unsafe_allow_html=True)
             
         with c_right:
-            st.markdown('<div class="section-title" style="margin-top:0;">Momentum Score</div>',unsafe_allow_html=True)
+            st.markdown('<div class="section-title" style="margin-top:0;">Momentum Gauge</div>',unsafe_allow_html=True)
             light=st.session_state.theme_mode=="light"
-            fig=go.Figure(go.Indicator(mode="gauge+number",value=score,number={"suffix":"","font":{"size":44,"color":"#111827" if light else "#f1f5f9"}},gauge={"axis":{"range":[0,100],"tickwidth":1,"tickcolor":"#64748b"},"bar":{"color":"#079669" if light else "#19d38a","thickness":.25},"bgcolor":"#e5e7eb" if light else "#0b1829","borderwidth":0,"steps":[{"range":[0,40],"color":"#f3c4ca"},{"range":[40,65],"color":"#f5e4ad"},{"range":[65,80],"color":"#d9ecb0"},{"range":[80,100],"color":"#b8efd9"}]}))
-            fig.update_layout(template="plotly_white" if light else "plotly_dark",height=280,margin=dict(l=15,r=15,t=20,b=0),paper_bgcolor="#fff" if light else "#0c192b")
+            fig=go.Figure(go.Indicator(mode="gauge+number",value=score,number={"suffix":"","font":{"size":42,"color":"#0f172a" if light else "#f1f5f9"}},gauge={"axis":{"range":[0,100],"tickwidth":0,"tickcolor":"transparent"},"bar":{"color":"#10b981","thickness":.15},"bgcolor":"#e2e8f0" if light else "#242933","borderwidth":0,"steps":[{"range":[0,40],"color":"rgba(239,68,68,0.15)"},{"range":[40,65],"color":"rgba(245,158,11,0.15)"},{"range":[65,80],"color":"rgba(132,204,22,0.15)"},{"range":[80,100],"color":"rgba(16,185,129,0.15)"}]}))
+            fig.update_layout(template="plotly_white" if light else "plotly_dark",height=260,margin=dict(l=15,r=15,t=20,b=0),paper_bgcolor="#ffffff" if light else "#14171d")
             st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
             
             level=float(row.get("breakout_level",0) or 0); p=float(price or 0); distance=((level-p)/level*100) if level else 999
-            if p>=level: title,msg,cls="Breakout Confirmed","Trading above detected breakout level.","badge-green"
-            elif distance<=2: title,msg,cls="ENTRY ZONE","Near breakout level. Confirmation matters.","badge-green entry-pulse"
-            elif distance<=5: title,msg,cls="Wait","Not near the entry point yet.","badge-yellow"
-            else: title,msg,cls="Wait","Not near the entry point.","badge-grey"
-            st.markdown(f'''<div class="card" style="text-align:center;"><span class="badge {cls}">{title}</span><div style="font-size:1.05rem;font-weight:900;margin-top:12px">{msg}</div><div class="small-muted" style="margin-top:7px">Distance: {distance:.2f}% &nbsp; • &nbsp; Trigger: {money(row.get("breakout_trigger"))}</div></div>''',unsafe_allow_html=True)
+            if p>=level: title,msg,cls="Breakout Confirmed","Trading above detected resistance.","badge-green"
+            elif distance<=2: title,msg,cls="ENTRY ZONE","Near breakout level. Await volume confirmation.","badge-green"
+            elif distance<=5: title,msg,cls="Developing","Setup forming, not near entry.","badge-yellow"
+            else: title,msg,cls="Watch","Monitoring base formation.","badge-grey"
+            st.markdown(f'''<div class="card" style="text-align:center;"><span class="badge {cls}">{title}</span><div style="font-size:1rem;font-weight:700;margin-top:14px;color:var(--text);">{msg}</div><div class="small-muted" style="margin-top:8px">Distance: <span style="font-weight:600;">{distance:.2f}%</span> &nbsp; • &nbsp; Trigger: <span style="font-weight:600;">{money(row.get("breakout_trigger"))}</span></div></div>''',unsafe_allow_html=True)
             
             if row.get("explanation"):
-                st.markdown(f'<div class="card"><b>Setup Summary</b><div class="small-muted" style="margin-top:8px">{html.escape(str(row["explanation"]))}</div></div>',unsafe_allow_html=True)
+                st.markdown(f'<div class="card"><b style="font-size:.85rem;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;">Setup Summary</b><div style="margin-top:8px; font-size:.9rem; line-height:1.5;">{html.escape(str(row["explanation"]))}</div></div>',unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Technical Parameters</div>',unsafe_allow_html=True)
         hist=fetch_history(symbol,"2y"); extra={}
@@ -435,13 +470,12 @@ def render_detail(symbol,row):
           ("RSI",f"{row.get('rsi',0):.1f}","rsi"),("ADX",f"{row.get('adx',0):.1f}","adx"),
           ("EMA structure",row.get("ema_structure","—"),None),("MACD",f"{row.get('macd',0):.3f}",None),
           ("ATR %",f"{row.get('atr_pct',0):.2f}%",None),("Squeeze",f"{row.get('squeeze',0):.2f}",None),
-          ("NIFTY relative strength",pct(row.get("nifty_relative_strength")),None),("60D relative strength",pct(row.get("relative_strength")),None),
+          ("NIFTY rel strength",pct(row.get("nifty_relative_strength")),None),("60D rel strength",pct(row.get("relative_strength")),None),
           ("Candlestick",row.get("candlestick","—"),None),("Resistance touches",row.get("resistance_touches","—"),None),
           ("Risk / reward",f"{row.get('risk_reward',0):.2f}","rr"),("Market regime",row.get("market_regime","—"),None),
           ("Stop reference",money(row.get("stop_reference")),None),("False breakout","Yes" if row.get("false_breakout") else "No",None),
           ("52-week high",extra.get("52-week high","—"),None),("52-week low",extra.get("52-week low","—"),None)]
         
-        # 6 Column grid for desktop metrics
         for start in range(0,len(fields),6):
             cols=st.columns(6)
             for j,col in enumerate(cols):
@@ -451,43 +485,39 @@ def render_detail(symbol,row):
 
     # ------------------ TAB 2: FUNDAMENTALS (Placeholder) ------------------
     with tab_fund:
-        st.markdown('<div class="section-title" style="margin-top:0;">Fundamental Health & Governance</div>', unsafe_allow_html=True)
-        st.info("The fundamental analysis engine is pending deployment (Phase 2). Once active, this tab will display Tier 1 metrics (Quarterly Revenue/Profit Growth, Operating Margins, Debt-to-Equity) and Cap-specific liquidity checks.")
+        st.markdown('<div class="section-title" style="margin-top:0;">Fundamental Health</div>', unsafe_allow_html=True)
+        st.info("Fundamental Analysis module pending deployment (Phase 2).")
         st.markdown('''
-        <div style="opacity: 0.5;">
+        <div style="opacity: 0.4;">
             <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
-                <div class="card"><b>QoQ Revenue Growth</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
-                <div class="card"><b>QoQ Net Profit Growth</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
-                <div class="card"><b>Operating Margin</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
-                <div class="card"><b>Debt to Equity</b><br><span style="font-size:1.5rem; font-weight:900;">--</span></div>
+                <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Revenue Growth</b><br><span style="font-size:1.6rem; font-weight:800;">--</span></div>
+                <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Net Profit</b><br><span style="font-size:1.6rem; font-weight:800;">--</span></div>
+                <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem; font-weight:800;">--</span></div>
+                <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Debt to Equity</b><br><span style="font-size:1.6rem; font-weight:800;">--</span></div>
             </div>
-            <br>
-            <div class="card"><b>Institutional Holding (FII/DII)</b><br>Awaiting Phase 3 data integration...</div>
         </div>
         ''', unsafe_allow_html=True)
 
     # ------------------ TAB 3: NEWS (Placeholder) ------------------
     with tab_news:
-        st.markdown('<div class="section-title" style="margin-top:0;">News & Corporate Announcements</div>', unsafe_allow_html=True)
-        st.info("The News Intelligence engine is pending deployment (Phase 4). Once active, this tab will display verified NSE/BSE corporate filings, sentiment classification, and original source URLs.")
+        st.markdown('<div class="section-title" style="margin-top:0;">Corporate Announcements</div>', unsafe_allow_html=True)
+        st.info("News Intelligence module pending deployment (Phase 4).")
         st.markdown('''
-        <div style="opacity: 0.5;">
+        <div style="opacity: 0.4;">
             <div class="card">
-                <span class="badge badge-grey">Awaiting Data</span>
-                <div style="margin-top:8px; font-weight:800;">Recent corporate announcements will appear here.</div>
-                <div class="small-muted">Sources: NSE Corporate Filings, Recognized Financial Media.</div>
+                <span class="badge badge-brand">Pending Sync</span>
+                <div style="margin-top:10px; font-weight:600; font-size:1.1rem;">Awaiting NSE corporate filings feed.</div>
             </div>
         </div>
         ''', unsafe_allow_html=True)
 
     # ------------------ TAB 4: AUDIT EXPORT ------------------
     with tab_audit:
-        st.markdown('<div class="section-title" style="margin-top:0;">Snapshot Audit Data</div>', unsafe_allow_html=True)
-        st.markdown('<div class="small-muted" style="margin-bottom:16px;">Raw technical properties formatted for the Google Sheets tracker.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title" style="margin-top:0;">Snapshot Data</div>', unsafe_allow_html=True)
+        st.markdown('<div class="small-muted" style="margin-bottom:16px;">Raw technical properties formatted for the Google Sheets audit tracker.</div>', unsafe_allow_html=True)
         
         audit_df = build_single_stock_export(symbol, row, st.session_state.get("search_timestamp", datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")), rank="")
         st.dataframe(audit_df, use_container_width=True, hide_index=True)
-        
         st.download_button("📥 DOWNLOAD AUDIT ROW (CSV)", data=audit_df.to_csv(index=False).encode("utf-8-sig"), file_name=f"audit_{symbol}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv", use_container_width=False, key=f"audit_{symbol}")
 
 
@@ -495,8 +525,9 @@ def render_detail(symbol,row):
 def render_home():
     render_theme_toggle()
     
-    st.markdown("<div style='font-size:1.8rem;font-weight:950'>📈 NIFTY Momentum Intelligence Platform</div><div class='small-muted'>Multi-horizon scanning across NIFTY Large Cap 100 + Midcap 150</div>",unsafe_allow_html=True)
-    render_market_bar(); render_ticker(); st.markdown("<div style='height:12px'></div>",unsafe_allow_html=True)
+    st.markdown("<div style='font-size:2rem;font-weight:800;letter-spacing:-.02em;'>NIFTY Momentum Intelligence</div><div class='small-muted' style='font-size:.9rem; margin-top:4px;'>Multi-horizon screening across Large & Midcap 250</div>",unsafe_allow_html=True)
+    st.markdown("<div style='height:16px'></div>",unsafe_allow_html=True)
+    render_market_bar(); render_ticker(); st.markdown("<div style='height:16px'></div>",unsafe_allow_html=True)
     
     audit_pending = st.session_state.get("audit_pending_rows") is not None
     
@@ -505,7 +536,7 @@ def render_home():
     # -------------------------------------------------------
     col_search, col_scan, col_audit, col_track = st.columns([3, 2, 2, 2])
     with col_search:
-        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px;">Search Stock</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:.75rem; font-weight:700; margin-bottom:6px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">Manual Search</div>', unsafe_allow_html=True)
         sc1, sc2 = st.columns([3, 1])
         with sc1:
             query = st.text_input("Stock symbol", placeholder="e.g. RELIANCE", key="stock_search_input", label_visibility="collapsed")
@@ -513,28 +544,30 @@ def render_home():
             search_clicked = st.button("SEARCH", key="search_stock", use_container_width=True)
             
     with col_scan:
-        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px; color:transparent;">-</div>', unsafe_allow_html=True)
-        normal_clicked = st.button("🚀 SCAN MARKET", key="scan_market", type="primary", use_container_width=True, disabled=audit_pending)
+        st.markdown('<div style="font-size:.75rem; font-weight:700; margin-bottom:6px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">Market Scanner</div>', unsafe_allow_html=True)
+        normal_clicked = st.button("🚀 SCAN MARKET", key="scan_market", use_container_width=True, disabled=audit_pending)
+        # Using a custom class hook for primary button in CSS
+        if normal_clicked: st.session_state.scan_intent = True
+        
     with col_audit:
-        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px; color:transparent;">-</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:.75rem; font-weight:700; margin-bottom:6px; color:transparent; text-transform:uppercase;">-</div>', unsafe_allow_html=True)
         audit_clicked = st.button("📊 COLLECT AUDIT", key="collect_audit", use_container_width=True, disabled=audit_pending)
     with col_track:
-        st.markdown('<div style="font-size:.85rem; font-weight:900; margin-bottom:4px; color:transparent;">-</div>', unsafe_allow_html=True)
-        tracking_clicked = st.button("📈 UPDATE TRACKING", key="update_performance_tracking", use_container_width=True, disabled=audit_pending, help="Backfill historical OHLC for saved signals.")
+        st.markdown('<div style="font-size:.75rem; font-weight:700; margin-bottom:6px; color:transparent; text-transform:uppercase;">-</div>', unsafe_allow_html=True)
+        tracking_clicked = st.button("📈 UPDATE TRACKING", key="update_performance_tracking", use_container_width=True, disabled=audit_pending)
 
-    # Search Execution
     if search_clicked and query.strip():
         symbol = query.strip().upper().replace(".NS", "")
         st.session_state.search_error = None
-        with st.spinner(f"Running scanner analysis for {symbol}…"):
+        with st.spinner(f"Analyzing {symbol}…"):
             try:
                 row = scan_single(symbol, max_distance=10.0, period="2y")
                 if row is None:
                     hist = fetch_history(symbol, "2y")
-                    if hist is None: raise ValueError("No usable 2-year price/volume history was returned for this symbol.")
+                    if hist is None: raise ValueError("No usable 2-year price history available.")
                     nifty = __import__("scanner").fetch_index_history("^NSEI", period="2y")
                     row = score_stock(hist, nifty_df=nifty)
-                    if row is None: raise ValueError("The scanner could not calculate the technical setup for this stock.")
+                    if row is None: raise ValueError("Could not calculate technical setup.")
                     row["symbol"] = symbol
                     row["company_name"] = symbol
                     row["cap_category"] = ""
@@ -555,62 +588,58 @@ def render_home():
             except Exception as exc:
                 st.error(str(exc))
 
-    st.markdown("<div style='height:20px'></div>",unsafe_allow_html=True)
+    st.markdown("<div style='height:24px'></div>",unsafe_allow_html=True)
 
-
-    with st.expander("🔬 Research: analyse completed 20-trading-day outcomes", expanded=False):
+    with st.expander("🔬 Research Analytics: Backtest 20-Day Outcomes", expanded=False):
         outcome_labels = {
             "Target 1 reached before Stop": "T1_Before_Stop", "Target 2 reached before Stop": "T2_Before_Stop",
             "Target 3 reached before Stop": "T3_Before_Stop", "Stop reached before any target": "Stop_Before_Target",
             "Target 1 touched at any time": "T1_Hit", "Target 2 touched at any time": "T2_Hit",
             "Target 3 touched at any time": "T3_Hit", "Breakout trigger reached": "Breakout_Hit",
         }
-        selected_outcome_label = st.selectbox("Outcome to evaluate", list(outcome_labels.keys()), key="audit_research_outcome_choice")
-        if st.button("🔬 RUN COMBINATION ANALYSIS", key="run_audit_combination_analysis"):
+        selected_outcome_label = st.selectbox("Evaluate Criteria", list(outcome_labels.keys()), key="audit_research_outcome_choice")
+        if st.button("🔬 RUN ANALYSIS", key="run_audit_combination_analysis"):
             try:
-                with st.status("Reading matured audit outcomes and testing combinations…", expanded=True) as analysis_status:
+                with st.status("Analyzing audited snapshots…", expanded=True) as analysis_status:
                     all_signals = read_audit_signals(st.secrets)
                     final_rows = read_final_performance(st.secrets)
-                    analysis_status.write(f"Loaded {len(all_signals):,} saved signal snapshots and {len(final_rows):,} Day-20 performance rows.")
                     completed_outcomes, completion_report = build_completed_outcomes(all_signals, final_rows)
                     if completed_outcomes.empty:
                         st.session_state.audit_analysis_result = None
                         st.session_state.audit_analysis_report = completion_report
                         st.session_state.audit_analysis_saved = False
-                        analysis_status.update(label="Not enough signals have completed 20 trading days yet", state="complete", expanded=False)
+                        analysis_status.update(label="Insufficient matured data for analysis.", state="complete", expanded=False)
                     else:
                         analysis_df = analyze_outcome_combinations(completed_outcomes, outcome_col=outcome_labels[selected_outcome_label], min_signals=max(25, int(len(completed_outcomes) * 0.05)), max_order=3)
                         st.session_state.audit_analysis_result = analysis_df
                         st.session_state.audit_analysis_report = completion_report
                         st.session_state.audit_analysis_outcome = outcome_labels[selected_outcome_label]
                         st.session_state.audit_analysis_saved = False
-                        analysis_status.update(label=f"Analysis complete: {len(completed_outcomes):,} matured signals evaluated", state="complete", expanded=False)
-            except Exception as exc: st.error("Combination analysis failed. Details: " + str(exc))
+                        analysis_status.update(label=f"Analysis Complete: {len(completed_outcomes):,} signals.", state="complete", expanded=False)
+            except Exception as exc: st.error("Analysis Failed: " + str(exc))
 
         stored_report = st.session_state.get("audit_analysis_report")
         stored_analysis = st.session_state.get("audit_analysis_result")
         if stored_report is not None:
-            st.caption(f"Matured signals: {stored_report.get('signals_matured_20d', 0):,} / {stored_report.get('signals_total', 0):,}; pending 20-day outcome: {stored_report.get('signals_pending', 0):,}.")
+            st.caption(f"Matured signals: {stored_report.get('signals_matured_20d', 0):,} / {stored_report.get('signals_total', 0):,}")
         if isinstance(stored_analysis, pd.DataFrame) and not stored_analysis.empty:
             st.dataframe(stored_analysis.head(50), use_container_width=True, hide_index=True)
             if not st.session_state.get("audit_analysis_saved", False):
-                if st.button("💾 APPEND ANALYSIS RESULTS TO GOOGLE SHEET"):
+                if st.button("💾 SAVE TO GOOGLE SHEETS"):
                     try:
-                        with st.spinner("Appending analysis rows to Analysis_Results…"): saved_count = append_analysis_rows(st.secrets, stored_analysis)
+                        with st.spinner("Writing to sheet…"): saved_count = append_analysis_rows(st.secrets, stored_analysis)
                         st.session_state.audit_analysis_saved = True
-                        st.success(f"Saved {saved_count:,} analysis rows to Analysis_Results.")
+                        st.success(f"Successfully saved {saved_count:,} rows.")
                         st.rerun()
-                    except Exception as exc: st.error("Could not save analysis results. Details: " + str(exc))
+                    except Exception as exc: st.error("Save Failed: " + str(exc))
 
 
-    # Tracking Update Action
     if tracking_clicked:
         try:
-            with st.status("📈 Updating 20-day performance tracking…", expanded=True) as tracking_status:
-                tracking_status.write("Reading saved audit signals from Google Sheets…")
+            with st.status("📈 Processing Performance Tracking Data…", expanded=True) as tracking_status:
                 signal_df = read_audit_signals(st.secrets)
                 existing_keys = read_performance_keys(st.secrets)
-                if signal_df.empty: st.warning("No saved audit signals were found.")
+                if signal_df.empty: st.warning("No audit signals found.")
                 else:
                     cutoff_date = latest_completed_market_date()
                     total_steps = st.empty(); progress_bar = st.progress(0); last_progress = {"value": -1}
@@ -621,18 +650,16 @@ def render_home():
                     price_histories, missing_symbols, market_sessions, calendar_source = fetch_ohlc_histories(signal_df, as_of_date=cutoff_date, progress_callback=progress_update)
                     progress_bar.progress(100)
                     new_performance, tracking_report = build_performance_rows(signal_df, price_histories, existing_performance=existing_keys, as_of_date=cutoff_date, market_sessions=market_sessions, calendar_source=calendar_source, progress_callback=lambda d, t, m: total_steps.caption(m))
-                    tracking_report["missing_symbols_from_fetch"] = missing_symbols
                     if not new_performance.empty:
                         write_result = append_performance_rows(st.secrets, new_performance, batch_size=400, progress_callback=lambda d, t, m: total_steps.caption(m))
                     else: write_result = {"saved": False, "rows": 0, "expected": 0, "reason": "no_new_rows"}
-                    tracking_status.update(label="✅ Performance tracking update finished", state="complete", expanded=False)
-                    st.success(f"Finished. {write_result.get('rows', 0):,} new rows appended; {write_result.get('updated', 0):,} repaired.")
-        except Exception as exc: st.error("Performance tracking update failed. Details: " + str(exc))
+                    tracking_status.update(label="✅ Tracking update complete", state="complete", expanded=False)
+                    st.success(f"Appended {write_result.get('rows', 0):,} rows. Repaired {write_result.get('updated', 0):,} missing data points.")
+        except Exception as exc: st.error("Tracking Failed: " + str(exc))
 
     if audit_pending:
-        st.info("📌 An audit scan is waiting for your confirmation below. Resolve it before starting another scan.")
+        st.info("📌 Resolve pending audit confirmation below.")
 
-    # Scan Execution
     scan_mode = "audit" if audit_clicked else "normal" if normal_clicked else None
     if scan_mode:
         st.session_state.scanning = True
@@ -640,8 +667,8 @@ def render_home():
         st.session_state.scan_result = None
         scan_placeholder = st.empty()
         try:
-            scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:950;font-size:1rem">🔎 Scanning market…</div><div class="scan-copy"><span>Analyzing NIFTY Universe</span><span>Working</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
-            with st.spinner("Calculating technical setups…"):
+            scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating Equities</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
+            with st.spinner("Executing models…"):
                 result = scan_universe(max_distance=10.0, period="2y", top_n=500)
             st.session_state.scan_result = result
             st.session_state.scan_timestamp = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
@@ -659,53 +686,48 @@ def render_home():
             st.session_state.scanning = False
             scan_placeholder.empty()
 
-
     result=st.session_state.get("scan_result")
     if st.session_state.get("scan_error"): st.error(st.session_state.scan_error)
     if result is None:
-        st.markdown('<div class="card" style="text-align:center; padding: 40px;"><b>Ready to scan</b><div class="small-muted" style="margin-top:6px">The scanner will fetch the universe and list qualifying technical setups.</div></div>',unsafe_allow_html=True); return
+        st.markdown('<div class="card" style="text-align:center; padding: 60px 20px;"><div style="font-size:1.1rem; font-weight:700;">Awaiting Input</div><div class="small-muted" style="margin-top:8px">Execute a market scan to identify near-breakout configurations.</div></div>',unsafe_allow_html=True); return
     if result.empty:
-        st.markdown('<div class="card" style="text-align:center; padding: 40px;"><b>No qualifying setups found</b><div class="small-muted" style="margin-top:6px">Nothing currently meets the near-breakout criteria.</div></div>',unsafe_allow_html=True); return
+        st.markdown('<div class="card" style="text-align:center; padding: 60px 20px;"><div style="font-size:1.1rem; font-weight:700;">No Candidates Found</div><div class="small-muted" style="margin-top:8px">Market conditions yield zero qualifying technical setups.</div></div>',unsafe_allow_html=True); return
 
-    # Audit Confirmation
     pending_rows = st.session_state.get("audit_pending_rows")
-    pending_run_id = st.session_state.get("audit_pending_run_id")
-    pending_timestamp = st.session_state.get("audit_pending_timestamp")
-    append_in_progress = st.session_state.get("audit_append_in_progress", False)
     if pending_rows is not None:
+        append_in_progress = st.session_state.get("audit_append_in_progress", False)
         if append_in_progress:
-            st.info(f"⏳ Writing {len(pending_rows)} audit rows to Google Sheets… Please keep this page open.")
+            st.info(f"⏳ Synchronizing {len(pending_rows)} rows to external database…")
             try:
-                with st.status("⏳ Appending audit batch…", expanded=True) as status:
-                    audit_info = append_audit_batch(st.secrets, pending_rows, run_id=pending_run_id, scan_timestamp_ist=pending_timestamp, scanner_period="2y", max_distance_pct=10.0)
-                    status.update(label=f"✅ Audit batch written: {audit_info.get('rows', 0)} new rows.", state="complete", expanded=False)
+                with st.status("Writing to Audit Sheet…", expanded=True) as status:
+                    audit_info = append_audit_batch(st.secrets, pending_rows, run_id=st.session_state.get("audit_pending_run_id"), scan_timestamp_ist=st.session_state.get("audit_pending_timestamp"), scanner_period="2y", max_distance_pct=10.0)
+                    status.update(label=f"✅ Inserted {audit_info.get('rows', 0)} rows.", state="complete", expanded=False)
                 st.session_state.audit_last_saved = audit_info
                 st.session_state.audit_pending_rows = None; st.session_state.audit_append_in_progress = False
                 st.rerun()
             except Exception as exc:
                 st.session_state.audit_append_in_progress = False
-                st.error("Audit batch failed. Details: " + str(exc))
+                st.error("Audit Write Failed: " + str(exc))
         else:
-            st.warning(f"📊 Audit collection ready: {len(pending_rows)} signal rows. Append to Google Sheet?")
+            st.warning(f"📊 Confirm Audit Write: {len(pending_rows)} rows generated.")
             y_col, n_col = st.columns([1,1])
-            if y_col.button("✅ YES — APPEND TO AUDIT SHEET", type="primary", use_container_width=True):
+            if y_col.button("✅ CONFIRM & UPLOAD", use_container_width=True):
                 st.session_state.audit_append_in_progress = True; st.rerun()
-            if n_col.button("❌ NO — DISCARD THIS AUDIT", use_container_width=True):
+            if n_col.button("❌ DISCARD BATCH", use_container_width=True):
                 st.session_state.audit_pending_rows = None; st.rerun()
 
     audit_info = st.session_state.get("audit_last_saved") or {}
     if audit_info.get("saved") and audit_info.get("reason") in {"appended", "batch_already_exists"}:
-        st.success(f"✅ Audit batch recorded: {audit_info.get('rows', 0)} new signal rows.")
+        st.success(f"✅ Securely logged {audit_info.get('rows', 0)} signals.")
 
     display = result.copy()
     sort_cols = [c for c in ["rating", "score", "rank_score", "distance_pct"] if c in display.columns]
-    if sort_cols:
-        display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind="stable").reset_index(drop=True)
+    if sort_cols: display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind="stable").reset_index(drop=True)
     
-    st.markdown(f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-top: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px;"><div class="section-title" style="border:none; margin:0; padding:0;">Scanned Stocks ({len(display)})</div><div class="rank-note" style="margin:0;">Sorted by Strength (highest first)</div></div>',unsafe_allow_html=True)
+    st.markdown(f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-top: 32px; border-bottom: 1px solid var(--border); padding-bottom: 10px;"><div class="section-title" style="border:none; margin:0; padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({len(display)} Matches)</span></div><div class="rank-note" style="margin:0;">Ranked by Momentum Setup</div></div>',unsafe_allow_html=True)
     
     # -------------------------------------------------------
-    # DENSE 4-COLUMN DESKTOP GRID FOR RESULTS
+    # DENSE 4-COLUMN FLAT FINTECH GRID
     # -------------------------------------------------------
     for start in range(0,len(display),4):
         cols=st.columns(4)
@@ -713,50 +735,54 @@ def render_home():
             idx=start+j
             if idx>=len(display): continue
             row=display.iloc[idx]; ratio=idx/max(len(display)-1,1)
-            color="#19d38a" if ratio<.2 else "#8fd66a" if ratio<.4 else "#f5c451" if ratio<.6 else "#ff9b4a" if ratio<.8 else "#ff5c70"
+            
+            # Sotex color grading (pure flat solids)
+            if ratio<.2: color="#10b981"; bg_fill="rgba(16,185,129,0.06)" 
+            elif ratio<.4: color="#84cc16"; bg_fill="rgba(132,204,22,0.06)"
+            elif ratio<.6: color="#f59e0b"; bg_fill="rgba(245,158,11,0.06)"
+            elif ratio<.8: color="#f97316"; bg_fill="rgba(249,115,22,0.06)"
+            else: color="#ef4444"; bg_fill="rgba(239,68,68,0.06)"
+
             with col:
                 rating = int(float(row.get("rating", 0) or 0))
-                rating_color = "#19d38a" if rating >= 8 else "#8fd66a" if rating >= 7 else "#f5c451" if rating >= 5 else "#ff9b4a" if rating >= 3 else "#ff5c70"
                 score = float(row.get("score", 0) or 0)
                 price = float(row.get("price", 0) or 0)
                 st.markdown(f'''
-                <div style="border-radius:12px;border:1px solid rgba(255,255,255,.08);padding:14px;background:linear-gradient(145deg,{color}15,var(--card));margin-bottom:-4px; height: 100%;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                        <div style="font-size:.72rem;font-weight:900;color:{color}">RANK #{idx+1} &nbsp;•&nbsp; {html.escape(str(row.get("cap_category","")))}</div>
+                <div style="border-radius:10px;border:1px solid var(--border);padding:18px;background:var(--card);margin-bottom:-4px; height: 100%;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK {idx+1}</span>
+                        <span style="font-size:.65rem;font-weight:700;padding:3px 6px;border-radius:4px;background:{bg_fill};color:{color};">{html.escape(str(row.get("cap_category","")))}</span>
                     </div>
-                    <div style="font-weight:950;font-size:1.15rem;color:var(--text); margin-top: 4px; line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>
-                    <div class="small-muted" style="margin-bottom:8px;">{html.escape(str(row["symbol"]))}</div>
+                    <div style="font-weight:800;font-size:1.15rem;color:var(--text); margin-top: 10px; line-height:1.2; letter-spacing:-.01em;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>
+                    <div class="small-muted" style="margin-bottom:14px; font-weight:500;">{html.escape(str(row["symbol"]))}</div>
                     
-                    <div style="display:flex; gap:6px; margin-bottom:12px;">
-                        <span style="padding:4px 8px;border-radius:6px;border:1px solid {rating_color}40;background:{rating_color}18;color:{rating_color};font-size:.7rem;font-weight:950;">Strength {rating}/10</span>
-                        <span style="padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--text);font-size:.7rem;font-weight:950;">Score {score:.1f}</span>
+                    <div style="display:flex; gap:8px; margin-bottom:16px;">
+                        <span style="padding:4px 8px;border-radius:4px;background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:.7rem;font-weight:600;">Rate {rating}/10</span>
+                        <span style="padding:4px 8px;border-radius:4px;background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:.7rem;font-weight:600;">Score {score:.1f}</span>
                     </div>
 
-                    <div style="font-weight:950;font-size:1.2rem;">{money(price)}</div>
-                    <div style="font-size:.8rem;color:{color};font-weight:900; margin-bottom: 12px;">{float(row.get("distance_pct",0)):.2f}% to breakout</div>
+                    <div style="font-weight:800;font-size:1.25rem;">{money(price)}</div>
+                    <div style="font-size:.75rem;color:{color};font-weight:700; margin-bottom: 16px;">{float(row.get("distance_pct",0)):.2f}% to resistance</div>
                     
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-                        <div style="border:1px solid rgba(25,211,138,.24);border-radius:8px;padding:6px;background:rgba(25,211,138,.06);text-align:center;">
-                            <div style="font-size:.65rem;font-weight:900;color:#19d38a;text-transform:uppercase;">RSI</div>
-                            <div style="font-size:.95rem;font-weight:950;">{float(row.get("rsi", 0) or 0):.1f}</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+                        <div style="border-top:2px solid {color};padding-top:8px;">
+                            <div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RSI</div>
+                            <div style="font-size:1rem;font-weight:800;">{float(row.get("rsi", 0) or 0):.0f}</div>
                         </div>
-                        <div style="border:1px solid rgba(25,211,138,.24);border-radius:8px;padding:6px;background:rgba(25,211,138,.06);text-align:center;">
-                            <div style="font-size:.65rem;font-weight:900;color:#19d38a;text-transform:uppercase;">ADX</div>
-                            <div style="font-size:.95rem;font-weight:950;">{float(row.get("adx", 0) or 0):.1f}</div>
+                        <div style="border-top:2px solid {color};padding-top:8px;">
+                            <div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">ADX</div>
+                            <div style="font-size:1rem;font-weight:800;">{float(row.get("adx", 0) or 0):.0f}</div>
                         </div>
-                        <div style="border:1px solid rgba(25,211,138,.24);border-radius:8px;padding:6px;background:rgba(25,211,138,.06);text-align:center;">
-                            <div style="font-size:.65rem;font-weight:900;color:#19d38a;text-transform:uppercase;">MACD</div>
-                            <div style="font-size:.95rem;font-weight:950;">{float(row.get("macd", 0) or 0):.3f}</div>
+                        <div style="border-top:2px solid {color};padding-top:8px;">
+                            <div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">MACD</div>
+                            <div style="font-size:1rem;font-weight:800;">{float(row.get("macd", 0) or 0):.2f}</div>
                         </div>
                     </div>
                 </div>''',unsafe_allow_html=True)
-                if st.button(f"Research {row['symbol']}",key=f"stock_{row['symbol']}",use_container_width=True):
+                if st.button(f"Analyze",key=f"stock_{row['symbol']}",use_container_width=True):
                     st.session_state.selected_stock=row["symbol"]; st.session_state.selected_row=row.to_dict(); st.session_state.page="detail"; st.rerun()
 
 
-# -----------------------------------------------------------------------------
-# Session-state navigation
-# -----------------------------------------------------------------------------
 if "page" not in st.session_state: st.session_state.page = "home"
 if "scan_result" not in st.session_state: st.session_state.scan_result = None
 if "scan_timestamp" not in st.session_state: st.session_state.scan_timestamp = None
@@ -773,5 +799,3 @@ if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
 else:
     render_home()
-
-st.markdown('<div style="text-align:center;color:#71839a;font-size:.8rem;margin-top:40px; border-top:1px solid var(--border); padding-top:20px;">For educational purposes only. Not investment advice.</div>', unsafe_allow_html=True)
