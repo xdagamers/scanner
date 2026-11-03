@@ -170,7 +170,7 @@ def render_reload_guard(active=True):
         const modal = d.getElementById('reload-confirm');
         const yes = d.getElementById('reload-yes');
         const no = d.getElementById('reload-no');
-        const show = () => { if (modal) { modal.style.display='flex'; modal.style.background = w.matchMedia('(prefers-color-scheme: dark)').matches ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6);'; } };
+        const show = () => { if (modal) { modal.style.display='flex'; modal.style.background = w.matchMedia('(prefers-color-scheme: dark)').matches ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)'; } };
         const hide = () => { if (modal) modal.style.display='none'; };
         if (yes) yes.onclick = () => { w.location.href = w.location.origin + w.location.pathname + '?__reload_home=1'; };
         if (no) no.onclick = hide;
