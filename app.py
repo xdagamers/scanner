@@ -411,28 +411,28 @@ def render_detail(symbol,row):
         if st.button("← Back"):
             st.session_state.page="home"; st.rerun()
 
-    # Top Hero Section
     company=row.get("company_name",symbol); last,change,change_pct=day_change(symbol); price=last if last is not None else row.get("price")
     score=float(row.get("score",0)); label,strong=verdict(score); change_cls="up" if (change_pct or 0)>=0 else "down"; arrow="▲" if (change_pct or 0)>=0 else "▼"
     t1,t2,target_note=target_values(row,price)
     t1up=((t1/price)-1)*100 if price else 0; t2up=((t2/price)-1)*100 if price else 0
     
-    st.markdown(f'''
-    <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 24px; padding: 24px; background: var(--card); border-radius: 12px; border: 1px solid var(--border);">
-        <div>
-            <div class="small-muted" style="font-size:.9rem; font-weight:600; margin-bottom:6px; letter-spacing:.02em; text-transform:uppercase;">{html.escape(str(company))}</div>
-            <div style="font-size:2.4rem;font-weight:800; line-height: 1.1; color:var(--text);">{html.escape(symbol)}</div>
-            <div style="display:flex; align-items:center; gap: 14px; margin-top: 10px;">
-                <div class="hero-price" style="font-size:1.8rem;">{money(price)}</div>
-                <div class="{change_cls}" style="font-weight:700; font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>
-            </div>
-        </div>
-        <div style="display:flex; gap: 16px;">
-            <div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}%</div></div>
-            <div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}%</div></div>
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
+    hero_html = (
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;padding:24px;background:var(--card);border-radius:12px;border:1px solid var(--border);">'
+        f'<div>'
+        f'<div class="small-muted" style="font-size:.9rem;font-weight:600;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase;">{html.escape(str(company))}</div>'
+        f'<div style="font-size:2.4rem;font-weight:800;line-height:1.1;color:var(--text);">{html.escape(symbol)}</div>'
+        f'<div style="display:flex;align-items:center;gap:14px;margin-top:10px;">'
+        f'<div class="hero-price" style="font-size:1.8rem;">{money(price)}</div>'
+        f'<div class="{change_cls}" style="font-weight:700;font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>'
+        f'</div>'
+        f'</div>'
+        f'<div style="display:flex;gap:16px;">'
+        f'<div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}%</div></div>'
+        f'<div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}%</div></div>'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(hero_html, unsafe_allow_html=True)
 
     tab_tech, tab_fund, tab_news, tab_audit = st.tabs(["📈 Technical Setup", "🏛️ Fundamentals", "📰 News & Events", "📊 Audit Details"])
     
@@ -457,7 +457,7 @@ def render_detail(symbol,row):
             elif distance<=2: title,msg,cls="ENTRY ZONE","Near breakout level. Await volume confirmation.","badge-green"
             elif distance<=5: title,msg,cls="Developing","Setup forming, not near entry.","badge-yellow"
             else: title,msg,cls="Watch","Monitoring base formation.","badge-grey"
-            st.markdown(f'''<div class="card" style="text-align:center;"><span class="badge {cls}">{title}</span><div style="font-size:1rem;font-weight:700;margin-top:14px;color:var(--text);">{msg}</div><div class="small-muted" style="margin-top:8px">Distance: <span style="font-weight:600;">{distance:.2f}%</span> &nbsp; • &nbsp; Trigger: <span style="font-weight:600;">{money(row.get("breakout_trigger"))}</span></div></div>''',unsafe_allow_html=True)
+            st.markdown(f'<div class="card" style="text-align:center;"><span class="badge {cls}">{title}</span><div style="font-size:1rem;font-weight:700;margin-top:14px;color:var(--text);">{msg}</div><div class="small-muted" style="margin-top:8px">Distance: <span style="font-weight:600;">{distance:.2f}%</span> &nbsp; • &nbsp; Trigger: <span style="font-weight:600;">{money(row.get("breakout_trigger"))}</span></div></div>',unsafe_allow_html=True)
             
             if row.get("explanation"):
                 st.markdown(f'<div class="card"><b style="font-size:.85rem;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;">Setup Summary</b><div style="margin-top:8px; font-size:.9rem; line-height:1.5;">{html.escape(str(row["explanation"]))}</div></div>',unsafe_allow_html=True)
@@ -508,17 +508,18 @@ def render_detail(symbol,row):
             prof_c = "var(--accent)" if pd.notna(prof) and prof > 0 else "var(--red)" if pd.notna(prof) else "var(--text)"
             dte_c = "var(--red)" if pd.notna(dte) and dte > 1.5 else "var(--accent)" if pd.notna(dte) else "var(--text)"
 
-            st.markdown(f'''
-            <div>
-                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
-                    <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Revenue Growth</b><br><span style="font-size:1.6rem; font-weight:800; color:{rev_c}">{rev_str}</span></div>
-                    <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Net Profit</b><br><span style="font-size:1.6rem; font-weight:800; color:{prof_c}">{prof_str}</span></div>
-                    <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem; font-weight:800;">{margin_str}</span></div>
-                    <div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Debt to Equity</b><br><span style="font-size:1.6rem; font-weight:800; color:{dte_c}">{dte_str}</span></div>
-                </div>
-                <div class="small-muted" style="margin-top:12px; text-align:right;">Data sourced via Yahoo Finance APIs.</div>
-            </div>
-            ''', unsafe_allow_html=True)
+            fund_html = (
+                f'<div>'
+                f'<div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:16px;">'
+                f'<div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Revenue Growth</b><br><span style="font-size:1.6rem;font-weight:800;color:{rev_c}">{rev_str}</span></div>'
+                f'<div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Net Profit</b><br><span style="font-size:1.6rem;font-weight:800;color:{prof_c}">{prof_str}</span></div>'
+                f'<div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem;font-weight:800;">{margin_str}</span></div>'
+                f'<div class="card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Debt to Equity</b><br><span style="font-size:1.6rem;font-weight:800;color:{dte_c}">{dte_str}</span></div>'
+                f'</div>'
+                f'<div class="small-muted" style="margin-top:12px;text-align:right;">Data sourced via Yahoo Finance APIs.</div>'
+                f'</div>'
+            )
+            st.markdown(fund_html, unsafe_allow_html=True)
         else:
             st.warning(f"Fundamental data is currently unavailable for {symbol}. Status: {fund_data.get('fundamental_quality')}")
 
@@ -526,14 +527,7 @@ def render_detail(symbol,row):
     with tab_news:
         st.markdown('<div class="section-title" style="margin-top:0;">Corporate Announcements</div>', unsafe_allow_html=True)
         st.info("News Intelligence module pending deployment (Phase 4).")
-        st.markdown('''
-        <div style="opacity: 0.4;">
-            <div class="card">
-                <span class="badge badge-brand">Pending Sync</span>
-                <div style="margin-top:10px; font-weight:600; font-size:1.1rem;">Awaiting NSE corporate filings feed.</div>
-            </div>
-        </div>
-        ''', unsafe_allow_html=True)
+        st.markdown('<div style="opacity:0.4;"><div class="card"><span class="badge badge-brand">Pending Sync</span><div style="margin-top:10px;font-weight:600;font-size:1.1rem;">Awaiting NSE corporate filings feed.</div></div></div>', unsafe_allow_html=True)
 
     # ------------------ TAB 4: AUDIT EXPORT ------------------
     with tab_audit:
@@ -750,7 +744,7 @@ def render_home():
     st.markdown(f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-top: 32px; border-bottom: 1px solid var(--border); padding-bottom: 10px;"><div class="section-title" style="border:none; margin:0; padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({len(display)} Matches)</span></div><div class="rank-note" style="margin:0;">Ranked by Momentum Setup</div></div>',unsafe_allow_html=True)
     
     # -------------------------------------------------------
-    # DENSE 4-COLUMN FLAT FINTECH GRID (WITH UNSAFE ALLOW HTML FIXED)
+    # DENSE 4-COLUMN FLAT FINTECH GRID (NO BLANK LINES OR INDENTATION IN HTML)
     # -------------------------------------------------------
     for start in range(0,len(display),4):
         cols=st.columns(4)
@@ -769,39 +763,38 @@ def render_home():
                 rating = int(float(row.get("rating", 0) or 0))
                 score = float(row.get("score", 0) or 0)
                 price = float(row.get("price", 0) or 0)
-                st.markdown(f'''
-                <div style="border-radius:10px;border:1px solid var(--border);padding:18px;background:var(--card);margin-bottom:-4px; height: 100%;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK {idx+1}</span>
-                        <span style="font-size:.65rem;font-weight:700;padding:3px 6px;border-radius:4px;background:{bg_fill};color:{color};">{html.escape(str(row.get("cap_category","")))}</span>
-                    </div>
-                    <div style="font-weight:800;font-size:1.15rem;color:var(--text); margin-top: 10px; line-height:1.2; letter-spacing:-.01em;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>
-                    <div class="small-muted" style="margin-bottom:14px; font-weight:500;">{html.escape(str(row["symbol"]))}</div>
-                    
-                    <div style="display:flex; gap:8px; margin-bottom:16px;">
-                        <span style="padding:4px 8px;border-radius:4px;background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:.7rem;font-weight:600;">Rate {rating}/10</span>
-                        <span style="padding:4px 8px;border-radius:4px;background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:.7rem;font-weight:600;">Score {score:.1f}</span>
-                    </div>
-
-                    <div style="font-weight:800;font-size:1.25rem;">{money(price)}</div>
-                    <div style="font-size:.75rem;color:{color};font-weight:700; margin-bottom: 16px;">{float(row.get("distance_pct",0)):.2f}% to resistance</div>
-                    
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-                        <div style="border-top:2px solid {color};padding-top:8px;">
-                            <div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RSI</div>
-                            <div style="font-size:1rem;font-weight:800;">{float(row.get("rsi", 0) or 0):.0f}</div>
-                        </div>
-                        <div style="border-top:2px solid {color};padding-top:8px;">
-                            <div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">ADX</div>
-                            <div style="font-size:1rem;font-weight:800;">{float(row.get("adx", 0) or 0):.0f}</div>
-                        </div>
-                        <div style="border-top:2px solid {color};padding-top:8px;">
-                            <div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">MACD</div>
-                            <div style="font-size:1rem;font-weight:800;">{float(row.get("macd", 0) or 0):.2f}</div>
-                        </div>
-                    </div>
-                </div>''', unsafe_allow_html=True)
-                if st.button(f"Analyze",key=f"stock_{row['symbol']}",use_container_width=True):
+                card_html = (
+                    f'<div style="border-radius:10px;border:1px solid var(--border);padding:18px;background:var(--card);margin-bottom:-4px;height:100%;">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK {idx+1}</span>'
+                    f'<span style="font-size:.65rem;font-weight:700;padding:3px 6px;border-radius:4px;background:{bg_fill};color:{color};">{html.escape(str(row.get("cap_category","")))}</span>'
+                    f'</div>'
+                    f'<div style="font-weight:800;font-size:1.15rem;color:var(--text);margin-top:10px;line-height:1.2;letter-spacing:-.01em;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>'
+                    f'<div class="small-muted" style="margin-bottom:14px;font-weight:500;">{html.escape(str(row["symbol"]))}</div>'
+                    f'<div style="display:flex;gap:8px;margin-bottom:16px;">'
+                    f'<span style="padding:4px 8px;border-radius:4px;background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:.7rem;font-weight:600;">Rate {rating}/10</span>'
+                    f'<span style="padding:4px 8px;border-radius:4px;background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:.7rem;font-weight:600;">Score {score:.1f}</span>'
+                    f'</div>'
+                    f'<div style="font-weight:800;font-size:1.25rem;">{money(price)}</div>'
+                    f'<div style="font-size:.75rem;color:{color};font-weight:700;margin-bottom:16px;">{float(row.get("distance_pct",0)):.2f}% to resistance</div>'
+                    f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">'
+                    f'<div style="border-top:2px solid {color};padding-top:8px;">'
+                    f'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RSI</div>'
+                    f'<div style="font-size:1rem;font-weight:800;">{float(row.get("rsi", 0) or 0):.0f}</div>'
+                    f'</div>'
+                    f'<div style="border-top:2px solid {color};padding-top:8px;">'
+                    f'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">ADX</div>'
+                    f'<div style="font-size:1rem;font-weight:800;">{float(row.get("adx", 0) or 0):.0f}</div>'
+                    f'</div>'
+                    f'<div style="border-top:2px solid {color};padding-top:8px;">'
+                    f'<div style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;">MACD</div>'
+                    f'<div style="font-size:1rem;font-weight:800;">{float(row.get("macd", 0) or 0):.2f}</div>'
+                    f'</div>'
+                    f'</div>'
+                    f'</div>'
+                )
+                st.markdown(card_html, unsafe_allow_html=True)
+                if st.button("Analyze", key=f"stock_{row['symbol']}", use_container_width=True):
                     st.session_state.selected_stock=row["symbol"]; st.session_state.selected_row=row.to_dict(); st.session_state.page="detail"; st.rerun()
 
 
