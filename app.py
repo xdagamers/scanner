@@ -46,7 +46,7 @@ except ImportError:
 
 IST = ZoneInfo("Asia/Kolkata")
 
-NIFTY50_CSV = "[https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv](https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv)"
+NIFTY50_CSV = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv"
 NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
     "Accept": "text/csv,text/plain,*/*",
@@ -167,7 +167,7 @@ def inject_theme_css():
 
     css = f"""
     <style>
-    @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap)');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
     :root {{ {theme_vars} }}
     html, body, [data-testid="stAppViewContainer"] {{
         background: var(--bg) !important;
@@ -678,7 +678,7 @@ def render_ticker():
     textc = "#0f172a" if light else "#f8fafc"
     muted = "#64748b" if light else "#8c9bae"
     border = "#e2e8f0" if light else "#1e2535"
-    markup = f'''<html><head><style>@import url('[https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap)'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee 140s linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981}}.down{{color:#ef4444}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
+    markup = f'''<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee 140s linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981}}.down{{color:#ef4444}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
     components.html(markup, height=44, scrolling=False)
 
 
@@ -815,7 +815,7 @@ def render_detail(symbol, row):
         with c_left:
             st.markdown('<div class="section-title" style="margin-top:0;">Price Action & Volume</div>', unsafe_allow_html=True)
             tv_symbol = str(symbol).replace(".NS", "").upper()
-            tv_url = f"[https://www.tradingview.com/chart/?symbol=NSE](https://www.tradingview.com/chart/?symbol=NSE):{tv_symbol}"
+            tv_url = f"https://www.tradingview.com/chart/?symbol=NSE:{tv_symbol}"
             detail_chart(symbol, row)
             st.markdown(f'<div style="text-align:center;margin:8px 0 16px;"><a href="{tv_url}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;font-size:.85rem;text-decoration:none;">Open Full Interactive Chart ↗</a></div>', unsafe_allow_html=True)
 
@@ -912,9 +912,32 @@ def render_detail(symbol, row):
             st.warning(f"Fundamental data is currently unavailable for {symbol}. Status: {fund_data.get('fundamental_quality')}")
 
     with tab_news:
-        st.markdown('<div class="section-title" style="margin-top:0;">Corporate Filings Feed</div>', unsafe_allow_html=True)
-        st.info("News Intelligence module active.")
-        st.markdown('<div class="bento-card"><span class="badge badge-brand">Live Feed</span><div style="margin-top:10px;font-weight:600;font-size:1.05rem;">Awaiting incoming exchange filings and block deals.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & Exchange Filings</div>', unsafe_allow_html=True)
+        try:
+            ticker_obj = yf.Ticker(symbol)
+            news_list = ticker_obj.news
+        except Exception:
+            news_list = []
+
+        if news_list:
+            for item in news_list[:6]:
+                title = item.get("title", "No Title")
+                publisher = item.get("publisher", "Exchange Source")
+                link = item.get("link", "#")
+                pub_time = item.get("providerPublishTime")
+                time_str = datetime.fromtimestamp(pub_time).strftime("%d %b %Y • %H:%M IST") if pub_time else "Recent"
+                
+                st.markdown(f"""
+                <div class="news-item">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <span class="news-time">{time_str}</span>
+                        <span class="badge badge-brand">{publisher}</span>
+                    </div>
+                    <div class="news-headline"><a href="{link}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">{html.escape(title)} ↗</a></div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="bento-card"><span class="badge badge-brand">Live Feed</span><div style="margin-top:10px;font-weight:600;font-size:1.05rem;">No recent news articles or exchange filings found via Yahoo Finance for {symbol}.</div></div>', unsafe_allow_html=True)
 
     with tab_audit:
         st.markdown('<div class="section-title" style="margin-top:0;">Google Sheets Audit Export</div>', unsafe_allow_html=True)
@@ -1050,18 +1073,22 @@ def render_home():
         light = st.session_state.theme_mode == "light"
         
         if result is not None and not result.empty and "cap_category" in result.columns:
-            cap_counts = result["cap_category"].value_counts()
+            caps = result["cap_category"].replace("", "Unclassified").fillna("Unclassified")
+            cap_counts = caps.value_counts()
             labels = cap_counts.index.tolist()
             values = cap_counts.values.tolist()
         else:
             labels = ["Large Cap", "Mid Cap", "Small Cap"]
             values = [54, 36, 10]
 
+        palette = ["#10b981", "#6366f1", "#f59e0b", "#ec4899", "#8b5cf6"]
+        colors = [palette[i % len(palette)] for i in range(len(labels))]
+
         fig_donut = go.Figure(go.Pie(
             labels=labels,
             values=values,
             hole=0.7,
-            marker_colors=["#10b981", "#6366f1", "#f59e0b"],
+            marker_colors=colors,
             textinfo="none",
         ))
         fig_donut.update_layout(
