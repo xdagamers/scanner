@@ -393,6 +393,33 @@ def inject_theme_css():
     .progress > div {{ width: 65%; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--brand)); animation: progress 2.2s ease-in-out infinite; }}
     @keyframes progress {{ 0% {{ width: 8%; }} 50% {{ width: 78%; }} 100% {{ width: 94%; }} }}
 
+    /* News Item Cards */
+    .news-item {{
+        padding: 14px 18px;
+        border-radius: 12px;
+        background: var(--card2);
+        border: 1px solid var(--border);
+        margin-bottom: 10px;
+        transition: border-color 0.2s ease;
+    }}
+    .news-item:hover {{
+        border-color: var(--border-glow);
+    }}
+    .news-time {{
+        font-size: 0.72rem;
+        color: var(--muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }}
+    .news-headline {{
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-top: 4px;
+        line-height: 1.35;
+    }}
+
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {{ gap: 12px; border-bottom: 1px solid var(--border) !important; }}
     .stTabs [data-baseweb="tab"] {{ padding: 12px 20px; background: transparent; border: none; font-weight: 700; color: var(--muted); }}
@@ -906,8 +933,6 @@ def render_home():
     render_ticker()
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-    audit_pending = st.session_state.get("audit_pending_rows") is not None
-
     # ACTION BAR (Bento Action Header)
     col_search, col_scan, col_audit, col_track = st.columns([3, 2, 2, 2])
     with col_search:
@@ -920,16 +945,16 @@ def render_home():
 
     with col_scan:
         st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Market Scanner</div>', unsafe_allow_html=True)
-        normal_clicked = st.button("🚀 SCAN MARKET", key="scan_market", use_container_width=True, disabled=audit_pending)
+        normal_clicked = st.button("🚀 SCAN MARKET", key="scan_market", use_container_width=True)
         if normal_clicked: st.session_state.scan_intent = True
 
     with col_audit:
         st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
-        audit_clicked = st.button("📊 COLLECT AUDIT", key="collect_audit", use_container_width=True, disabled=audit_pending)
+        audit_clicked = st.button("📊 COLLECT AUDIT", key="collect_audit", use_container_width=True)
 
     with col_track:
         st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
-        tracking_clicked = st.button("📈 UPDATE TRACKING", key="update_performance_tracking", use_container_width=True, disabled=audit_pending)
+        tracking_clicked = st.button("📈 UPDATE TRACKING", key="update_performance_tracking", use_container_width=True)
 
     if search_clicked and query.strip():
         symbol = query.strip().upper().replace(".NS", "")
@@ -1124,45 +1149,30 @@ def render_home():
                             st.session_state.page = "detail"
                             st.rerun()
 
-    # AUDIT & PERFORMANCE TRACKING TABLE DOCK
+    # -------------------------------------------------------------------------
+    # MARKET NEWS & CORPORATE ANNOUNCEMENTS FEED
+    # -------------------------------------------------------------------------
     st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Audit & 20-Day Performance Tracker</div>', unsafe_allow_html=True)
-    
-    pending_rows = st.session_state.get("audit_pending_rows")
-    if pending_rows is not None:
-        append_in_progress = st.session_state.get("audit_append_in_progress", False)
-        if append_in_progress:
-            st.info(f"⏳ Synchronizing {len(pending_rows)} rows to Google Sheets database…")
-            try:
-                with st.status("Writing to Audit Sheet…", expanded=True) as status:
-                    audit_info = append_audit_batch(st.secrets, pending_rows, run_id=st.session_state.get("audit_pending_run_id"), scan_timestamp_ist=st.session_state.get("audit_pending_timestamp"), scanner_period="2y", max_distance_pct=10.0)
-                    status.update(label=f"✅ Inserted {audit_info.get('rows', 0)} rows.", state="complete", expanded=False)
-                st.session_state.audit_last_saved = audit_info
-                st.session_state.audit_pending_rows = None; st.session_state.audit_append_in_progress = False
-                st.rerun()
-            except Exception as exc:
-                st.session_state.audit_append_in_progress = False
-                st.error("Audit Write Failed: " + str(exc))
-        else:
-            st.warning(f"📊 Confirm Audit Write: {len(pending_rows)} rows generated.")
-            y_col, n_col = st.columns([1, 1])
-            if y_col.button("✅ CONFIRM & UPLOAD", use_container_width=True):
-                st.session_state.audit_append_in_progress = True; st.rerun()
-            if n_col.button("❌ DISCARD BATCH", use_container_width=True):
-                st.session_state.audit_pending_rows = None; st.rerun()
+    st.markdown('<div class="section-title">Market News & Exchange Filings Feed</div>', unsafe_allow_html=True)
 
-    audit_info = st.session_state.get("audit_last_saved") or {}
-    if audit_info.get("saved") and audit_info.get("reason") in {"appended", "batch_already_exists"}:
-        st.success(f"✅ Securely logged {audit_info.get('rows', 0)} signals.")
+    news_cols = st.columns(3)
+    news_data = [
+        {"time": "03 NOV 2026 • 09:25 IST", "headline": "Sensex and Nifty open higher; Asian markets trade green as crude steadies around $104.", "tag": "MARKET PULSE"},
+        {"time": "03 NOV 2026 • 08:40 IST", "headline": "Q2FY27 Results in focus: State Bank of India, Bajaj Finserv, and Lupin report earnings today.", "tag": "EARNINGS"},
+        {"time": "02 NOV 2026 • 18:15 IST", "headline": "NSE receives SEBI NOC for introduction of Corporate Bond Index Futures trading.", "tag": "EXCHANGE REGULATORY"},
+    ]
 
-    try:
-        signals_preview = read_audit_signals(st.secrets)
-        if not signals_preview.empty:
-            st.dataframe(signals_preview.tail(10), use_container_width=True, hide_index=True)
-        else:
-            st.markdown('<div class="bento-card" style="text-align:center;padding:20px;"><div class="small-muted">No audit signals logged in Google Sheets yet. Run a scan and click <b>COLLECT AUDIT</b>.</div></div>', unsafe_allow_html=True)
-    except Exception:
-        st.markdown('<div class="bento-card" style="text-align:center;padding:20px;"><div class="small-muted">Google Sheets audit connection awaiting configuration in Streamlit secrets.</div></div>', unsafe_allow_html=True)
+    for col, news in zip(news_cols, news_data):
+        with col:
+            st.markdown(f"""
+            <div class="news-item">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span class="news-time">{news['time']}</span>
+                    <span class="badge badge-brand">{news['tag']}</span>
+                </div>
+                <div class="news-headline">{news['headline']}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # -----------------------------------------------------------------------------
@@ -1174,3 +1184,4 @@ if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
 else:
     render_home()
+```eof
