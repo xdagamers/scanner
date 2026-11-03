@@ -25,6 +25,7 @@ AUDIT_COLUMNS = [
     "Price", "Breakout_Level", "Breakout_Trigger", "Target_1", "Target_2", "Target_3", "Stop",
     "Distance_Pct", "Rank_Score", "Score", "Rating", "Scanner_Status",
     "RVOL", "RSI", "MACD", "ADX", "ATR_Pct", "ATR_Ratio",
+    "Delivery_Pct", "Deliverable_Qty",  # Newly integrated EOD delivery metrics
     "EMA_Structure", "Candlestick", "Resistance_Touches", "Resistance_Recency",
     "Relative_Strength_60D_Pct", "NIFTY_Relative_Strength_Pct", "Sector_Relative_Strength_Pct",
     "Market_Regime", "False_Breakout", "False_Breakout_Age", "Risk_Reward",
@@ -73,6 +74,7 @@ def build_scan_snapshot(
         weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
         symbol = str(row.get("symbol", ""))
         signal_id = f"{scan_date}_{symbol}_{run_id}"
+        
         rows.append({
             "Signal_ID": signal_id,
             "Audit_Run_ID": run_id,
@@ -104,6 +106,8 @@ def build_scan_snapshot(
             "ADX": _num(row, "adx"),
             "ATR_Pct": _num(row, "atr_pct"),
             "ATR_Ratio": _num(row, "atr_ratio"),
+            "Delivery_Pct": _num(row, "delivery_pct"),
+            "Deliverable_Qty": _num(row, "deliverable_qty"),
             "EMA_Structure": row.get("ema_structure", ""),
             "Candlestick": row.get("candlestick", ""),
             "Resistance_Touches": _num(row, "resistance_touches"),
