@@ -119,7 +119,7 @@ if "audit_append_in_progress" not in st.session_state:
 
 
 # -----------------------------------------------------------------------------
-# MUSEMIND FINTECH ANALYTICS CSS (BENTO GRID & LIGHT/DARK THEME)
+# FINTECH ANALYTICS CSS (BENTO GRID & LIGHT/DARK THEME)
 # -----------------------------------------------------------------------------
 def inject_theme_css():
     is_light = st.session_state.theme_mode == "light"
@@ -598,9 +598,9 @@ def render_fintech_topbar():
         st.markdown(
             f"""
             <div class="fintech-brand">
-                <div class="fintech-logo">W</div>
+                <div class="fintech-logo">N</div>
                 <div>
-                    <div class="fintech-title">WOLFPPIXEL</div>
+                    <div class="fintech-title">NIFTY INTELLIGENCE</div>
                     <div class="fintech-subtitle">{dot} Market Status: <b>{status}</b> • IST Live</div>
                 </div>
             </div>
@@ -898,7 +898,7 @@ def render_detail(symbol, row):
 
 
 # -----------------------------------------------------------------------------
-# MAIN DASHBOARD (MUSEMIND BENTO GRID LAYOUT)
+# MAIN DASHBOARD (BENTO GRID LAYOUT)
 # -----------------------------------------------------------------------------
 def render_home():
     render_fintech_topbar()
@@ -967,7 +967,6 @@ def render_home():
 
     # SANDBOX / SCAN TRIGGER
     if st.session_state.ui_sandbox_mode and st.session_state.scan_result is None:
-        # Load sample sandbox dataset for immediate UI verification
         st.session_state.scan_result = pd.DataFrame([
             {"symbol": "BOSCHLTD", "company_name": "Bosch Ltd.", "cap_category": "Large Cap", "score": 92.5, "rating": 9, "price": 35850.0, "breakout_level": 35000.0, "distance_pct": 0.42, "rvol": 2.1, "rsi": 62, "adx": 28, "macd": 124.5, "delivery_pct": 64.2},
             {"symbol": "MANKIND", "company_name": "Mankind Pharma Ltd.", "cap_category": "Large+Mid Cap", "score": 88.0, "rating": 9, "price": 2740.0, "breakout_level": 2700.0, "distance_pct": 1.25, "rvol": 1.8, "rsi": 58, "adx": 24, "macd": 15.2, "delivery_pct": 58.4},
@@ -985,7 +984,6 @@ def render_home():
             scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating 250 Equities & EOD Delivery</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
             with st.spinner("Executing models & fetching EOD data…"):
                 result = scan_universe(max_distance=10.0, period="2y", top_n=500)
-                # Enrich with EOD Delivery
                 result = enrich_shortlist_with_delivery(result)
 
             st.session_state.scan_result = result
@@ -1008,7 +1006,7 @@ def render_home():
     if st.session_state.get("scan_error"): st.error(st.session_state.scan_error)
 
     # -------------------------------------------------------------------------
-    # MUSEMIND LAYOUT: LEFT BENTO ANALYTICS COLUMN & RIGHT STOCK CARDS GRID
+    # LAYOUT: LEFT BENTO ANALYTICS COLUMN & RIGHT STOCK CARDS GRID
     # -------------------------------------------------------------------------
     col_analytics, col_grid = st.columns([1, 3])
 
@@ -1023,7 +1021,6 @@ def render_home():
         </div>
         """, unsafe_allow_html=True)
 
-        # Cap Distribution Donut Chart
         st.markdown('<div class="section-title">Cap Allocation</div>', unsafe_allow_html=True)
         light = st.session_state.theme_mode == "light"
         
@@ -1052,7 +1049,6 @@ def render_home():
         )
         st.plotly_chart(fig_donut, use_container_width=True, config={"displayModeBar": False})
 
-        # 20-Day Win Rate Gauge
         st.markdown('<div class="section-title">20-Day Backtest Win Rate</div>', unsafe_allow_html=True)
         fig_gauge = go.Figure(go.Indicator(
             mode="gauge+number",
@@ -1079,7 +1075,6 @@ def render_home():
             if sort_cols:
                 display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind="stable").reset_index(drop=True)
 
-            # Render 3-column bento card grid
             for start in range(0, len(display), 3):
                 cols = st.columns(3)
                 for j, col in enumerate(cols):
@@ -1160,7 +1155,6 @@ def render_home():
     if audit_info.get("saved") and audit_info.get("reason") in {"appended", "batch_already_exists"}:
         st.success(f"✅ Securely logged {audit_info.get('rows', 0)} signals.")
 
-    # Display clean table representation of recent audits
     try:
         signals_preview = read_audit_signals(st.secrets)
         if not signals_preview.empty:
