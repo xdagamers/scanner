@@ -92,7 +92,6 @@ def append_audit_batch(
     scanner_period: str = "2y",
     max_distance_pct: float = 10.0,
 ) -> dict:
-    """Append one complete audit batch; existing batches are never overwritten."""
     if rows is None or rows.empty:
         return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_result"}
 
@@ -125,7 +124,6 @@ def read_daily_performance(secrets) -> pd.DataFrame:
 
 
 def read_final_performance(secrets) -> pd.DataFrame:
-    """Read only Tracking_Day 20 rows for compact final-outcome analysis."""
     result = _get(secrets, "read_final_performance")
     return pd.DataFrame(result.get("data", []))
 
@@ -136,16 +134,6 @@ def append_performance_rows(
     batch_size: int = 400,
     progress_callback=None,
 ) -> dict:
-    """Append missing performance rows in bounded, auditable batches.
-
-    Each request is handled once and the function stops immediately on an API
-    error or inconsistent server counts. The Apps Script endpoint is idempotent
-    on (Signal_ID, Tracking_Day), so a later manual retry is safe after checking
-    the sheet; no automatic retry loop is performed here.
-
-    progress_callback, when provided, receives (completed_rows, total_rows,
-    message) before and after each HTTP write so the UI never hides batch work.
-    """
     if rows is None or rows.empty:
         return {"saved": False, "rows": 0, "expected": 0, "reason": "empty_result", "batches": 0}
 
@@ -154,7 +142,6 @@ def append_performance_rows(
     updated = 0
     skipped = 0
     results = []
-    # Keep the request size bounded even if a caller supplies a larger value.
     size = min(400, max(1, int(batch_size)))
     total_rows = len(records)
     total_batches = (total_rows + size - 1) // size
@@ -169,7 +156,6 @@ def append_performance_rows(
                 f"Writing Daily_Performance batch {batch_index}/{total_batches} (rows {start + 1:,}–{end:,} of {total_rows:,})…",
             )
 
-        # Fail fast on an unsuccessful response; do not run further batches.
         result = _post(secrets, {"action": "append_performance", "rows": batch})
         batch_written = int(result.get("rows", 0))
         batch_updated = int(result.get("updated", 0))
@@ -208,7 +194,6 @@ def append_performance_rows(
 
 
 def read_performance_keys(secrets) -> pd.DataFrame:
-    """Read performance keys and Scan_Date for invalid-date repair."""
     result = _get(secrets, "read_performance_keys")
     return pd.DataFrame(
         result.get("data", []),
@@ -226,8 +211,8 @@ def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
 
 def test_connection(secrets) -> dict:
     return _get(secrets, "ping")
+
 def append_watchlist_row(secrets, row_dict: dict) -> dict:
-    """Appends a single stock to the Manual_Watch_List tab."""
     if not row_dict:
         return {"saved": False, "reason": "empty"}
     return _post(
