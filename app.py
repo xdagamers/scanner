@@ -792,9 +792,11 @@ def render_detail(symbol, row):
     render_fintech_topbar()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
-    if st.button('← Back to Analytics Dashboard'):
-        st.session_state.page = 'home'
-        st.rerun()
+    col_back, col_watch = st.columns([5, 2])
+    with col_back:
+        if st.button('← Back to Analytics Dashboard'):
+            st.session_state.page = 'home'
+            st.rerun()
 
     company = row.get('company_name', symbol)
     last, change, change_pct = day_change(symbol)
@@ -802,10 +804,38 @@ def render_detail(symbol, row):
     score = float(row.get('score', 0))
     change_cls = 'up' if (change_pct or 0) >= 0 else 'down'
     arrow = '▲' if (change_pct or 0) >= 0 else '▼'
+    
     t1, t2 = target_values(row, price)
     t1up = ((t1 / price) - 1) * 100 if price else 0
     t2up = ((t2 / price) - 1) * 100 if price else 0
+    t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
     timeframe, tf_cls = get_timeframe_status(row)
+
+    with col_watch:
+        if st.button('⭐ Add to Watchlist', type='primary', use_container_width=True):
+            exp_days = timeframe.split('(')[-1].replace(')', '') if '(' in timeframe else "N/A"
+            trade_type = timeframe.split(' (')[0]
+            
+            payload = {
+                "Stock_Name": company,
+                "Date_Added": datetime.now(IST).strftime('%d %b %Y'),
+                "Price_Added": round(float(price), 2) if price else "",
+                "Trade_Type": trade_type,
+                "Expected_Days": exp_days,
+                "Target_1": round(float(t1), 2) if np.isfinite(t1) else "",
+                "Target_2": round(float(t2), 2) if np.isfinite(t2) else "",
+                "Target_3": round(float(t3), 2) if np.isfinite(t3) else "",
+                "MACD": round(float(row.get('macd', 0)), 3),
+                "RSI": round(float(row.get('rsi', 0)), 1),
+                "ADX": round(float(row.get('adx', 0)), 1),
+                "Trigger_Price": round(float(row.get('breakout_trigger', 0)), 2)
+            }
+            try:
+                from google_sheets_audit import append_watchlist_row
+                append_watchlist_row(st.secrets, payload)
+                st.toast(f"✅ {symbol} saved to Manual_Watch_List!")
+            except Exception as e:
+                st.error(f"Watchlist save failed: {e}")
 
     hero_html = (
         f'<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;padding:24px;background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow);">'
