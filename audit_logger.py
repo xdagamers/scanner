@@ -17,7 +17,7 @@ import pandas as pd
 AUDIT_DIR = Path(__file__).resolve().parent / "audit_data"
 SIGNAL_LOG = AUDIT_DIR / "scanner_audit_signals.csv"
 
-# Keep this list stable so future analyses can compare scans consistently.
+# Added Delivery_Pct and Deliverable_Qty
 AUDIT_COLUMNS = [
     "Signal_ID", "Audit_Run_ID", "Scan_Timestamp_IST", "Scan_Date",
     "Scanner_Period", "Max_Distance_Pct", "Universe_Result_Count", "Result_Position",
@@ -25,7 +25,7 @@ AUDIT_COLUMNS = [
     "Price", "Breakout_Level", "Breakout_Trigger", "Target_1", "Target_2", "Target_3", "Stop",
     "Distance_Pct", "Rank_Score", "Score", "Rating", "Scanner_Status",
     "RVOL", "RSI", "MACD", "ADX", "ATR_Pct", "ATR_Ratio",
-    "Delivery_Pct", "Deliverable_Qty",  # Newly integrated EOD delivery metrics
+    "Delivery_Pct", "Deliverable_Qty", 
     "EMA_Structure", "Candlestick", "Resistance_Touches", "Resistance_Recency",
     "Relative_Strength_60D_Pct", "NIFTY_Relative_Strength_Pct", "Sector_Relative_Strength_Pct",
     "Market_Regime", "False_Breakout", "False_Breakout_Age", "Risk_Reward",
@@ -55,11 +55,7 @@ def build_scan_snapshot(
     scanner_period: str = "2y",
     max_distance_pct: float = 10.0,
 ) -> pd.DataFrame:
-    """Build the complete audit rows from an existing scanner result.
-
-    This is persistence preparation only; it does not score, rank or filter
-    anything beyond preserving the rows already returned by scan_universe().
-    """
+    """Build the complete audit rows from an existing scanner result."""
     if result is None or result.empty:
         return pd.DataFrame(columns=AUDIT_COLUMNS)
 
@@ -106,8 +102,8 @@ def build_scan_snapshot(
             "ADX": _num(row, "adx"),
             "ATR_Pct": _num(row, "atr_pct"),
             "ATR_Ratio": _num(row, "atr_ratio"),
-            "Delivery_Pct": _num(row, "delivery_pct"),
-            "Deliverable_Qty": _num(row, "deliverable_qty"),
+            "Delivery_Pct": row.get("delivery_pct", ""),
+            "Deliverable_Qty": row.get("deliverable_qty", ""),
             "EMA_Structure": row.get("ema_structure", ""),
             "Candlestick": row.get("candlestick", ""),
             "Resistance_Touches": _num(row, "resistance_touches"),
@@ -153,7 +149,6 @@ def append_scan_snapshot(
     signal_log_path: str | Path = SIGNAL_LOG,
     run_id: str | None = None,
 ) -> dict:
-    """Append one complete scan batch to the local CSV audit file."""
     if result is None or result.empty:
         return {"saved": False, "rows": 0, "run_id": None, "path": str(signal_log_path), "reason": "empty_result"}
 
@@ -173,7 +168,6 @@ def append_scan_snapshot(
 
 
 def read_signal_audit(signal_log_path: str | Path = SIGNAL_LOG) -> pd.DataFrame:
-    """Read the accumulated scanner audit log."""
     path = Path(signal_log_path)
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame(columns=AUDIT_COLUMNS)
