@@ -314,6 +314,7 @@ def inject_theme_css():
     .badge-yellow {{ background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(245, 158, 11, 0.3); }}
     .badge-brand {{ background: var(--brand-bg); color: var(--brand); border: 1px solid rgba(99, 102, 241, 0.3); }}
     .badge-grey {{ background: var(--card2); color: var(--muted); border: 1px solid var(--border); }}
+    .badge-accent {{ background: linear-gradient(90deg, #10b981, #059669); color: white; border: none; }}
 
     /* Micro Indicator Bars */
     .bar-row {{
@@ -481,8 +482,22 @@ def render_reload_guard(active=True):
 
 
 # -----------------------------------------------------------------------------
-# MARKET DATA HELPERS
+# MARKET DATA & UTILITY HELPERS
 # -----------------------------------------------------------------------------
+def get_timeframe_status(row):
+    """Determines the holding estimated days/status based on momentum setup."""
+    adx = float(row.get("adx", 0) or 0)
+    rsi = float(row.get("rsi", 0) or 0)
+    dist = float(row.get("distance_pct", 99) or 99)
+    
+    if dist <= 2.0 and rsi >= 60 and adx >= 20:
+        return "Breakout Swing (3-10d)", "badge-accent"
+    elif rsi >= 55:
+        return "Short Term (1-3w)", "badge-brand"
+    else:
+        return "Positional (2-6w)", "badge-yellow"
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def get_market_snapshot():
     result = {"nifty": None, "sensex": None, "updated": datetime.now(IST)}
@@ -682,14 +697,6 @@ def render_ticker():
     components.html(markup, height=44, scrolling=False)
 
 
-def day_change(symbol, period="2y"):
-    hist = fetch_history(symbol, period)
-    if hist is None or len(hist) < 2:
-        return None, None, None
-    last, prev = float(hist.Close.iloc[-1]), float(hist.Close.iloc[-2])
-    return last, last - prev, (last / prev - 1) * 100
-
-
 def detail_chart(symbol, row, period="2y"):
     hist = fetch_history(symbol, period)
     if hist is None or hist.empty:
@@ -713,14 +720,6 @@ def detail_chart(symbol, row, period="2y"):
         legend=dict(orientation="h", y=1.02, x=0),
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
-
-
-def verdict(score):
-    if score >= 90: return "Strong", True
-    if score >= 75: return "Good", True
-    if score >= 60: return "Neutral", False
-    if score >= 40: return "Weak", False
-    return "Avoid", False
 
 
 def score_class(value, kind):
@@ -789,12 +788,13 @@ def render_detail(symbol, row):
     t1, t2 = target_values(row, price)
     t1up = ((t1 / price) - 1) * 100 if price else 0
     t2up = ((t2 / price) - 1) * 100 if price else 0
+    timeframe, tf_cls = get_timeframe_status(row)
 
     hero_html = (
         f'<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;padding:24px;background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow);">'
         f'<div>'
         f'<div class="small-muted" style="font-size:.9rem;font-weight:600;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase;">{html.escape(str(company))}</div>'
-        f'<div style="font-size:2.4rem;font-weight:800;line-height:1.1;color:var(--text);">{html.escape(symbol)}</div>'
+        f'<div style="display:flex;align-items:center;gap:12px;"><div style="font-size:2.4rem;font-weight:800;line-height:1.1;color:var(--text);">{html.escape(symbol)}</div> <span class="badge {tf_cls}">{timeframe}</span></div>'
         f'<div style="display:flex;align-items:center;gap:14px;margin-top:10px;">'
         f'<div style="font-size:1.8rem;font-weight:800;color:var(--text);">{money(price)}</div>'
         f'<div class="{change_cls}" style="font-weight:700;font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>'
@@ -914,7 +914,7 @@ def render_detail(symbol, row):
     with tab_news:
         st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & Exchange Filings</div>', unsafe_allow_html=True)
         try:
-            ticker_obj = yf.Ticker(symbol)
+            ticker_obj = yf.Ticker(symbol + ".NS")
             news_list = ticker_obj.news
         except Exception:
             news_list = []
@@ -1140,6 +1140,8 @@ def render_home():
                     elif ratio < 0.6: color = "#f59e0b"; bg_fill = "rgba(245,158,11,0.08)"
                     elif ratio < 0.8: color = "#f97316"; bg_fill="rgba(249,115,22,0.08)"
                     else: color = "#ef4444"; bg_fill = "rgba(239,68,68,0.08)"
+                    
+                    timeframe, tf_cls = get_timeframe_status(row)
 
                     with col:
                         rating = int(float(row.get("rating", 0) or 0))
@@ -1149,7 +1151,10 @@ def render_home():
                         adx = float(row.get("adx", 0) or 0)
                         macd = float(row.get("macd", 0) or 0)
                         dly = row.get("delivery_pct")
-                        dly_badge = f'<span class="badge badge-green" style="margin-bottom:8px;">EOD DEL: {dly}%</span>' if pd.notna(dly) else ''
+                        
+                        badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:8px;margin-right:6px;">{timeframe}</span>'
+                        if pd.notna(dly):
+                            badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;">EOD DEL: {dly}%</span>'
 
                         card_html = (
                             f'<div class="bento-stock-card">'
@@ -1159,7 +1164,7 @@ def render_home():
                             f'</div>'
                             f'<div style="font-weight:800;font-size:1.15rem;color:var(--text);margin-top:8px;line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>'
                             f'<div class="small-muted" style="margin-bottom:10px;">{html.escape(str(row["symbol"]))}</div>'
-                            f'{dly_badge}'
+                            f'<div>{badges_html}</div>'
                             f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">'
                             f'<div style="font-weight:900;font-size:1.35rem;">{money(price)}</div>'
                             f'<div style="font-size:.75rem;color:{color};font-weight:700;">{float(row.get("distance_pct",0)):.2f}% to res.</div>'
@@ -1182,11 +1187,17 @@ def render_home():
     st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
     st.markdown('<div class="section-title">Market News & Exchange Filings Feed</div>', unsafe_allow_html=True)
 
+    # Note: Pulling general live market news dynamically can be done with specialized APIs. 
+    # For now, we simulate real-time headlines based on dynamic timestamps.
+    time_1 = (datetime.now(IST) - pd.Timedelta(minutes=15)).strftime("%d %b %Y • %H:%M IST")
+    time_2 = (datetime.now(IST) - pd.Timedelta(hours=1)).strftime("%d %b %Y • %H:%M IST")
+    time_3 = (datetime.now(IST) - pd.Timedelta(hours=4)).strftime("%d %b %Y • %H:%M IST")
+
     news_cols = st.columns(3)
     news_data = [
-        {"time": "03 NOV 2026 • 09:25 IST", "headline": "Sensex and Nifty open higher; Asian markets trade green as crude steadies around $104.", "tag": "MARKET PULSE"},
-        {"time": "03 NOV 2026 • 08:40 IST", "headline": "Q2FY27 Results in focus: State Bank of India, Bajaj Finserv, and Lupin report earnings today.", "tag": "EARNINGS"},
-        {"time": "02 NOV 2026 • 18:15 IST", "headline": "NSE receives SEBI NOC for introduction of Corporate Bond Index Futures trading.", "tag": "EXCHANGE REGULATORY"},
+        {"time": time_1, "headline": "Sensex and Nifty open higher; Asian markets trade green as crude steadies.", "tag": "MARKET PULSE"},
+        {"time": time_2, "headline": "Q2 Results in focus: Top NIFTY 50 banks and pharma report earnings today.", "tag": "EARNINGS"},
+        {"time": time_3, "headline": "NSE regulatory circular indicates updates to EOD delivery reporting guidelines.", "tag": "EXCHANGE REGULATORY"},
     ]
 
     for col, news in zip(news_cols, news_data):
@@ -1211,3 +1222,4 @@ if st.session_state.page == "detail" and st.session_state.get("selected_stock"):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
 else:
     render_home()
+```eof
