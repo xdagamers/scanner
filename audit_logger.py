@@ -1,23 +1,15 @@
-"""Persistent audit logging for the NIFTY breakout scanner.
-
-This module records the scanner's existing outputs plus all visible scoring
-components/weights exposed by scanner.py. It does not calculate or modify the
-scanner signal itself.
-"""
+"""Persistent audit logging for the NIFTY breakout scanner."""
 from __future__ import annotations
-
 from datetime import datetime
 from pathlib import Path
 import uuid
-
 import numpy as np
 import pandas as pd
-
 
 AUDIT_DIR = Path(__file__).resolve().parent / "audit_data"
 SIGNAL_LOG = AUDIT_DIR / "scanner_audit_signals.csv"
 
-# Added Delivery_Pct and Deliverable_Qty
+# Updated to match your exact Google Sheet header order
 AUDIT_COLUMNS = [
     "Signal_ID", "Audit_Run_ID", "Scan_Timestamp_IST", "Scan_Date",
     "Scanner_Period", "Max_Distance_Pct", "Universe_Result_Count", "Result_Position",
@@ -25,7 +17,6 @@ AUDIT_COLUMNS = [
     "Price", "Breakout_Level", "Breakout_Trigger", "Target_1", "Target_2", "Target_3", "Stop",
     "Distance_Pct", "Rank_Score", "Score", "Rating", "Scanner_Status",
     "RVOL", "RSI", "MACD", "ADX", "ATR_Pct", "ATR_Ratio",
-    "Delivery_Pct", "Deliverable_Qty", 
     "EMA_Structure", "Candlestick", "Resistance_Touches", "Resistance_Recency",
     "Relative_Strength_60D_Pct", "NIFTY_Relative_Strength_Pct", "Sector_Relative_Strength_Pct",
     "Market_Regime", "False_Breakout", "False_Breakout_Age", "Risk_Reward",
@@ -35,8 +26,8 @@ AUDIT_COLUMNS = [
     "Weight_Proximity", "Weight_Resistance", "Weight_Volume", "Weight_Trend",
     "Weight_Momentum", "Weight_ADX", "Weight_Squeeze", "Weight_Relative_Strength",
     "Weight_Candle", "Weight_Market_Regime", "Explanation",
+    "Delivery_Pct", "Deliverable_Qty"
 ]
-
 
 def _num(row, key, default=np.nan):
     value = row.get(key, default)
@@ -46,7 +37,6 @@ def _num(row, key, default=np.nan):
     except Exception:
         return default
 
-
 def build_scan_snapshot(
     result: pd.DataFrame,
     *,
@@ -55,7 +45,6 @@ def build_scan_snapshot(
     scanner_period: str = "2y",
     max_distance_pct: float = 10.0,
 ) -> pd.DataFrame:
-    """Build the complete audit rows from an existing scanner result."""
     if result is None or result.empty:
         return pd.DataFrame(columns=AUDIT_COLUMNS)
 
@@ -102,8 +91,6 @@ def build_scan_snapshot(
             "ADX": _num(row, "adx"),
             "ATR_Pct": _num(row, "atr_pct"),
             "ATR_Ratio": _num(row, "atr_ratio"),
-            "Delivery_Pct": row.get("delivery_pct", ""),
-            "Deliverable_Qty": row.get("deliverable_qty", ""),
             "EMA_Structure": row.get("ema_structure", ""),
             "Candlestick": row.get("candlestick", ""),
             "Resistance_Touches": _num(row, "resistance_touches"),
@@ -136,9 +123,10 @@ def build_scan_snapshot(
             "Weight_Candle": _num(weights, "candle"),
             "Weight_Market_Regime": _num(weights, "market_regime"),
             "Explanation": row.get("explanation", ""),
+            "Delivery_Pct": row.get("delivery_pct", ""),
+            "Deliverable_Qty": row.get("deliverable_qty", "")
         })
     return pd.DataFrame(rows, columns=AUDIT_COLUMNS)
-
 
 def append_scan_snapshot(
     result: pd.DataFrame,
@@ -165,7 +153,6 @@ def append_scan_snapshot(
     write_header = not path.exists() or path.stat().st_size == 0
     out.to_csv(path, mode="a", header=write_header, index=False, encoding="utf-8-sig")
     return {"saved": True, "rows": len(out), "run_id": run_id, "path": str(path), "reason": "appended"}
-
 
 def read_signal_audit(signal_log_path: str | Path = SIGNAL_LOG) -> pd.DataFrame:
     path = Path(signal_log_path)
