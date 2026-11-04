@@ -226,3 +226,14 @@ def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
 
 def test_connection(secrets) -> dict:
     return _get(secrets, "ping")
+def append_watchlist_row(secrets, row_dict: dict) -> dict:
+    """Appends a single stock to the Manual_Watch_List tab."""
+    if not row_dict:
+        return {"saved": False, "reason": "empty"}
+    return _post(
+        secrets,
+        {
+            "action": "append_watchlist",
+            "row": row_dict,
+        },
+    )
