@@ -624,16 +624,17 @@ def render_fintech_topbar():
     nifty_item = snap.get('nifty')
     sensex_item = snap.get('sensex')
 
-    nifty_str = (
-        f"{nifty_item['value']:,.2f} <span class="{'up' if nifty_item['pct']>=0 else 'down'}">({nifty_item['pct']:+.2f}%)</span>"
-        if nifty_item
-        else '—'
-    )
-    sensex_str = (
-        f"{sensex_item['value']:,.2f} <span class="{'up' if sensex_item['pct']>=0 else 'down'}">({sensex_item['pct']:+.2f}%)</span>"
-        if sensex_item
-        else '—'
-    )
+    if nifty_item:
+        nifty_cls = 'up' if nifty_item['pct'] >= 0 else 'down'
+        nifty_str = f"{nifty_item['value']:,.2f} <span class='{nifty_cls}'>({nifty_item['pct']:+.2f}%)</span>"
+    else:
+        nifty_str = '—'
+        
+    if sensex_item:
+        sensex_cls = 'up' if sensex_item['pct'] >= 0 else 'down'
+        sensex_str = f"{sensex_item['value']:,.2f} <span class='{sensex_cls}'>({sensex_item['pct']:+.2f}%)</span>"
+    else:
+        sensex_str = '—'
 
     col_brand, col_indices, col_controls = st.columns([3, 4, 3])
     with col_brand:
