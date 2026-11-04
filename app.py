@@ -560,7 +560,7 @@ def get_timeframe_status(row):
         return 'Positional (2-6w)', 'badge-yellow'
 
 
-@st.cache_data(ttl=100, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_market_snapshot():
     result = {'nifty': None, 'sensex': None, 'updated': datetime.now(IST)}
     try:
