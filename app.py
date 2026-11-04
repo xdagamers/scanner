@@ -782,7 +782,7 @@ def render_ticker():
     
     markup = f'''
     <div style="display:flex; overflow:hidden; width:100%; margin-bottom:20px;">
-        <div style="display:flex; animation:marquee 30s linear infinite; white-space:nowrap;">
+        <div style="display:flex; animation:marquee 70s linear infinite; white-space:nowrap;">
             {content}{content}
         </div>
     </div>
