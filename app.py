@@ -25,6 +25,7 @@ from google_sheets_audit import (
     read_final_performance,
     append_performance_rows,
     append_analysis_rows,
+    append_watchlist_row
 )
 from audit_analysis import build_completed_outcomes, analyze_outcome_combinations
 from performance_tracker import (
@@ -95,7 +96,7 @@ if not password_gate():
 # SESSION STATE INITIALIZATION
 # -----------------------------------------------------------------------------
 if 'theme_mode' not in st.session_state:
-    st.session_state.theme_mode = 'dark'
+    st.session_state.theme_mode = 'light'
 if 'ui_sandbox_mode' not in st.session_state:
     st.session_state.ui_sandbox_mode = False
 if 'page' not in st.session_state:
@@ -116,6 +117,8 @@ if 'audit_pending_timestamp' not in st.session_state:
     st.session_state.audit_pending_timestamp = None
 if 'audit_append_in_progress' not in st.session_state:
     st.session_state.audit_append_in_progress = False
+if 'trade_filter' not in st.session_state:
+    st.session_state.trade_filter = 'All'
 
 
 # -----------------------------------------------------------------------------
@@ -123,25 +126,30 @@ if 'audit_append_in_progress' not in st.session_state:
 # -----------------------------------------------------------------------------
 def inject_theme_css():
     is_light = st.session_state.theme_mode == 'light'
+    
+    # Updated color palette matching the Neo-Brutalist / rounded pastel theme
     theme_vars = (
         '''
-        --bg: #f8fafc;
-        --card: #ffffff;
-        --card2: #f1f5f9;
-        --border: #e2e8f0;
-        --border-glow: rgba(79, 70, 229, 0.25);
-        --text: #0f172a;
-        --muted: #64748b;
-        --accent: #059669;
-        --accent-bg: rgba(5, 150, 105, 0.08);
-        --red: #dc2626;
-        --red-bg: rgba(220, 38, 38, 0.08);
-        --yellow: #d97706;
-        --yellow-bg: rgba(217, 119, 6, 0.08);
-        --brand: #4f46e5;
-        --brand-bg: rgba(79, 70, 229, 0.08);
-        --bar-track: #e2e8f0;
-        --shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+        --bg: #F2F1EC;
+        --card: #FFFFFF;
+        --card2: #F8F9FA;
+        --border: #D1D5DB;
+        --border-glow: rgba(0, 0, 0, 0.1);
+        --text: #111827;
+        --muted: #4B5563;
+        --accent: #10B981;
+        --accent-bg: #8DE5AD;
+        --red: #EF4444;
+        --red-bg: #FEE2E2;
+        --yellow: #F59E0B;
+        --yellow-bg: #FFD478;
+        --brand: #3B82F6;
+        --brand-bg: #A9CAFF;
+        --bar-track: #E5E7EB;
+        --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --btn-scan-bg: #8DE5AD;
+        --btn-audit-bg: #A9CAFF;
+        --btn-perf-bg: #FFD478;
         '''
         if is_light
         else '''
@@ -162,6 +170,9 @@ def inject_theme_css():
         --brand-bg: rgba(99, 102, 241, 0.14);
         --bar-track: #1b2230;
         --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        --btn-scan-bg: rgba(16, 185, 129, 0.12);
+        --btn-audit-bg: rgba(59, 130, 246, 0.12);
+        --btn-perf-bg: rgba(245, 158, 11, 0.12);
         '''
     )
 
@@ -184,23 +195,54 @@ def inject_theme_css():
     section[data-testid="stSidebar"] {{ display: none !important; }}
     * {{ box-sizing: border-box; }}
 
-    /* Fintech Buttons */
+    /* Fintech Buttons - Themed */
     .stButton > button {{
         width: 100%;
-        border-radius: 10px;
+        border-radius: 12px;
         border: 1px solid var(--border);
-        background: var(--card2);
+        background: var(--card);
         color: var(--text);
-        min-height: 44px;
+        min-height: 48px;
         font-weight: 700;
-        font-size: 0.84rem;
+        font-size: 0.88rem;
         transition: all 0.15s ease;
         box-shadow: var(--shadow);
     }}
+    
+    /* Specific Button Colors based on the UI image */
+    button[data-testid="baseButton-secondary"]:has(div:contains("SCAN MARKET")) {{
+        background-color: var(--btn-scan-bg);
+        border: none;
+        color: #000 !important;
+    }}
+    
+    button[data-testid="baseButton-secondary"]:has(div:contains("COLLECT AUDIT")) {{
+        background-color: var(--btn-audit-bg);
+        border: none;
+        color: #000 !important;
+    }}
+    
+    button[data-testid="baseButton-secondary"]:has(div:contains("UPDATE TRACKING")) {{
+        background-color: var(--btn-perf-bg);
+        border: none;
+        color: #000 !important;
+    }}
+    
+    /* Dynamic active filter buttons */
+    button[data-testid="baseButton-primary"] {{
+        background-color: var(--text) !important;
+        color: var(--bg) !important;
+        border: 1px solid var(--text) !important;
+    }}
+    
+    button[data-testid="baseButton-primary"]:hover {{
+        opacity: 0.85;
+    }}
+    
     .stButton > button:hover {{
         border-color: var(--accent);
-        color: var(--accent);
         transform: translateY(-1px);
+        opacity: 0.9;
     }}
 
     /* Bento Cards */
@@ -212,6 +254,26 @@ def inject_theme_css():
         margin-bottom: 16px;
         box-shadow: var(--shadow);
     }}
+    
+    /* Custom colored bento cards for the index snapshot */
+    .bento-index-nifty {{
+        background-color: var(--yellow-bg);
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: var(--shadow);
+        color: #000;
+    }}
+    
+    .bento-index-sensex {{
+        background-color: var(--btn-scan-bg);
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: var(--shadow);
+        color: #000;
+    }}
+    
     .bento-stock-card {{
         background: var(--card);
         border: 1px solid var(--border);
@@ -309,10 +371,10 @@ def inject_theme_css():
         letter-spacing: 0.03em;
         text-transform: uppercase;
     }}
-    .badge-green {{ background: var(--accent-bg); color: var(--accent); border: 1px solid rgba(16, 185, 129, 0.3); }}
+    .badge-green {{ background: var(--accent-bg); color: var(--text); border: 1px solid rgba(16, 185, 129, 0.3); }}
     .badge-red {{ background: var(--red-bg); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }}
-    .badge-yellow {{ background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(245, 158, 11, 0.3); }}
-    .badge-brand {{ background: var(--brand-bg); color: var(--brand); border: 1px solid rgba(99, 102, 241, 0.3); }}
+    .badge-yellow {{ background: var(--yellow-bg); color: var(--text); border: 1px solid rgba(245, 158, 11, 0.3); }}
+    .badge-brand {{ background: var(--brand-bg); color: var(--text); border: 1px solid rgba(99, 102, 241, 0.3); }}
     .badge-grey {{ background: var(--card2); color: var(--muted); border: 1px solid var(--border); }}
     .badge-accent {{ background: linear-gradient(90deg, #10b981, #059669); color: white; border: none; }}
 
@@ -624,57 +686,75 @@ def render_fintech_topbar():
     nifty_item = snap.get('nifty')
     sensex_item = snap.get('sensex')
 
+    # Update topbar rendering to match the image closely
+    st.markdown(
+        f'''
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:10px;">
+            <div>
+                <div style="font-size:0.75rem; color:var(--muted); font-weight:700; text-transform:uppercase;">TECHNICAL SETUPS</div>
+                <div style="font-size:1.8rem; font-weight:900; color:var(--text); line-height:1.2;">NIFTY Breakout Scanner</div>
+                <div style="font-size:0.85rem; color:var(--muted); font-weight:500;">Near-breakout setups across NIFTY Large Cap 100 + Midcap 150</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <!-- We can place a simple toggle here -->
+            </div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+    
+    # Status and indices row
+    updated_str = snap.get('updated').strftime('%d %b %Y, %H:%M:%S IST')
+    
+    st.markdown(
+        f'''
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+            <div style="background:#2C343D; color:#fff; padding:6px 12px; border-radius:99px; font-size:0.8rem; font-weight:700; display:flex; align-items:center; gap:6px;">
+                <span style="width:8px; height:8px; background:{"#10B981" if status=="Open" else "#EF4444" if status=="Closed" else "#F59E0B"}; border-radius:50%;"></span>
+                {status}
+            </div>
+            <div style="font-size:0.75rem; color:var(--muted);">Last UI market-data refresh: {updated_str}</div>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
+    
+    # Index Snapshot Blocks
+    col1, col2 = st.columns(2)
+    
     if nifty_item:
         nifty_cls = 'up' if nifty_item['pct'] >= 0 else 'down'
-        nifty_str = f"{nifty_item['value']:,.2f} <span class='{nifty_cls}'>({nifty_item['pct']:+.2f}%)</span>"
-    else:
-        nifty_str = '—'
-        
+        nifty_arrow = '▲' if nifty_item['pct'] >= 0 else '▼'
+        with col1:
+            st.markdown(
+                f'''
+                <div class="bento-index-nifty">
+                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:4px;">NIFTY 50</div>
+                    <div style="font-size:1.4rem; font-weight:800; display:flex; align-items:baseline; gap:8px;">
+                        {nifty_item['value']:,.2f}
+                        <span style="font-size:0.9rem; color:{"#10B981" if nifty_item['pct']>=0 else "#EF4444"}; font-weight:700;">{nifty_arrow} {nifty_item['pct']:+.2f}%</span>
+                    </div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+            
     if sensex_item:
         sensex_cls = 'up' if sensex_item['pct'] >= 0 else 'down'
-        sensex_str = f"{sensex_item['value']:,.2f} <span class='{sensex_cls}'>({sensex_item['pct']:+.2f}%)</span>"
-    else:
-        sensex_str = '—'
-
-    col_brand, col_indices, col_controls = st.columns([3, 4, 3])
-    with col_brand:
-        st.markdown(
-            f'''
-            <div class="fintech-brand">
-                <div class="fintech-logo">N</div>
-                <div>
-                    <div class="fintech-title">NIFTY INTELLIGENCE</div>
-                    <div class="fintech-subtitle">{dot} Market Status: <b>{status}</b> • IST Live</div>
+        sensex_arrow = '▲' if sensex_item['pct'] >= 0 else '▼'
+        with col2:
+            st.markdown(
+                f'''
+                <div class="bento-index-sensex">
+                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:4px;">SENSEX</div>
+                    <div style="font-size:1.4rem; font-weight:800; display:flex; align-items:baseline; gap:8px;">
+                        {sensex_item['value']:,.2f}
+                        <span style="font-size:0.9rem; color:{"#10B981" if sensex_item['pct']>=0 else "#EF4444"}; font-weight:700;">{sensex_arrow} {sensex_item['pct']:+.2f}%</span>
+                    </div>
                 </div>
-            </div>
-            ''',
-            unsafe_allow_html=True,
-        )
-
-    with col_indices:
-        st.markdown(
-            f'''
-            <div style="display:flex; gap:10px; justify-content:center; align-items:center;">
-                <div class="fintech-pill"><b>NIFTY 50</b> {nifty_str}</div>
-                <div class="fintech-pill"><b>SENSEX</b> {sensex_str}</div>
-            </div>
-            ''',
-            unsafe_allow_html=True,
-        )
-
-    with col_controls:
-        c1, c2 = st.columns(2)
-        with c1:
-            is_light = st.toggle('☀️ Light', value=(st.session_state.theme_mode == 'light'), key='theme_toggle')
-            new_mode = 'light' if is_light else 'dark'
-            if new_mode != st.session_state.theme_mode:
-                st.session_state.theme_mode = new_mode
-                st.rerun()
-        with c2:
-            sandbox = st.toggle('🧪 Sandbox', value=st.session_state.ui_sandbox_mode, key='sandbox_toggle')
-            if sandbox != st.session_state.ui_sandbox_mode:
-                st.session_state.ui_sandbox_mode = sandbox
-                st.rerun()
+                ''',
+                unsafe_allow_html=True
+            )
 
 
 def render_ticker():
@@ -684,18 +764,36 @@ def render_ticker():
         st.markdown('<div class="ticker-note">NIFTY 50 ticker stream temporarily unavailable.</div>', unsafe_allow_html=True)
         return
     items = []
-    for _, r in df.iterrows():
-        cls = 'up' if r.pct >= 0 else 'down'
-        arrow = '▲' if r.pct >= 0 else '▼'
-        items.append(f'<span class="tick" style="margin-right:28px;"><b>{html.escape(r.symbol)}</b> {money(r.price)} <span class="{cls}">{arrow} {r.pct:+.2f}%</span></span>')
+    
+    # Custom colors for ticker badges to match the image
+    badge_colors = ["#FFD478", "#A9CAFF", "#8DE5AD"]
+    
+    for i, (_, r) in enumerate(df.iterrows()):
+        cls = '#10B981' if r.pct >= 0 else '#EF4444'
+        bg_color = badge_colors[i % len(badge_colors)]
+        items.append(
+            f'<div style="display:inline-flex; align-items:center; padding:6px 12px; background:{bg_color}; border-radius:999px; margin-right:12px; font-size:0.8rem; white-space:nowrap; color:#000;">'
+            f'<span style="font-weight:700; margin-right:6px;">{html.escape(r.symbol)}</span> '
+            f'<span>₹{r.price:,.0f}</span> '
+            f'<span style="color:{cls}; font-weight:600; margin-left:6px;">({r.pct:+.2f}%)</span>'
+            f'</div>'
+        )
     content = ''.join(items)
-    light = st.session_state.theme_mode == 'light'
-    bg = '#ffffff' if light else '#0d1017'
-    textc = '#0f172a' if light else '#f8fafc'
-    muted = '#64748b' if light else '#8c9bae'
-    border = '#e2e8f0' if light else '#1e2535'
-    markup = f'''<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee 140s linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981}}.down{{color:#ef4444}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
-    components.html(markup, height=44, scrolling=False)
+    
+    markup = f'''
+    <div style="display:flex; overflow:hidden; width:100%; margin-bottom:20px;">
+        <div style="display:flex; animation:marquee 30s linear infinite; white-space:nowrap;">
+            {content}{content}
+        </div>
+    </div>
+    <style>
+    @keyframes marquee {{
+        0% {{ transform: translateX(0); }}
+        100% {{ transform: translateX(-50%); }}
+    }}
+    </style>
+    '''
+    components.html(markup, height=50, scrolling=False)
 
 
 def day_change(symbol, period='2y'):
@@ -714,7 +812,7 @@ def detail_chart(symbol, row, period='2y'):
     light = st.session_state.theme_mode == 'light'
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=hist.index, open=hist.Open, high=hist.High, low=hist.Low, close=hist.Close, name=symbol))
-    fig.add_trace(go.Bar(x=hist.index, y=hist.Volume, name='Volume', yaxis='y2', opacity=0.25, marker_color='#6366f1'))
+    fig.add_trace(go.Bar(x=hist.index, y=hist.Volume, name='Volume', yaxis='y2', opacity=0.25, marker_color='#3B82F6'))
     fig.add_hline(y=float(row.get('breakout_level', 0) or 0), line_dash='dash', line_color='#10b981', annotation_text=f"Breakout: ₹{row.get('breakout_level', 0):.2f}", annotation_position='top left')
     fig.update_layout(
         template='plotly_white' if light else 'plotly_dark',
@@ -723,8 +821,8 @@ def detail_chart(symbol, row, period='2y'):
         xaxis_rangeslider_visible=False,
         hovermode='x unified',
         paper_bgcolor='#ffffff' if light else '#0d1017',
-        plot_bgcolor='#f8fafc' if light else '#05070b',
-        yaxis=dict(title='Price', gridcolor='#e2e8f0' if light else '#1e2535'),
+        plot_bgcolor='#F8F9FA' if light else '#05070b',
+        yaxis=dict(title='Price', gridcolor='#E5E7EB' if light else '#1e2535'),
         yaxis2=dict(title='Volume', overlaying='y', side='right', showgrid=False, rangemode='tozero'),
         legend=dict(orientation='h', y=1.02, x=0),
     )
@@ -831,7 +929,6 @@ def render_detail(symbol, row):
                 "Trigger_Price": round(float(row.get('breakout_trigger', 0)), 2)
             }
             try:
-                from google_sheets_audit import append_watchlist_row
                 append_watchlist_row(st.secrets, payload)
                 st.toast(f"✅ {symbol} saved to Manual_Watch_List!")
             except Exception as e:
@@ -872,7 +969,7 @@ def render_detail(symbol, row):
             fig = go.Figure(go.Indicator(
                 mode='gauge+number',
                 value=score,
-                number={'suffix': '', 'font': {'size': 42, 'color': '#0f172a' if light else '#f8fafc'}},
+                number={'suffix': '', 'font': {'size': 42, 'color': '#111827' if light else '#f8fafc'}},
                 gauge={
                     'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': 'rgba(0,0,0,0)'},
                     'bar': {'color': '#10b981', 'thickness': 0.15},
@@ -1001,33 +1098,31 @@ def render_home():
     render_fintech_topbar()
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     render_ticker()
-    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-
+    
+    st.markdown('<div style="font-size:0.8rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">SEARCH ANY STOCK</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.85rem; color:var(--text); margin-bottom:12px;">Enter an NSE symbol such as RELIANCE, TCS, SBIN or INFY.</div>', unsafe_allow_html=True)
+    
     # ACTION BAR (Bento Action Header)
     col_search, col_scan, col_audit, col_track = st.columns([3, 2, 2, 2])
     
     audit_pending = st.session_state.get("audit_pending_rows") is not None
     
     with col_search:
-        st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Manual Ticker Search</div>', unsafe_allow_html=True)
         sc1, sc2 = st.columns([3, 1])
         with sc1:
-            query = st.text_input('Stock symbol', placeholder='e.g. RELIANCE', key='stock_search_input', label_visibility='collapsed')
+            query = st.text_input('Stock symbol', placeholder='e.g. RELIANCE, TCS, SBIN or INFY', key='stock_search_input', label_visibility='collapsed')
         with sc2:
             search_clicked = st.button('SEARCH', key='search_stock', use_container_width=True)
 
     with col_scan:
-        st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Market Scanner</div>', unsafe_allow_html=True)
         normal_clicked = st.button('🚀 SCAN MARKET', key='scan_market', use_container_width=True, disabled=audit_pending)
         if normal_clicked: st.session_state.scan_intent = True
 
     with col_audit:
-        st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
-        audit_clicked = st.button('📊 COLLECT AUDIT', key='collect_audit', use_container_width=True, disabled=audit_pending)
+        audit_clicked = st.button('📊 COLLECT AUDIT DATA', key='collect_audit', use_container_width=True, disabled=audit_pending)
 
     with col_track:
-        st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
-        tracking_clicked = st.button('📈 UPDATE TRACKING', key='update_performance_tracking', use_container_width=True, disabled=audit_pending)
+        tracking_clicked = st.button('📈 UPDATE PERFORMANCE TRACKING', key='update_performance_tracking', use_container_width=True, disabled=audit_pending)
 
     if search_clicked and query.strip():
         symbol = query.strip().upper().replace('.NS', '')
@@ -1060,8 +1155,9 @@ def render_home():
                 st.rerun()
             except Exception as exc:
                 st.error(str(exc))
+                
+    st.markdown('<div style="font-size:0.75rem; color:var(--muted); margin-top:8px; margin-bottom:20px;">Normal Scan never writes to Google Sheets. Collect Audit saves a signal snapshot after confirmation. Update Performance Tracking retrieves historical OHLC for saved signals.</div>', unsafe_allow_html=True)
 
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
     # PERFORMANCE TRACKING & COMBINATION ANALYSIS LOGIC RESTORED
@@ -1377,6 +1473,26 @@ def render_home():
         st.success(f"✅ Audit batch recorded: {audit_info.get('rows', 0)} new signal rows. Run ID: {audit_info.get('run_id', '—')}")
 
     # -------------------------------------------------------------------------
+    # PRE-PROCESS DATA FOR FILTERS & LAYOUT
+    # -------------------------------------------------------------------------
+    if result is None or result.empty:
+        display = pd.DataFrame()
+    else:
+        display = result.copy()
+        
+        # Pre-compute timeframes for filtering and display
+        display['timeframe_val'] = display.apply(lambda r: get_timeframe_status(r)[0], axis=1)
+        
+        if st.session_state.trade_filter != "All":
+            display = display[display['timeframe_val'] == st.session_state.trade_filter]
+
+        sort_cols = [c for c in ['rating', 'score', 'rank_score', 'distance_pct'] if c in display.columns]
+        if sort_cols:
+            display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind='stable').reset_index(drop=True)
+            
+    matches_count = len(display)
+
+    # -------------------------------------------------------------------------
     # LAYOUT: LEFT BENTO ANALYTICS COLUMN & RIGHT STOCK CARDS GRID
     # -------------------------------------------------------------------------
     col_analytics, col_grid = st.columns([1, 3])
@@ -1384,51 +1500,61 @@ def render_home():
     with col_analytics:
         st.markdown('<div class="section-title" style="margin-top:0;">Executive Summary</div>', unsafe_allow_html=True)
         
-        matches_count = len(result) if result is not None else 0
         st.markdown(f'''
         <div class="bento-card" style="text-align:center;padding:24px;">
             <div style="font-size:2.8rem;font-weight:900;color:var(--text);line-height:1;">{matches_count}</div>
             <div style="font-size:0.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-top:6px;letter-spacing:0.05em;">Qualified Matches</div>
         </div>
         ''', unsafe_allow_html=True)
+        
+        # CATEGORY FILTERS
+        st.markdown('<div class="section-title">Filter by Setup</div>', unsafe_allow_html=True)
+        
+        def set_tf_filter(tf):
+            st.session_state.trade_filter = tf
+            
+        st.button("All Setups", type="primary" if st.session_state.trade_filter == "All" else "secondary", on_click=set_tf_filter, args=("All",), use_container_width=True)
+        st.button("Breakout Swing (3-10d)", type="primary" if st.session_state.trade_filter == "Breakout Swing (3-10d)" else "secondary", on_click=set_tf_filter, args=("Breakout Swing (3-10d)",), use_container_width=True)
+        st.button("Short Term (1-3w)", type="primary" if st.session_state.trade_filter == "Short Term (1-3w)" else "secondary", on_click=set_tf_filter, args=("Short Term (1-3w)",), use_container_width=True)
+        st.button("Positional (2-6w)", type="primary" if st.session_state.trade_filter == "Positional (2-6w)" else "secondary", on_click=set_tf_filter, args=("Positional (2-6w)",), use_container_width=True)
+
 
         st.markdown('<div class="section-title">Cap Allocation</div>', unsafe_allow_html=True)
         light = st.session_state.theme_mode == 'light'
         
-        if result is not None and not result.empty and 'cap_category' in result.columns:
-            caps = result['cap_category'].replace('', 'Unclassified').fillna('Unclassified')
+        if not display.empty and 'cap_category' in display.columns:
+            caps = display['cap_category'].replace('', 'Unclassified').fillna('Unclassified')
             cap_counts = caps.value_counts()
             labels = cap_counts.index.tolist()
             values = cap_counts.values.tolist()
+            
+            palette = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6']
+            colors = [palette[i % len(palette)] for i in range(len(labels))]
+    
+            fig_donut = go.Figure(go.Pie(
+                labels=labels,
+                values=values,
+                hole=0.7,
+                marker_colors=colors,
+                textinfo='none',
+            ))
+            fig_donut.update_layout(
+                template='plotly_white' if light else 'plotly_dark',
+                height=220,
+                margin=dict(l=10, r=10, t=10, b=10),
+                paper_bgcolor='#ffffff' if light else '#0d1017',
+                showlegend=True,
+                legend=dict(orientation='h', y=-0.1, x=0),
+            )
+            st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
         else:
-            labels = ['Large Cap', 'Mid Cap', 'Small Cap']
-            values = [54, 36, 10]
-
-        palette = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6']
-        colors = [palette[i % len(palette)] for i in range(len(labels))]
-
-        fig_donut = go.Figure(go.Pie(
-            labels=labels,
-            values=values,
-            hole=0.7,
-            marker_colors=colors,
-            textinfo='none',
-        ))
-        fig_donut.update_layout(
-            template='plotly_white' if light else 'plotly_dark',
-            height=220,
-            margin=dict(l=10, r=10, t=10, b=10),
-            paper_bgcolor='#ffffff' if light else '#0d1017',
-            showlegend=True,
-            legend=dict(orientation='h', y=-0.1, x=0),
-        )
-        st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
+            st.markdown('<div class="small-muted" style="text-align:center;">No caps to display</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">20-Day Backtest Win Rate</div>', unsafe_allow_html=True)
         fig_gauge = go.Figure(go.Indicator(
             mode='gauge+number',
             value=68.0,
-            number={'suffix': '%', 'font': {'size': 32, 'color': '#0f172a' if light else '#f8fafc'}},
+            number={'suffix': '%', 'font': {'size': 32, 'color': '#111827' if light else '#f8fafc'}},
             gauge={
                 'axis': {'range': [0, 100], 'tickwidth': 0},
                 'bar': {'color': '#10b981', 'thickness': 0.2},
@@ -1442,14 +1568,9 @@ def render_home():
     with col_grid:
         st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;"><div class="section-title" style="border:none;margin:0;padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({matches_count} Matches)</span></div><div class="small-muted">Ranked by Momentum Setup & EOD Delivery</div></div>', unsafe_allow_html=True)
 
-        if result is None or result.empty:
-            st.markdown('<div class="bento-card" style="text-align:center;padding:60px 20px;"><div style="font-size:1.1rem;font-weight:700;">Awaiting Market Scan</div><div class="small-muted" style="margin-top:8px">Click <b>SCAN MARKET</b> above or toggle <b>Sandbox Mode</b> to inspect analytics cards.</div></div>', unsafe_allow_html=True)
+        if display.empty:
+            st.markdown('<div class="bento-card" style="text-align:center;padding:60px 20px;"><div style="font-size:1.1rem;font-weight:700;">No Setups Found</div><div class="small-muted" style="margin-top:8px">Try changing the filter or scanning the market.</div></div>', unsafe_allow_html=True)
         else:
-            display = result.copy()
-            sort_cols = [c for c in ['rating', 'score', 'rank_score', 'distance_pct'] if c in display.columns]
-            if sort_cols:
-                display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind='stable').reset_index(drop=True)
-
             for start in range(0, len(display), 3):
                 cols = st.columns(3)
                 for j, col in enumerate(cols):
@@ -1458,11 +1579,11 @@ def render_home():
                     row = display.iloc[idx]
                     ratio = idx / max(len(display) - 1, 1)
 
-                    if ratio < 0.2: color = '#10b981'; bg_fill = 'rgba(16,185,129,0.08)'
-                    elif ratio < 0.4: color = '#84cc16'; bg_fill = 'rgba(132,204,22,0.08)'
-                    elif ratio < 0.6: color = '#f59e0b'; bg_fill = 'rgba(245,158,11,0.08)'
-                    elif ratio < 0.8: color = '#f97316'; bg_fill='rgba(249,115,22,0.08)'
-                    else: color = '#ef4444'; bg_fill = 'rgba(239,68,68,0.08)'
+                    if ratio < 0.2: color = '#10b981'; bg_fill = '#8DE5AD'
+                    elif ratio < 0.4: color = '#84cc16'; bg_fill = '#D9ECB0'
+                    elif ratio < 0.6: color = '#f59e0b'; bg_fill = '#FFD478'
+                    elif ratio < 0.8: color = '#f97316'; bg_fill='#FFD478'
+                    else: color = '#ef4444'; bg_fill = '#FEE2E2'
                     
                     timeframe, tf_cls = get_timeframe_status(row)
 
@@ -1483,7 +1604,7 @@ def render_home():
                             f'<div class="bento-stock-card">'
                             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                             f'<span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK #{idx+1}</span>'
-                            f'<span class="badge" style="background:{bg_fill};color:{color};">{html.escape(str(row.get("cap_category","")))}</span>'
+                            f'<span class="badge" style="background:{bg_fill};color:#000;">{html.escape(str(row.get("cap_category","")))}</span>'
                             f'</div>'
                             f'<div style="font-weight:800;font-size:1.15rem;color:var(--text);margin-top:8px;line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>'
                             f'<div class="small-muted" style="margin-bottom:10px;">{html.escape(str(row["symbol"]))}</div>'
