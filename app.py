@@ -203,6 +203,9 @@ def inject_theme_css():
     }}
     section[data-testid="stSidebar"] {{ display: none !important; }}
     * {{ box-sizing: border-box; }}
+    
+    /* Ensure Streamlit native markdown text inherits colors properly */
+    .stMarkdown p, .stText p, label, .stRadio label {{ color: var(--text) !important; }}
 
     /* Fintech Buttons - Themed */
     .stButton > button {{
@@ -451,7 +454,7 @@ def inject_theme_css():
     .target-value {{ font-size: 1.2rem; font-weight: 800; color: var(--text); margin-top: 4px; }}
     .target-upside {{ font-size: 0.8rem; color: var(--accent); margin-top: 2px; font-weight: 700; }}
     
-    /* HTML Audit Table */
+    /* HTML Audit Table - properly inherit themes */
     .audit-table-wrapper {{
         width: 100%;
         overflow-x: auto;
@@ -474,7 +477,7 @@ def inject_theme_css():
     .audit-table th {{
         background-color: var(--card2);
         font-weight: 700;
-        color: var(--muted);
+        color: var(--text);
         text-transform: uppercase;
         font-size: 0.75rem;
     }}
@@ -520,10 +523,12 @@ def inject_theme_css():
         line-height: 1.35;
     }}
 
-    /* Tabs */
+    /* Tabs - ensure text maps correctly */
     .stTabs [data-baseweb="tab-list"] {{ gap: 12px; border-bottom: 1px solid var(--border) !important; }}
-    .stTabs [data-baseweb="tab"] {{ padding: 12px 20px; background: transparent; border: none; font-weight: 700; color: var(--muted); }}
-    .stTabs [aria-selected="true"] {{ background: transparent; border-bottom: 3px solid var(--accent) !important; color: var(--text) !important; }}
+    .stTabs [data-baseweb="tab"] {{ padding: 12px 20px; background: transparent; border: none; }}
+    .stTabs [data-baseweb="tab"] p {{ color: var(--muted) !important; font-weight: 700; }}
+    .stTabs [aria-selected="true"] {{ background: transparent; border-bottom: 3px solid var(--accent) !important; }}
+    .stTabs [aria-selected="true"] p {{ color: var(--text) !important; }}
 
     @media (max-width: 768px) {{
         .block-container {{ padding: 0.6rem 0.8rem 3rem !important; }}
@@ -826,7 +831,7 @@ def render_ticker():
     
     markup = f'''
     <div style="display:flex; overflow:hidden; width:100%; margin-bottom:20px;">
-        <div style="display:flex; animation:marquee 30s linear infinite; white-space:nowrap;">
+        <div style="display:flex; animation:marquee 60s linear infinite; white-space:nowrap;">
             {content}{content}
         </div>
     </div>
@@ -866,9 +871,10 @@ def detail_chart(symbol, row, period='2y'):
         hovermode='x unified',
         paper_bgcolor='#ffffff' if light else '#0d1017',
         plot_bgcolor='#F8F9FA' if light else '#05070b',
-        yaxis=dict(title='Price', gridcolor='#E5E7EB' if light else '#1e2535'),
-        yaxis2=dict(title='Volume', overlaying='y', side='right', showgrid=False, rangemode='tozero'),
-        legend=dict(orientation='h', y=1.02, x=0),
+        font=dict(color='#111827' if light else '#f8fafc'),
+        yaxis=dict(title='Price', gridcolor='#E5E7EB' if light else '#1e2535', color='#111827' if light else '#f8fafc'),
+        yaxis2=dict(title='Volume', overlaying='y', side='right', showgrid=False, rangemode='tozero', color='#111827' if light else '#f8fafc'),
+        legend=dict(orientation='h', y=1.02, x=0, font=dict(color='#111827' if light else '#f8fafc')),
     )
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True})
 
@@ -1015,7 +1021,7 @@ def render_detail(symbol, row):
                 value=score,
                 number={'suffix': '', 'font': {'size': 42, 'color': '#111827' if light else '#f8fafc'}},
                 gauge={
-                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': 'rgba(0,0,0,0)'},
+                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': '#111827' if light else '#f8fafc'},
                     'bar': {'color': '#10b981', 'thickness': 0.15},
                     'bgcolor': '#e2e8f0' if light else '#1b2230',
                     'borderwidth': 0,
@@ -1027,7 +1033,7 @@ def render_detail(symbol, row):
                     ],
                 },
             ))
-            fig.update_layout(template='plotly_white' if light else 'plotly_dark', height=260, margin=dict(l=15, r=15, t=20, b=0), paper_bgcolor='#ffffff' if light else '#0d1017')
+            fig.update_layout(template='plotly_white' if light else 'plotly_dark', height=260, margin=dict(l=15, r=15, t=20, b=0), paper_bgcolor='#ffffff' if light else '#0d1017', font=dict(color='#111827' if light else '#f8fafc'))
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
             level = float(row.get('breakout_level', 0) or 0)
@@ -1592,8 +1598,9 @@ def render_home():
                 height=220,
                 margin=dict(l=10, r=10, t=10, b=10),
                 paper_bgcolor='#ffffff' if light else '#0d1017',
+                font=dict(color='#111827' if light else '#f8fafc'),
                 showlegend=True,
-                legend=dict(orientation='h', y=-0.1, x=0),
+                legend=dict(orientation='h', y=-0.1, x=0, font=dict(color='#111827' if light else '#f8fafc')),
             )
             st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
         else:
@@ -1605,13 +1612,19 @@ def render_home():
             value=68.0,
             number={'suffix': '%', 'font': {'size': 32, 'color': '#111827' if light else '#f8fafc'}},
             gauge={
-                'axis': {'range': [0, 100], 'tickwidth': 0},
+                'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': '#111827' if light else '#f8fafc'},
                 'bar': {'color': '#10b981', 'thickness': 0.2},
                 'bgcolor': '#e2e8f0' if light else '#1b2230',
                 'borderwidth': 0,
             },
         ))
-        fig_gauge.update_layout(template='plotly_white' if light else 'plotly_dark', height=180, margin=dict(l=20, r=20, t=10, b=10), paper_bgcolor='#ffffff' if light else '#0d1017')
+        fig_gauge.update_layout(
+            template='plotly_white' if light else 'plotly_dark', 
+            height=180, 
+            margin=dict(l=20, r=20, t=10, b=10), 
+            paper_bgcolor='#ffffff' if light else '#0d1017',
+            font=dict(color='#111827' if light else '#f8fafc')
+        )
         st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
 
     with col_grid:
