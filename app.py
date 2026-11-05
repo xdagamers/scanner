@@ -127,7 +127,6 @@ if 'trade_filter' not in st.session_state:
 def inject_theme_css():
     is_light = st.session_state.theme_mode == 'light'
     
-    # Updated color palette matching the Neo-Brutalist / rounded pastel theme
     theme_vars = (
         '''
         --bg: #F2F1EC;
@@ -150,6 +149,11 @@ def inject_theme_css():
         --btn-scan-bg: #8DE5AD;
         --btn-audit-bg: #A9CAFF;
         --btn-perf-bg: #FFD478;
+        --rank-1-c: #065f46; --rank-1-bg: #8DE5AD;
+        --rank-2-c: #3f6212; --rank-2-bg: #D9ECB0;
+        --rank-3-c: #92400e; --rank-3-bg: #FFD478;
+        --rank-4-c: #9a3412; --rank-4-bg: #FFD478;
+        --rank-5-c: #991b1b; --rank-5-bg: #FEE2E2;
         '''
         if is_light
         else '''
@@ -173,6 +177,11 @@ def inject_theme_css():
         --btn-scan-bg: rgba(16, 185, 129, 0.12);
         --btn-audit-bg: rgba(59, 130, 246, 0.12);
         --btn-perf-bg: rgba(245, 158, 11, 0.12);
+        --rank-1-c: #10b981; --rank-1-bg: rgba(16, 185, 129, 0.15);
+        --rank-2-c: #84cc16; --rank-2-bg: rgba(132, 204, 22, 0.15);
+        --rank-3-c: #f59e0b; --rank-3-bg: rgba(245, 158, 11, 0.15);
+        --rank-4-c: #f97316; --rank-4-bg: rgba(249, 115, 22, 0.15);
+        --rank-5-c: #ef4444; --rank-5-bg: rgba(239, 68, 68, 0.15);
         '''
     )
 
@@ -213,19 +222,19 @@ def inject_theme_css():
     button[data-testid="baseButton-secondary"]:has(div:contains("SCAN MARKET")) {{
         background-color: var(--btn-scan-bg);
         border: none;
-        color: #000 !important;
+        color: var(--text) !important;
     }}
     
     button[data-testid="baseButton-secondary"]:has(div:contains("COLLECT AUDIT")) {{
         background-color: var(--btn-audit-bg);
         border: none;
-        color: #000 !important;
+        color: var(--text) !important;
     }}
     
     button[data-testid="baseButton-secondary"]:has(div:contains("UPDATE TRACKING")) {{
         background-color: var(--btn-perf-bg);
         border: none;
-        color: #000 !important;
+        color: var(--text) !important;
     }}
     
     /* Dynamic active filter buttons */
@@ -262,7 +271,7 @@ def inject_theme_css():
         padding: 16px;
         margin-bottom: 12px;
         box-shadow: var(--shadow);
-        color: #000;
+        color: var(--text);
     }}
     
     .bento-index-sensex {{
@@ -271,7 +280,7 @@ def inject_theme_css():
         padding: 16px;
         margin-bottom: 12px;
         box-shadow: var(--shadow);
-        color: #000;
+        color: var(--text);
     }}
     
     .bento-stock-card {{
@@ -441,6 +450,34 @@ def inject_theme_css():
     .target-label {{ font-size: 0.68rem; color: var(--muted); text-transform: uppercase; font-weight: 700; }}
     .target-value {{ font-size: 1.2rem; font-weight: 800; color: var(--text); margin-top: 4px; }}
     .target-upside {{ font-size: 0.8rem; color: var(--accent); margin-top: 2px; font-weight: 700; }}
+    
+    /* HTML Audit Table */
+    .audit-table-wrapper {{
+        width: 100%;
+        overflow-x: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--card);
+    }}
+    .audit-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        color: var(--text);
+    }}
+    .audit-table th, .audit-table td {{
+        border-bottom: 1px solid var(--border);
+        padding: 10px 14px;
+        text-align: left;
+        white-space: nowrap;
+    }}
+    .audit-table th {{
+        background-color: var(--card2);
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+    }}
 
     /* Scanner Animation */
     .scan-shell {{ background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; overflow: hidden; margin: 16px 0; }}
@@ -508,12 +545,12 @@ def render_reload_guard(active=True):
     components.html(
         '''
         <div id="reload-confirm" style="display:none;position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center;font-family:'Inter',sans-serif">
-          <div style="width:min(400px,90vw);background:#0d1017;color:#f8fafc;border:1px solid #1e2535;border-radius:14px;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,.5);text-align:center">
+          <div style="width:min(400px,90vw);background:var(--card, #ffffff);color:var(--text, #111827);border:1px solid var(--border, #D1D5DB);border-radius:14px;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,.5);text-align:center">
             <div style="font-size:18px;font-weight:700;margin-bottom:8px">Reload Application?</div>
-            <div style="font-size:14px;color:#8c9bae;line-height:1.5;margin-bottom:20px">The current scan and un-saved audit data will be lost if you reload.</div>
+            <div style="font-size:14px;color:var(--muted, #4B5563);line-height:1.5;margin-bottom:20px">The current scan and un-saved audit data will be lost if you reload.</div>
             <div style="display:flex;gap:12px;justify-content:center">
-              <button id="reload-yes" style="flex:1;border:0;border-radius:8px;padding:12px;background:#ef4444;color:#fff;font-weight:600;cursor:pointer">Reload</button>
-              <button id="reload-no" style="flex:1;border:1px solid #1e2535;border-radius:8px;padding:12px;background:#131823;color:#f8fafc;font-weight:600;cursor:pointer">Stay</button>
+              <button id="reload-yes" style="flex:1;border:0;border-radius:8px;padding:12px;background:var(--red, #EF4444);color:#fff;font-weight:600;cursor:pointer">Reload</button>
+              <button id="reload-no" style="flex:1;border:1px solid var(--border, #D1D5DB);border-radius:8px;padding:12px;background:var(--card2, #F8F9FA);color:var(--text, #111827);font-weight:600;cursor:pointer">Stay</button>
             </div>
           </div>
         </div>
@@ -530,6 +567,13 @@ def render_reload_guard(active=True):
             const hide = () => { if (modal) modal.style.display='none'; };
             if (yes) yes.onclick = () => { w.location.href = w.location.origin + w.location.pathname + '?__reload_home=1'; };
             if (no) no.onclick = hide;
+            
+            // Native browser reload intercept
+            w.addEventListener('beforeunload', (event) => {
+              event.preventDefault();
+              event.returnValue = '';
+            });
+            
             w.addEventListener('keydown', (event) => {
               const key = String(event.key || '').toLowerCase();
               const refresh = key === 'f5' || ((event.ctrlKey || event.metaKey) && key === 'r');
@@ -766,13 +810,13 @@ def render_ticker():
     items = []
     
     # Custom colors for ticker badges to match the image
-    badge_colors = ["#FFD478", "#A9CAFF", "#8DE5AD"]
+    badge_colors = ["var(--btn-perf-bg)", "var(--btn-audit-bg)", "var(--btn-scan-bg)"]
     
     for i, (_, r) in enumerate(df.iterrows()):
         cls = '#10B981' if r.pct >= 0 else '#EF4444'
         bg_color = badge_colors[i % len(badge_colors)]
         items.append(
-            f'<div style="display:inline-flex; align-items:center; padding:6px 12px; background:{bg_color}; border-radius:999px; margin-right:12px; font-size:0.8rem; white-space:nowrap; color:#000;">'
+            f'<div style="display:inline-flex; align-items:center; padding:6px 12px; background:{bg_color}; border-radius:999px; margin-right:12px; font-size:0.8rem; white-space:nowrap; color:var(--text);">'
             f'<span style="font-weight:700; margin-right:6px;">{html.escape(r.symbol)}</span> '
             f'<span>₹{r.price:,.0f}</span> '
             f'<span style="color:{cls}; font-weight:600; margin-left:6px;">({r.pct:+.2f}%)</span>'
@@ -782,7 +826,7 @@ def render_ticker():
     
     markup = f'''
     <div style="display:flex; overflow:hidden; width:100%; margin-bottom:20px;">
-        <div style="display:flex; animation:marquee 70s linear infinite; white-space:nowrap;">
+        <div style="display:flex; animation:marquee 30s linear infinite; white-space:nowrap;">
             {content}{content}
         </div>
     </div>
@@ -1087,7 +1131,12 @@ def render_detail(symbol, row):
         st.markdown('<div class="section-title" style="margin-top:0;">Google Sheets Audit Export</div>', unsafe_allow_html=True)
         st.markdown('<div class="small-muted" style="margin-bottom:16px;">Raw technical properties formatted for your external sheet tracker.</div>', unsafe_allow_html=True)
         audit_df = build_single_stock_export(symbol, row, st.session_state.get('search_timestamp', datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')), rank='')
-        st.dataframe(audit_df, use_container_width=True, hide_index=True)
+        
+        # HTML table for perfect dark/light mode integration
+        html_table = audit_df.to_html(index=False, classes="audit-table", border=0)
+        st.markdown(f'<div class="audit-table-wrapper">{html_table}</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
         st.download_button('📥 DOWNLOAD AUDIT ROW (CSV)', data=audit_df.to_csv(index=False).encode('utf-8-sig'), file_name=f"audit_{symbol}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv", mime='text/csv', use_container_width=False, key=f'audit_{symbol}')
 
 
@@ -1579,11 +1628,11 @@ def render_home():
                     row = display.iloc[idx]
                     ratio = idx / max(len(display) - 1, 1)
 
-                    if ratio < 0.2: color = '#10b981'; bg_fill = '#8DE5AD'
-                    elif ratio < 0.4: color = '#84cc16'; bg_fill = '#D9ECB0'
-                    elif ratio < 0.6: color = '#f59e0b'; bg_fill = '#FFD478'
-                    elif ratio < 0.8: color = '#f97316'; bg_fill='#FFD478'
-                    else: color = '#ef4444'; bg_fill = '#FEE2E2'
+                    if ratio < 0.2: color = 'var(--rank-1-c)'; bg_fill = 'var(--rank-1-bg)'
+                    elif ratio < 0.4: color = 'var(--rank-2-c)'; bg_fill = 'var(--rank-2-bg)'
+                    elif ratio < 0.6: color = 'var(--rank-3-c)'; bg_fill = 'var(--rank-3-bg)'
+                    elif ratio < 0.8: color = 'var(--rank-4-c)'; bg_fill = 'var(--rank-4-bg)'
+                    else: color = 'var(--rank-5-c)'; bg_fill = 'var(--rank-5-bg)'
                     
                     timeframe, tf_cls = get_timeframe_status(row)
 
@@ -1604,7 +1653,7 @@ def render_home():
                             f'<div class="bento-stock-card">'
                             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                             f'<span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK #{idx+1}</span>'
-                            f'<span class="badge" style="background:{bg_fill};color:#000;">{html.escape(str(row.get("cap_category","")))}</span>'
+                            f'<span class="badge" style="background:{bg_fill};color:{color};">{html.escape(str(row.get("cap_category","")))}</span>'
                             f'</div>'
                             f'<div style="font-weight:800;font-size:1.15rem;color:var(--text);margin-top:8px;line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>'
                             f'<div class="small-muted" style="margin-bottom:10px;">{html.escape(str(row["symbol"]))}</div>'
