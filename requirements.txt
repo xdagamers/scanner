@@ -4,3 +4,5 @@ numpy>=1.26
 plotly>=5.24
 requests>=2.31
 yfinance>=0.2.50
+torch==2.1.2
+transformers==4.36.2
