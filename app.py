@@ -1266,11 +1266,31 @@ def render_home():
             "Target 3 touched at any time": "T3_Hit",
             "Breakout trigger reached": "Breakout_Hit",
         }
-        selected_outcome_label = st.selectbox(
-            "Outcome to evaluate",
-            list(outcome_labels.keys()),
-            key="audit_research_outcome_choice",
-        )
+        
+        r_col1, r_col2, r_col3 = st.columns([2, 1, 1])
+        with r_col1:
+            selected_outcome_label = st.selectbox(
+                "Outcome to evaluate",
+                list(outcome_labels.keys()),
+                key="audit_research_outcome_choice",
+            )
+        with r_col2:
+            min_sig_input = st.number_input(
+                "Min signals per combo",
+                min_value=3,
+                max_value=200,
+                value=15,
+                step=5,
+                key="audit_min_signals_input",
+            )
+        with r_col3:
+            max_ord_input = st.selectbox(
+                "Max factors combined",
+                options=[2, 3, 4],
+                index=1,
+                key="audit_max_order_input",
+            )
+
         run_analysis_clicked = st.button(
             "🔬 RUN COMBINATION ANALYSIS",
             key="run_audit_combination_analysis",
@@ -1289,17 +1309,18 @@ def render_home():
                         st.session_state.audit_analysis_saved = False
                         analysis_status.update(label="Not enough signals have completed 20 trading days yet", state="complete", expanded=False)
                     else:
+                        eff_min_signals = min(int(min_sig_input), max(3, len(completed_outcomes) // 2))
                         analysis_df = analyze_outcome_combinations(
                             completed_outcomes,
                             outcome_col=outcome_labels[selected_outcome_label],
-                            min_signals=max(25, int(len(completed_outcomes) * 0.05)),
-                            max_order=3,
+                            min_signals=eff_min_signals,
+                            max_order=int(max_ord_input),
                         )
                         st.session_state.audit_analysis_result = analysis_df
                         st.session_state.audit_analysis_report = completion_report
                         st.session_state.audit_analysis_outcome = outcome_labels[selected_outcome_label]
                         st.session_state.audit_analysis_saved = False
-                        analysis_status.update(label=f"Analysis complete: {len(completed_outcomes):,} matured signals evaluated", state="complete", expanded=False)
+                        analysis_status.update(label=f"Analysis complete: {len(completed_outcomes):,} matured signals evaluated ({len(analysis_df):,} combinations found)", state="complete", expanded=False)
             except Exception as exc:
                 st.error("Combination analysis failed. Details: " + str(exc))
 
@@ -1312,6 +1333,20 @@ def render_home():
                 f"{stored_report.get('signals_pending', 0):,}. Only a saved Tracking_Day 20 row counts as mature."
             )
         if isinstance(stored_analysis, pd.DataFrame) and not stored_analysis.empty:
+            st.markdown('<div class="section-title" style="margin-top:8px;">🏆 Top 3 Most Consistent Setups</div>', unsafe_allow_html=True)
+            top_cols = st.columns(min(3, len(stored_analysis)))
+            for idx, col in enumerate(top_cols):
+                top_row = stored_analysis.iloc[idx]
+                with col:
+                    st.markdown(
+                        f'<div class="bento-card" style="padding:16px;">'
+                        f'<span class="badge badge-green">RANK #{idx+1} • {top_row["Success_Rate_Pct"]:.1f}% WIN</span>'
+                        f'<div style="font-weight:800;font-size:0.95rem;margin-top:10px;color:var(--text);">{html.escape(str(top_row["Combination"]))}</div>'
+                        f'<div class="small-muted" style="margin-top:8px;">Signals: <b>{int(top_row["Signals"])}</b> • Avg Ret: <b>{top_row["Avg_Return_Pct"]:+.2f}%</b> • Stop Rate: <b>{top_row["Stop_Rate_Pct"]:.1f}%</b></div>'
+                        f'<div class="small-muted" style="margin-top:6px;font-size:0.72rem;">{html.escape(str(top_row["Notes"]).split(".")[0])}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
             st.dataframe(stored_analysis.head(50), use_container_width=True, hide_index=True)
             st.download_button(
                 "📥 Download combination analysis CSV",
@@ -1333,7 +1368,7 @@ def render_home():
             else:
                 st.success("These analysis results have already been appended to Analysis_Results for this analysis run.")
         elif stored_report is not None:
-            st.info("No Day-20 outcomes are ready yet. Continue updating performance tracking after market close; this analysis will become available as signals mature.")
+            st.info("No Day-20 outcomes matched the minimum signal count yet. Lower 'Min signals per combo' above or continue updating performance tracking after market close.")
 
 
     # SANDBOX / SCAN TRIGGER
