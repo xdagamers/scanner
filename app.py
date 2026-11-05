@@ -45,14 +45,6 @@ except ImportError:
             df['deliverable_qty'] = None
         return df
 
-# NLP Model Loading
-from transformers import pipeline
-
-@st.cache_resource(show_spinner=False)
-def load_sentiment_model():
-    return pipeline("sentiment-analysis", model="ProsusAI/finbert")
-
-
 IST = ZoneInfo('Asia/Kolkata')
 
 NIFTY50_CSV = 'https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv'
@@ -135,7 +127,6 @@ if 'trade_filter' not in st.session_state:
 def inject_theme_css():
     is_light = st.session_state.theme_mode == 'light'
     
-    # Original Gradient Fintech Theme Variables
     theme_vars = (
         '''
         --bg: #f8fafc;
@@ -197,10 +188,8 @@ def inject_theme_css():
     section[data-testid="stSidebar"] {{ display: none !important; }}
     * {{ box-sizing: border-box; }}
     
-    /* Ensure Streamlit native markdown text inherits colors properly */
     .stMarkdown p, .stText p, label, .stRadio label {{ color: var(--text) !important; }}
 
-    /* Fintech Buttons - Reverted to Original Theme */
     .stButton > button {{
         width: 100%;
         border-radius: 10px;
@@ -214,7 +203,6 @@ def inject_theme_css():
         box-shadow: var(--shadow);
     }}
     
-    /* Remove pastel button colors - back to standard gradient theme style */
     button[data-testid="baseButton-secondary"]:has(div:contains("SCAN MARKET")),
     button[data-testid="baseButton-secondary"]:has(div:contains("COLLECT AUDIT DATA")),
     button[data-testid="baseButton-secondary"]:has(div:contains("UPDATE PERFORMANCE TRACKING")) {{
@@ -223,7 +211,6 @@ def inject_theme_css():
         color: var(--text) !important;
     }}
     
-    /* Dynamic active filter buttons */
     button[data-testid="baseButton-primary"] {{
         background-color: var(--text) !important;
         color: var(--bg) !important;
@@ -240,7 +227,6 @@ def inject_theme_css():
         transform: translateY(-1px);
     }}
 
-    /* Bento Cards */
     .bento-card {{
         background: var(--card);
         border: 1px solid var(--border);
@@ -264,7 +250,6 @@ def inject_theme_css():
         transform: translateY(-2px);
     }}
 
-    /* Top Command Header */
     .fintech-topbar {{
         display: flex;
         align-items: center;
@@ -329,7 +314,6 @@ def inject_theme_css():
         margin-right: 6px;
     }}
 
-    /* Status & Badges */
     .dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }}
     .dot.green {{ background: var(--accent); box-shadow: 0 0 10px var(--accent); }}
     .dot.red {{ background: var(--red); }}
@@ -354,7 +338,6 @@ def inject_theme_css():
     .badge-grey {{ background: var(--card2); color: var(--muted); border: 1px solid var(--border); }}
     .badge-accent {{ background: linear-gradient(90deg, #10b981, #059669); color: white; border: none; }}
 
-    /* Micro Indicator Bars */
     .bar-row {{
         display: flex;
         align-items: center;
@@ -418,7 +401,6 @@ def inject_theme_css():
     .target-value {{ font-size: 1.2rem; font-weight: 800; color: var(--text); margin-top: 4px; }}
     .target-upside {{ font-size: 0.8rem; color: var(--accent); margin-top: 2px; font-weight: 700; }}
     
-    /* HTML Audit Table - properly inherit themes */
     .audit-table-wrapper {{
         width: 100%;
         overflow-x: auto;
@@ -446,7 +428,6 @@ def inject_theme_css():
         font-size: 0.75rem;
     }}
 
-    /* Scanner Animation */
     .scan-shell {{ background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; overflow: hidden; margin: 16px 0; }}
     .scan-chart {{ height: 130px; position: relative; overflow: hidden; border-radius: 10px; background: var(--card2); }}
     .candle-track {{ position: absolute; inset: 0; display: flex; align-items: center; gap: 12px; width: max-content; animation: scrollCandles 7s linear infinite; }}
@@ -460,7 +441,6 @@ def inject_theme_css():
     .progress > div {{ width: 65%; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--brand)); animation: progress 2.2s ease-in-out infinite; }}
     @keyframes progress {{ 0% {{ width: 8%; }} 50% {{ width: 78%; }} 100% {{ width: 94%; }} }}
 
-    /* News Item Cards */
     .news-item {{
         padding: 14px 18px;
         border-radius: 12px;
@@ -487,7 +467,6 @@ def inject_theme_css():
         line-height: 1.35;
     }}
 
-    /* Tabs - ensure text maps correctly */
     .stTabs [data-baseweb="tab-list"] {{ gap: 12px; border-bottom: 1px solid var(--border) !important; }}
     .stTabs [data-baseweb="tab"] {{ padding: 12px 20px; background: transparent; border: none; }}
     .stTabs [data-baseweb="tab"] p {{ color: var(--muted) !important; font-weight: 700; }}
@@ -537,7 +516,6 @@ def render_reload_guard(active=True):
             if (yes) yes.onclick = () => { w.location.href = w.location.origin + w.location.pathname + '?__reload_home=1'; };
             if (no) no.onclick = hide;
             
-            // Native browser reload intercept
             w.addEventListener('beforeunload', (event) => {
               event.preventDefault();
               event.returnValue = '';
@@ -556,11 +534,7 @@ def render_reload_guard(active=True):
     )
 
 
-# -----------------------------------------------------------------------------
-# MARKET DATA & UTILITY HELPERS
-# -----------------------------------------------------------------------------
 def get_timeframe_status(row):
-    '''Determines the holding estimated days/status based on momentum setup.'''
     adx = float(row.get('adx', 0) or 0)
     rsi = float(row.get('rsi', 0) or 0)
     dist = float(row.get('distance_pct', 99) or 99)
@@ -719,7 +693,7 @@ def render_fintech_topbar():
                 <div class="fintech-logo">N</div>
                 <div>
                     <div class="fintech-title">NIFTY INTELLIGENCE</div>
-                    <div class="fintech-subtitle">{{dot}} Market Status: <b>{{status}}</b> • IST Live</div>
+                    <div class="fintech-subtitle">{dot} Market Status: <b>{status}</b> • IST Live</div>
                 </div>
             </div>
             ''',
@@ -863,9 +837,6 @@ def build_single_stock_export(symbol, row, scanned_at, rank=''):
     }])
 
 
-# -----------------------------------------------------------------------------
-# DETAILED VIEW (WITH TABS)
-# -----------------------------------------------------------------------------
 def render_detail(symbol, row):
     render_fintech_topbar()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -949,9 +920,9 @@ def render_detail(symbol, row):
             fig = go.Figure(go.Indicator(
                 mode='gauge+number',
                 value=score,
-                number={'suffix': '', 'font': {'size': 42, 'color': '#0f172a' if light else '#f8fafc'}},
+                number={'suffix': '', 'font': {'size': 42, 'color': '#111827' if light else '#f8fafc'}},
                 gauge={
-                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': '#111827' if light else '#f8fafc'},
+                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': 'rgba(0,0,0,0)'},
                     'bar': {'color': '#10b981', 'thickness': 0.15},
                     'bgcolor': '#e2e8f0' if light else '#1b2230',
                     'borderwidth': 0,
@@ -1036,7 +1007,7 @@ def render_detail(symbol, row):
             st.warning(f"Fundamental data is currently unavailable for {symbol}. Status: {fund_data.get('fundamental_quality')}")
 
     with tab_news:
-        st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & AI Sentiment</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & Exchange Filings</div>', unsafe_allow_html=True)
         try:
             ticker_obj = yf.Ticker(symbol + '.NS')
             news_list = ticker_obj.news
@@ -1044,35 +1015,18 @@ def render_detail(symbol, row):
             news_list = []
 
         if news_list:
-            with st.spinner("Running FinBERT sentiment analysis..."):
-                analyzer = load_sentiment_model()
-                
             for item in news_list[:6]:
                 title = item.get('title', 'No Title')
+                publisher = item.get('publisher', 'Exchange Source')
                 link = item.get('link', '#')
                 pub_time = item.get('providerPublishTime')
                 time_str = datetime.fromtimestamp(pub_time).strftime('%d %b %Y • %H:%M IST') if pub_time else 'Recent'
-                
-                # Run the headline through FinBERT
-                sentiment_result = analyzer(title)[0]
-                label = sentiment_result['label'] # positive, negative, or neutral
-                confidence = int(sentiment_result['score'] * 100)
-                
-                if label == "positive":
-                    badge_cls = "badge-green"
-                    display_label = f"BULLISH ({confidence}%)"
-                elif label == "negative":
-                    badge_cls = "badge-red"
-                    display_label = f"BEARISH ({confidence}%)"
-                else:
-                    badge_cls = "badge-grey"
-                    display_label = "NEUTRAL"
                 
                 st.markdown(f'''
                 <div class="news-item">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                         <span class="news-time">{time_str}</span>
-                        <span class="badge {badge_cls}">{display_label}</span>
+                        <span class="badge badge-brand">{publisher}</span>
                     </div>
                     <div class="news-headline"><a href="{link}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">{html.escape(title)} ↗</a></div>
                 </div>
