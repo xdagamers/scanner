@@ -45,6 +45,14 @@ except ImportError:
             df['deliverable_qty'] = None
         return df
 
+# NLP Model Loading
+from transformers import pipeline
+
+@st.cache_resource(show_spinner=False)
+def load_sentiment_model():
+    return pipeline("sentiment-analysis", model="ProsusAI/finbert")
+
+
 IST = ZoneInfo('Asia/Kolkata')
 
 NIFTY50_CSV = 'https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv'
@@ -783,7 +791,7 @@ def detail_chart(symbol, row, period='2y'):
     light = st.session_state.theme_mode == 'light'
     fig = go.Figure()
     fig.add_trace(go.Candlestick(x=hist.index, open=hist.Open, high=hist.High, low=hist.Low, close=hist.Close, name=symbol))
-    fig.add_trace(go.Bar(x=hist.index, y=hist.Volume, name='Volume', yaxis='y2', opacity=0.25, marker_color='#6366f1'))
+    fig.add_trace(go.Bar(x=hist.index, y=hist.Volume, name='Volume', yaxis='y2', opacity=0.25, marker_color='#3B82F6'))
     fig.add_hline(y=float(row.get('breakout_level', 0) or 0), line_dash='dash', line_color='#10b981', annotation_text=f"Breakout: ₹{row.get('breakout_level', 0):.2f}", annotation_position='top left')
     fig.update_layout(
         template='plotly_white' if light else 'plotly_dark',
@@ -792,9 +800,9 @@ def detail_chart(symbol, row, period='2y'):
         xaxis_rangeslider_visible=False,
         hovermode='x unified',
         paper_bgcolor='#ffffff' if light else '#0d1017',
-        plot_bgcolor='#f8fafc' if light else '#05070b',
+        plot_bgcolor='#F8F9FA' if light else '#05070b',
         font=dict(color='#111827' if light else '#f8fafc'),
-        yaxis=dict(title='Price', gridcolor='#e2e8f0' if light else '#1e2535', color='#111827' if light else '#f8fafc'),
+        yaxis=dict(title='Price', gridcolor='#E5E7EB' if light else '#1e2535', color='#111827' if light else '#f8fafc'),
         yaxis2=dict(title='Volume', overlaying='y', side='right', showgrid=False, rangemode='tozero', color='#111827' if light else '#f8fafc'),
         legend=dict(orientation='h', y=1.02, x=0, font=dict(color='#111827' if light else '#f8fafc')),
     )
@@ -943,7 +951,7 @@ def render_detail(symbol, row):
                 value=score,
                 number={'suffix': '', 'font': {'size': 42, 'color': '#0f172a' if light else '#f8fafc'}},
                 gauge={
-                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': 'rgba(0,0,0,0)'},
+                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': '#111827' if light else '#f8fafc'},
                     'bar': {'color': '#10b981', 'thickness': 0.15},
                     'bgcolor': '#e2e8f0' if light else '#1b2230',
                     'borderwidth': 0,
@@ -1028,7 +1036,7 @@ def render_detail(symbol, row):
             st.warning(f"Fundamental data is currently unavailable for {symbol}. Status: {fund_data.get('fundamental_quality')}")
 
     with tab_news:
-        st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & Exchange Filings</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & AI Sentiment</div>', unsafe_allow_html=True)
         try:
             ticker_obj = yf.Ticker(symbol + '.NS')
             news_list = ticker_obj.news
@@ -1036,18 +1044,35 @@ def render_detail(symbol, row):
             news_list = []
 
         if news_list:
+            with st.spinner("Running FinBERT sentiment analysis..."):
+                analyzer = load_sentiment_model()
+                
             for item in news_list[:6]:
                 title = item.get('title', 'No Title')
-                publisher = item.get('publisher', 'Exchange Source')
                 link = item.get('link', '#')
                 pub_time = item.get('providerPublishTime')
                 time_str = datetime.fromtimestamp(pub_time).strftime('%d %b %Y • %H:%M IST') if pub_time else 'Recent'
+                
+                # Run the headline through FinBERT
+                sentiment_result = analyzer(title)[0]
+                label = sentiment_result['label'] # positive, negative, or neutral
+                confidence = int(sentiment_result['score'] * 100)
+                
+                if label == "positive":
+                    badge_cls = "badge-green"
+                    display_label = f"BULLISH ({confidence}%)"
+                elif label == "negative":
+                    badge_cls = "badge-red"
+                    display_label = f"BEARISH ({confidence}%)"
+                else:
+                    badge_cls = "badge-grey"
+                    display_label = "NEUTRAL"
                 
                 st.markdown(f'''
                 <div class="news-item">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                         <span class="news-time">{time_str}</span>
-                        <span class="badge badge-brand">{publisher}</span>
+                        <span class="badge {badge_cls}">{display_label}</span>
                     </div>
                     <div class="news-headline"><a href="{link}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">{html.escape(title)} ↗</a></div>
                 </div>
@@ -1532,7 +1557,7 @@ def render_home():
         fig_gauge = go.Figure(go.Indicator(
             mode='gauge+number',
             value=68.0,
-            number={'suffix': '%', 'font': {'size': 32, 'color': '#111827' if light else '#f8fafc'}},
+            number={'suffix': '%', 'font': {'size': 32, 'color': '#0f172a' if light else '#f8fafc'}},
             gauge={
                 'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': '#111827' if light else '#f8fafc'},
                 'bar': {'color': '#10b981', 'thickness': 0.2},
