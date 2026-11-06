@@ -10,7 +10,7 @@ def money(x):
         return '—'
 
 @st.cache_data(ttl=30, show_spinner=False)
-def fetch_live_watchlist_prices(symbols, secrets=None):
+def fetch_live_watchlist_prices(symbols):
     """Fetches live prices using yfinance."""
     live_prices = {}
     if not symbols: return live_prices
@@ -31,7 +31,7 @@ def fetch_live_watchlist_prices(symbols, secrets=None):
         
     return live_prices
 
-def render_watchlist_tab(secrets, watchlist_df):
+def render_watchlist_tab(watchlist_df):
     st.markdown("""
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
         <div class="section-title" style="margin:0; border:none;">Active Positions & Watchlist</div>
@@ -47,7 +47,9 @@ def render_watchlist_tab(secrets, watchlist_df):
         watchlist_df["Symbol"] = watchlist_df.get("Stock_Name", "")
         
     symbols = watchlist_df["Symbol"].dropna().unique().tolist()
-    live_prices = fetch_live_watchlist_prices(symbols, secrets)
+    
+    # Notice we don't pass secrets here anymore to avoid the unhashable error
+    live_prices = fetch_live_watchlist_prices(symbols)
     
     for start in range(0, len(watchlist_df), 3):
         cols = st.columns(3)
