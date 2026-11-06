@@ -25,7 +25,8 @@ from google_sheets_audit import (
     read_final_performance,
     append_performance_rows,
     append_analysis_rows,
-    append_watchlist_row
+    append_watchlist_row,
+    read_watchlist
 )
 from audit_analysis import build_completed_outcomes, analyze_outcome_combinations
 from performance_tracker import (
@@ -34,6 +35,8 @@ from performance_tracker import (
     latest_completed_market_date,
 )
 from fundamental_data import fetch_single_fundamental
+from live_watchlist import render_watchlist_tab
+from sentiment_engine import get_headline_sentiment
 
 # Optional delivery loader integration
 try:
@@ -59,7 +62,6 @@ st.set_page_config(
     layout='wide',
     initial_sidebar_state='collapsed',
 )
-
 
 def password_gate():
     try:
@@ -87,10 +89,8 @@ def password_gate():
                 st.error('Incorrect password.')
     return False
 
-
 if not password_gate():
     st.stop()
-
 
 # -----------------------------------------------------------------------------
 # SESSION STATE INITIALIZATION
@@ -120,9 +120,8 @@ if 'audit_append_in_progress' not in st.session_state:
 if 'trade_filter' not in st.session_state:
     st.session_state.trade_filter = 'All'
 
-
 # -----------------------------------------------------------------------------
-# FINTECH ANALYTICS CSS (BENTO GRID & LIGHT/DARK THEME)
+# FINTECH ANALYTICS CSS
 # -----------------------------------------------------------------------------
 def inject_theme_css():
     is_light = st.session_state.theme_mode == 'light'
@@ -483,9 +482,7 @@ def inject_theme_css():
     '''
     st.markdown(css, unsafe_allow_html=True)
 
-
 inject_theme_css()
-
 
 def render_reload_guard(active=True):
     if not active:
@@ -533,7 +530,6 @@ def render_reload_guard(active=True):
         height=0,
     )
 
-
 def get_timeframe_status(row):
     adx = float(row.get('adx', 0) or 0)
     rsi = float(row.get('rsi', 0) or 0)
@@ -545,7 +541,6 @@ def get_timeframe_status(row):
         return 'Short Term (1-3w)', 'badge-brand'
     else:
         return 'Positional (2-6w)', 'badge-yellow'
-
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_market_snapshot():
@@ -579,7 +574,6 @@ def get_market_snapshot():
         pass
     return result
 
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_nifty50_symbols():
     try:
@@ -600,7 +594,6 @@ def get_nifty50_symbols():
             'TATACONSUM', 'TATAMOTORS', 'TATASTEEL', 'TCS', 'TECHM', 'TITAN',
             'TRENT', 'ULTRACEMCO',
         ]
-
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_nifty50_ticker_data(symbols):
@@ -639,11 +632,9 @@ def get_nifty50_ticker_data(symbols):
         return pd.DataFrame(columns=['symbol', 'price', 'pct'])
     return pd.DataFrame(rows)
 
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_fundamentals_cached(symbol):
     return fetch_single_fundamental(symbol)
-
 
 def market_status(now=None):
     now = now or datetime.now(IST)
@@ -656,14 +647,11 @@ def market_status(now=None):
         return 'Open', 'green'
     return 'Closed', 'red'
 
-
 def money(x):
     return f'₹{x:,.2f}' if x is not None and np.isfinite(x) else '—'
 
-
 def pct(x):
     return f'{x:+.2f}%' if x is not None and np.isfinite(x) else '—'
-
 
 def render_fintech_topbar():
     snap = get_market_snapshot()
@@ -725,7 +713,6 @@ def render_fintech_topbar():
                 st.session_state.ui_sandbox_mode = sandbox
                 st.rerun()
 
-
 def render_ticker():
     symbols = get_nifty50_symbols()
     df = get_nifty50_ticker_data(tuple(symbols))
@@ -748,14 +735,12 @@ def render_ticker():
     markup = f'''<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee 90s linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981}}.down{{color:#ef4444}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
     components.html(markup, height=44, scrolling=False)
 
-
 def day_change(symbol, period='2y'):
     hist = fetch_history(symbol, period)
     if hist is None or len(hist) < 2:
         return None, None, None
     last, prev = float(hist.Close.iloc[-1]), float(hist.Close.iloc[-2])
     return last, last - prev, (last / prev - 1) * 100
-
 
 def detail_chart(symbol, row, period='2y'):
     hist = fetch_history(symbol, period)
@@ -782,14 +767,12 @@ def detail_chart(symbol, row, period='2y'):
     )
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'responsive': True})
 
-
 def verdict(score):
     if score >= 90: return 'Strong', True
     if score >= 75: return 'Good', True
     if score >= 60: return 'Neutral', False
     if score >= 40: return 'Weak', False
     return 'Avoid', False
-
 
 def score_class(value, kind):
     try: v = float(value)
@@ -802,11 +785,9 @@ def score_class(value, kind):
     if kind == 'score': return 'metric-good' if v >= 80 else 'metric-ok' if v >= 65 else 'metric-neutral' if v >= 50 else 'metric-poor' if v >= 35 else 'metric-bad'
     return 'metric-neutral'
 
-
 def metric_card(label, value, kind=None):
     cls = score_class(value, kind) if kind else 'metric-neutral'
     return f'<div class="metric-card {cls}"><div class="metric-label">{html.escape(str(label))}</div><div class="metric-value">{html.escape(str(value))}</div></div>'
-
 
 def target_values(row, price):
     b = float(row.get('breakout_level', 0) or 0)
@@ -822,7 +803,6 @@ def target_values(row, price):
         t2 = b + 2 * base if base else b * 1.02
     return t1, t2
 
-
 def build_single_stock_export(symbol, row, scanned_at, rank=''):
     t1 = float(row.get('target1')) if pd.notna(row.get('target1')) else np.nan
     t2 = float(row.get('target2')) if pd.notna(row.get('target2')) else np.nan
@@ -835,7 +815,6 @@ def build_single_stock_export(symbol, row, scanned_at, rank=''):
         'Distance %': round(float(row.get('distance_pct')), 2), 'RVOL': round(float(row.get('rvol')), 2), 'RSI': round(float(row.get('rsi')), 2),
         'ADX': round(float(row.get('adx')), 2), 'EOD Delivery %': row.get('delivery_pct', '—'), 'Market Regime': row.get('market_regime', ''),
     }])
-
 
 def render_detail(symbol, row):
     render_fintech_topbar()
@@ -1052,7 +1031,6 @@ def render_detail(symbol, row):
         st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
         st.download_button('📥 DOWNLOAD AUDIT ROW (CSV)', data=audit_df.to_csv(index=False).encode('utf-8-sig'), file_name=f"audit_{symbol}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv", mime='text/csv', use_container_width=False, key=f'audit_{symbol}')
 
-
 # -----------------------------------------------------------------------------
 # MAIN DASHBOARD (BENTO GRID LAYOUT)
 # -----------------------------------------------------------------------------
@@ -1062,7 +1040,15 @@ def render_home():
     render_ticker()
     
     # Create the Tabs for the Main Screen
-    tab_dash, tab_sikho = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)"])
+    tab_dash, tab_sikho, tab_watch = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)", "👀 Live Watchlist"])
+
+    with tab_watch:
+        with st.spinner("Fetching live data from Yahoo Finance..."):
+            try:
+                watchlist_df = read_watchlist(st.secrets)
+            except Exception:
+                watchlist_df = pd.DataFrame()
+            render_watchlist_tab(st.secrets, watchlist_df)
 
     with tab_sikho:
         st.markdown('''
@@ -1688,7 +1674,6 @@ def render_home():
                     <div class="news-headline">{news['headline']}</div>
                 </div>
                 ''', unsafe_allow_html=True)
-
 
 # -----------------------------------------------------------------------------
 # ROUTER EXECUTION
