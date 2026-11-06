@@ -1658,6 +1658,9 @@ else:
 # -----------------------------------------------------------------------------
 # MAIN DASHBOARD (BENTO GRID LAYOUT)
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# MAIN DASHBOARD (BENTO GRID LAYOUT)
+# -----------------------------------------------------------------------------
 def render_home():
     render_fintech_topbar()
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -1667,7 +1670,7 @@ def render_home():
     tab_dash, tab_sikho = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)"])
     
     with tab_sikho:
-        # --- PASTE THE SIKHO COURSE CONTENT HERE ---
+        # --- THE SIKHO COURSE CONTENT ---
         st.markdown("""
         ## 📚 Sikho: The NIFTY Momentum Masterclass
         Welcome to the engine room. This scanner doesn't just pick random stocks; it uses a specific mathematical formula to find **Momentum Breakouts**.
@@ -1700,7 +1703,6 @@ def render_home():
         3. **The Momentum:** `RSI` is glowing green between `55-70`, and `ADX` is `> 20`.
         4. **The History:** `Resistance Touches` is `> 3`.
         """)
-        # -------------------------------------------
 
     with tab_dash:
         # ACTION BAR (Bento Action Header)
@@ -1729,4 +1731,564 @@ def render_home():
             st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
             tracking_clicked = st.button('📈 UPDATE TRACKING', key='update_performance_tracking', use_container_width=True, disabled=audit_pending)
 
-        # ... (The rest of your exact render_home() code continues normally below here) ...
+        if search_clicked and query.strip():
+            symbol = query.strip().upper().replace('.NS', '')
+            st.session_state.search_error = None
+            with st.spinner(f'Analyzing {symbol}…'):
+                try:
+                    row = scan_single(symbol, max_distance=10.0, period='2y')
+                    if row is None:
+                        hist = fetch_history(symbol, '2y')
+                        if hist is None: raise ValueError('No usable 2-year price history available.')
+                        nifty = __import__('scanner').fetch_index_history('^NSEI', period='2y')
+                        row = score_stock(hist, nifty_df=nifty)
+                        if row is None: raise ValueError('Could not calculate technical setup.')
+                        row['symbol'] = symbol
+                        row['company_name'] = symbol
+                        row['cap_category'] = ''
+                        row['outside_near_breakout_range'] = True
+                    else:
+                        row['outside_near_breakout_range'] = False
+                        try:
+                            universe = load_universe()
+                            m = universe.loc[universe.symbol == symbol]
+                            if not m.empty:
+                                row['company_name'] = m.iloc[0]['company_name']
+                                row['cap_category'] = m.iloc[0]['cap_category']
+                        except Exception: pass
+                    st.session_state.selected_stock = symbol
+                    st.session_state.selected_row = row
+                    st.session_state.page = 'detail'
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+        # -------------------------------------------------------------------------
+        # PERFORMANCE TRACKING & COMBINATION ANALYSIS LOGIC RESTORED
+        # -------------------------------------------------------------------------
+        if tracking_clicked:
+            try:
+                with st.status("📈 Updating 20-day performance tracking…", expanded=True) as tracking_status:
+                    tracking_status.write("Reading saved audit signals from Google Sheets…")
+                    signal_df = read_audit_signals(st.secrets)
+                    existing_keys = read_performance_keys(st.secrets)
+                    if signal_df.empty:
+                        st.warning("No saved audit signals were found. Run Collect Audit and confirm it before updating performance.")
+                    else:
+                        cutoff_date = latest_completed_market_date()
+                        total_steps = st.empty()
+                        progress_bar = st.progress(0)
+                        last_progress = {"value": -1}
+
+                        def progress_update(done, total, message):
+                            total = max(1, int(total))
+                            pct_value = min(100, int((done / total) * 100))
+                            if pct_value != last_progress["value"]:
+                                progress_bar.progress(pct_value)
+                                last_progress["value"] = pct_value
+                            total_steps.caption(message)
+
+                        tracking_status.write(f"Fetching historical daily OHLC through {cutoff_date.isoformat()}…")
+                        price_histories, missing_symbols, market_sessions, calendar_source = fetch_ohlc_histories(
+                            signal_df,
+                            as_of_date=cutoff_date,
+                            progress_callback=progress_update,
+                        )
+                        progress_bar.progress(100)
+                        tracking_status.write("Building Day 1–20 rows and checking existing tracking keys…")
+                        progress_bar.progress(0)
+
+                        def build_progress(done, total, message):
+                            total = max(1, int(total))
+                            done = max(0, min(int(done), total))
+                            progress_bar.progress(min(100, int(done / total * 100)))
+                            total_steps.caption(message)
+
+                        new_performance, tracking_report = build_performance_rows(
+                            signal_df,
+                            price_histories,
+                            existing_performance=existing_keys,
+                            as_of_date=cutoff_date,
+                            market_sessions=market_sessions,
+                            calendar_source=calendar_source,
+                            progress_callback=build_progress,
+                        )
+                        tracking_report["missing_symbols_from_fetch"] = missing_symbols
+                        if not new_performance.empty:
+                            tracking_status.write(f"Preparing to reconcile {len(new_performance):,} daily rows in bounded batches…")
+                            progress_bar.progress(0)
+
+                            def write_progress(done, total, message):
+                                total = max(1, int(total))
+                                done = max(0, min(int(done), total))
+                                progress_bar.progress(min(100, int(done / total * 100)))
+                                total_steps.caption(message)
+
+                            write_result = append_performance_rows(
+                                st.secrets,
+                                new_performance,
+                                batch_size=400,
+                                progress_callback=write_progress,
+                            )
+                            progress_bar.progress(100)
+                            total_steps.caption(
+                                f"Write stage complete: {write_result.get('batches', 0)} batches; "
+                                f"{write_result.get('rows', 0):,} appended, "
+                                f"{write_result.get('updated', 0):,} repaired, "
+                                f"{write_result.get('skipped_duplicates', 0):,} already present."
+                            )
+                        else:
+                            write_result = {"saved": False, "rows": 0, "expected": 0, "reason": "no_new_rows"}
+                        tracking_status.update(label="✅ Performance tracking update finished", state="complete", expanded=False)
+
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Saved signals", f"{len(signal_df):,}")
+                        c2.metric("OHLC symbols loaded", f"{len(price_histories):,}")
+                        c3.metric("New daily rows", f"{write_result.get('rows', 0):,}")
+                        stored_keys = read_performance_keys(st.secrets)
+                        stored_pairs = set()
+                        if not stored_keys.empty:
+                            for _, key_row in stored_keys.iterrows():
+                                try:
+                                    stored_pairs.add((str(key_row.get("Signal_ID", "")), int(float(key_row.get("Tracking_Day")))))
+                                except Exception:
+                                    continue
+                        expected_pairs = { (str(sid), int(day)) for sid, day in tracking_report.get("expected_keys", []) }
+                        missing_saved_pairs = sorted(expected_pairs - stored_pairs)
+                        c4.metric("20-day complete", f"{tracking_report.get('signals_complete_20d', 0):,}")
+                        latest_market_session = tracking_report.get("latest_market_session") or "No completed session returned"
+                        st.success(
+                            f"Tracking update finished. Latest market session in the fetched calendar: {latest_market_session}. "
+                            f"{write_result.get('rows', 0):,} new daily rows appended; "
+                            f"{write_result.get('updated', 0):,} incomplete rows repaired/reconciled; "
+                            f"{write_result.get('skipped_duplicates', 0):,} existing rows safely skipped."
+                        )
+                        st.info(
+                            f"Coverage: {tracking_report.get('signals_with_history', 0):,} signals have at least one OHLC candle; "
+                            f"{tracking_report.get('signals_without_history', 0):,} signals have no OHLC returned yet; "
+                            f"{tracking_report.get('signals_window_elapsed_20d', 0):,} signals have reached a 20-session window; "
+                            f"{tracking_report.get('signals_complete_20d', 0):,} have all 20 candles complete; "
+                            f"{tracking_report.get('signals_waiting_for_first_session', 0):,} are waiting for their first post-signal session. "
+                            f"Calendar source: {calendar_source}."
+                        )
+                        if missing_saved_pairs:
+                            st.error(f"Verification found {len(missing_saved_pairs):,} expected Signal_ID/Tracking_Day keys not present in Google Sheets. Retry the update; duplicate protection is active.")
+                        else:
+                            st.success(f"✅ Reconciliation check passed: all {len(expected_pairs):,} expected Signal_ID/Tracking_Day records exist in Daily_Performance (including explicit missing-OHLC placeholders where needed).")
+                        issue_rows = tracking_report.get("missing_signals", [])
+                        aged_issues = tracking_report.get("incomplete_signals", [])
+                        candle_gaps = tracking_report.get("missing_candles", [])
+                        if issue_rows or aged_issues or candle_gaps or missing_symbols or missing_saved_pairs:
+                            with st.expander("Review data gaps (do not ignore these)", expanded=True):
+                                if missing_symbols:
+                                    st.write("Symbols with no usable response from the price provider:")
+                                    st.code(", ".join(missing_symbols[:150]))
+                                if missing_saved_pairs:
+                                    st.write("Expected records still absent after the write:")
+                                    st.code(str(missing_saved_pairs[:100]))
+                                issue_records = issue_rows + aged_issues + candle_gaps
+                                issues_df = pd.DataFrame(issue_records)
+                                if not issues_df.empty:
+                                    st.caption(f"Showing first 100 of {len(issues_df):,} issue rows. Download the full report to inspect every signal/session gap.")
+                                    st.dataframe(issues_df.head(100), use_container_width=True, hide_index=True)
+                                    st.download_button(
+                                        "📥 Download complete tracking gaps report",
+                                        data=issues_df.to_csv(index=False).encode("utf-8-sig"),
+                                        file_name=f"tracking_gaps_{cutoff_date.strftime('%Y%m%d')}.csv",
+                                        mime="text/csv",
+                                        key=f"tracking_gaps_download_{cutoff_date.strftime('%Y%m%d')}",
+                                    )
+                        if tracking_report.get("signals_without_history", 0) or tracking_report.get("incomplete_signals") or tracking_report.get("missing_candles") or missing_saved_pairs:
+                            st.warning("Some OHLC data is still missing or provisional. Retry Update Performance Tracking later. Missing placeholders will be repaired when data becomes available, and the app will keep the original Audit_Signals snapshots unchanged.")
+            except Exception as exc:
+                st.error("Performance tracking update failed. No scanner logic was changed. Details: " + str(exc))
+
+        with st.expander("🔬 Research: analyse completed 20-trading-day outcomes", expanded=False):
+            outcome_labels = {
+                "Target 1 reached before Stop": "T1_Before_Stop",
+                "Target 2 reached before Stop": "T2_Before_Stop",
+                "Target 3 reached before Stop": "T3_Before_Stop",
+                "Stop reached before any target": "Stop_Before_Target",
+                "Target 1 touched at any time": "T1_Hit",
+                "Target 2 touched at any time": "T2_Hit",
+                "Target 3 touched at any time": "T3_Hit",
+                "Breakout trigger reached": "Breakout_Hit",
+            }
+            
+            r_col1, r_col2, r_col3 = st.columns([2, 1, 1])
+            with r_col1:
+                selected_outcome_label = st.selectbox(
+                    "Outcome to evaluate",
+                    list(outcome_labels.keys()),
+                    key="audit_research_outcome_choice",
+                )
+            with r_col2:
+                min_sig_input = st.number_input(
+                    "Min signals per combo",
+                    min_value=3,
+                    max_value=200,
+                    value=15,
+                    step=5,
+                    key="audit_min_signals_input",
+                )
+            with r_col3:
+                max_ord_input = st.selectbox(
+                    "Max factors combined",
+                    options=[2, 3, 4],
+                    index=1,
+                    key="audit_max_order_input",
+                )
+
+            run_analysis_clicked = st.button(
+                "🔬 RUN COMBINATION ANALYSIS",
+                key="run_audit_combination_analysis",
+                use_container_width=True,
+            )
+            if run_analysis_clicked:
+                try:
+                    with st.status("Reading matured audit outcomes and testing combinations…", expanded=True) as analysis_status:
+                        all_signals = read_audit_signals(st.secrets)
+                        final_rows = read_final_performance(st.secrets)
+                        analysis_status.write(f"Loaded {len(all_signals):,} saved signal snapshots and {len(final_rows):,} Day-20 performance rows.")
+                        completed_outcomes, completion_report = build_completed_outcomes(all_signals, final_rows)
+                        if completed_outcomes.empty:
+                            st.session_state.audit_analysis_result = None
+                            st.session_state.audit_analysis_report = completion_report
+                            st.session_state.audit_analysis_saved = False
+                            analysis_status.update(label="Not enough signals have completed 20 trading days yet", state="complete", expanded=False)
+                        else:
+                            eff_min_signals = min(int(min_sig_input), max(3, len(completed_outcomes) // 2))
+                            analysis_df = analyze_outcome_combinations(
+                                completed_outcomes,
+                                outcome_col=outcome_labels[selected_outcome_label],
+                                min_signals=eff_min_signals,
+                                max_order=int(max_ord_input),
+                            )
+                            st.session_state.audit_analysis_result = analysis_df
+                            st.session_state.audit_analysis_report = completion_report
+                            st.session_state.audit_analysis_outcome = outcome_labels[selected_outcome_label]
+                            st.session_state.audit_analysis_saved = False
+                            analysis_status.update(label=f"Analysis complete: {len(completed_outcomes):,} matured signals evaluated ({len(analysis_df):,} combinations found)", state="complete", expanded=False)
+                except Exception as exc:
+                    st.error("Combination analysis failed. Details: " + str(exc))
+
+            stored_report = st.session_state.get("audit_analysis_report")
+            stored_analysis = st.session_state.get("audit_analysis_result")
+            if stored_report is not None:
+                st.caption(
+                    f"Matured signals: {stored_report.get('signals_matured_20d', 0):,} / "
+                    f"{stored_report.get('signals_total', 0):,}; pending 20-day outcome: "
+                    f"{stored_report.get('signals_pending', 0):,}. Only a saved Tracking_Day 20 row counts as mature."
+                )
+            if isinstance(stored_analysis, pd.DataFrame) and not stored_analysis.empty:
+                st.markdown('<div class="section-title" style="margin-top:8px;">🏆 Top 3 Most Consistent Setups</div>', unsafe_allow_html=True)
+                top_cols = st.columns(min(3, len(stored_analysis)))
+                for idx, col in enumerate(top_cols):
+                    top_row = stored_analysis.iloc[idx]
+                    with col:
+                        st.markdown(
+                            f'<div class="bento-card" style="padding:16px;">'
+                            f'<span class="badge badge-green">RANK #{idx+1} • {top_row["Success_Rate_Pct"]:.1f}% WIN</span>'
+                            f'<div style="font-weight:800;font-size:0.95rem;margin-top:10px;color:var(--text);">{html.escape(str(top_row["Combination"]))}</div>'
+                            f'<div class="small-muted" style="margin-top:8px;">Signals: <b>{int(top_row["Signals"])}</b> • Avg Ret: <b>{top_row["Avg_Return_Pct"]:+.2f}%</b> • Stop Rate: <b>{top_row["Stop_Rate_Pct"]:.1f}%</b></div>'
+                            f'<div class="small-muted" style="margin-top:6px;font-size:0.72rem;">{html.escape(str(top_row["Notes"]).split(".")[0])}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                st.dataframe(stored_analysis.head(50), use_container_width=True, hide_index=True)
+                st.download_button(
+                    "📥 Download combination analysis CSV",
+                    data=stored_analysis.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"audit_combinations_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    key="download_audit_combinations",
+                )
+                if not st.session_state.get("audit_analysis_saved", False):
+                    if st.button("💾 APPEND ANALYSIS RESULTS TO GOOGLE SHEET", key="save_audit_analysis", use_container_width=True):
+                        try:
+                            with st.spinner("Appending analysis rows to Analysis_Results…"):
+                                saved_count = append_analysis_rows(st.secrets, stored_analysis)
+                            st.session_state.audit_analysis_saved = True
+                            st.success(f"Saved {saved_count:,} analysis rows to Analysis_Results.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error("Could not save analysis results. Details: " + str(exc))
+                else:
+                    st.success("These analysis results have already been appended to Analysis_Results for this analysis run.")
+            elif stored_report is not None:
+                st.info("No Day-20 outcomes matched the minimum signal count yet. Lower 'Min signals per combo' above or continue updating performance tracking after market close.")
+
+        # SANDBOX / SCAN TRIGGER
+        if st.session_state.ui_sandbox_mode and st.session_state.scan_result is None:
+            st.session_state.scan_result = pd.DataFrame([
+                {'symbol': 'BOSCHLTD', 'company_name': 'Bosch Ltd.', 'cap_category': 'Large Cap', 'score': 92.5, 'rating': 9, 'price': 35850.0, 'breakout_level': 35000.0, 'distance_pct': 0.42, 'rvol': 2.1, 'rsi': 62, 'adx': 28, 'macd': 124.5, 'delivery_pct': 64.2},
+                {'symbol': 'MANKIND', 'company_name': 'Mankind Pharma Ltd.', 'cap_category': 'Large+Mid Cap', 'score': 88.0, 'rating': 9, 'price': 2740.0, 'breakout_level': 2700.0, 'distance_pct': 1.25, 'rvol': 1.8, 'rsi': 58, 'adx': 24, 'macd': 15.2, 'delivery_pct': 58.4},
+                {'symbol': 'MARICO', 'company_name': 'Marico Ltd.', 'cap_category': 'Large Cap', 'score': 81.2, 'rating': 8, 'price': 685.0, 'breakout_level': 670.0, 'distance_pct': 2.30, 'rvol': 1.5, 'rsi': 65, 'adx': 30, 'macd': 8.4, 'delivery_pct': 72.1},
+                {'symbol': 'TRENT', 'company_name': 'Trent Ltd.', 'cap_category': 'Large Cap', 'score': 79.5, 'rating': 8, 'price': 7450.0, 'breakout_level': 7300.0, 'distance_pct': 0.85, 'rvol': 2.4, 'rsi': 60, 'adx': 32, 'macd': 45.1, 'delivery_pct': 61.9},
+            ])
+
+        scan_mode = 'audit' if audit_clicked else 'normal' if normal_clicked else None
+        if scan_mode:
+            st.session_state.scanning = True
+            st.session_state.scan_error = None
+            st.session_state.scan_result = None
+            scan_placeholder = st.empty()
+            try:
+                scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating 250 Equities & EOD Delivery</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
+                with st.spinner('Executing models & fetching EOD data…'):
+                    result = scan_universe(max_distance=10.0, period='2y', top_n=500)
+                    result = enrich_shortlist_with_delivery(result)
+
+                st.session_state.scan_result = result
+                st.session_state.scan_timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
+
+                if scan_mode == 'audit' and result is not None and not result.empty:
+                    run_id = new_run_id()
+                    st.session_state.audit_pending_run_id = run_id
+                    st.session_state.audit_pending_timestamp = st.session_state.scan_timestamp
+                    st.session_state.audit_pending_rows = build_scan_snapshot(result, run_id=run_id, scan_timestamp_ist=st.session_state.scan_timestamp, scanner_period='2y', max_distance_pct=10.0)
+                    st.session_state.audit_last_saved = None
+            except Exception as exc:
+                st.session_state.scan_result = pd.DataFrame()
+                st.session_state.scan_error = str(exc)
+            finally:
+                st.session_state.scanning = False
+                scan_placeholder.empty()
+
+        result = st.session_state.get('scan_result')
+        if st.session_state.get('scan_error'): st.error(st.session_state.scan_error)
+
+        pending_rows = st.session_state.get("audit_pending_rows")
+        pending_run_id = st.session_state.get("audit_pending_run_id")
+        pending_timestamp = st.session_state.get("audit_pending_timestamp")
+        append_in_progress = st.session_state.get("audit_append_in_progress", False)
+        
+        if pending_rows is not None:
+            if append_in_progress:
+                st.info(f"⏳ Writing {len(pending_rows)} audit rows to Google Sheets… Please keep this page open.")
+                try:
+                    with st.status("⏳ Appending audit batch…", expanded=True) as status:
+                        status.write("Connecting to Google Sheets…")
+                        audit_info = append_audit_batch(
+                            st.secrets,
+                            pending_rows,
+                            run_id=pending_run_id,
+                            scan_timestamp_ist=pending_timestamp,
+                            scanner_period="2y",
+                            max_distance_pct=10.0,
+                        )
+                        status.update(label=f"✅ Audit batch written: {audit_info.get('rows', 0)} new rows.", state="complete", expanded=False)
+                    st.session_state.audit_last_saved = audit_info
+                    st.session_state.audit_pending_rows = None
+                    st.session_state.audit_pending_run_id = None
+                    st.session_state.audit_pending_timestamp = None
+                    st.session_state.audit_append_in_progress = False
+                    st.rerun()
+                except Exception as exc:
+                    st.session_state.audit_append_in_progress = False
+                    st.error("Audit batch NOT written. Details: " + str(exc))
+            else:
+                st.warning(f"📊 Audit collection is ready: {len(pending_rows)} signal rows from {pending_timestamp}. Append this batch to Google Sheets?")
+                yes_col, no_col = st.columns(2)
+                with yes_col:
+                    append_clicked = st.button("✅ YES — APPEND TO AUDIT SHEET", key="audit_yes", use_container_width=True, type="primary")
+                with no_col:
+                    discard_clicked = st.button("❌ NO — DISCARD THIS AUDIT", key="audit_no", use_container_width=True)
+                if append_clicked:
+                    st.session_state.audit_append_in_progress = True
+                    st.rerun()
+                elif discard_clicked:
+                    st.session_state.audit_pending_rows = None
+                    st.session_state.audit_pending_run_id = None
+                    st.session_state.audit_pending_timestamp = None
+                    st.session_state.audit_append_in_progress = False
+                    st.session_state.audit_last_saved = {"saved": False, "rows": 0, "reason": "discarded_by_user"}
+                    st.success("Audit batch discarded. Normal scan result remains available.")
+                    st.rerun()
+
+        audit_info = st.session_state.get("audit_last_saved") or {}
+        if audit_info.get("saved") and audit_info.get("reason") in {"appended", "batch_already_exists"}:
+            st.success(f"✅ Audit batch recorded: {audit_info.get('rows', 0)} new signal rows. Run ID: {audit_info.get('run_id', '—')}")
+
+        # -------------------------------------------------------------------------
+        # PRE-PROCESS DATA FOR FILTERS & LAYOUT
+        # -------------------------------------------------------------------------
+        if result is None or result.empty:
+            display = pd.DataFrame()
+        else:
+            display = result.copy()
+            
+            # Pre-compute timeframes for filtering and display
+            display['timeframe_val'] = display.apply(lambda r: get_timeframe_status(r)[0], axis=1)
+            
+            if st.session_state.trade_filter != "All":
+                display = display[display['timeframe_val'] == st.session_state.trade_filter]
+
+            sort_cols = [c for c in ['rating', 'score', 'rank_score', 'distance_pct'] if c in display.columns]
+            if sort_cols:
+                display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind='stable').reset_index(drop=True)
+                
+        matches_count = len(display)
+
+        # -------------------------------------------------------------------------
+        # LAYOUT: LEFT BENTO ANALYTICS COLUMN & RIGHT STOCK CARDS GRID
+        # -------------------------------------------------------------------------
+        col_analytics, col_grid = st.columns([1, 3])
+
+        with col_analytics:
+            st.markdown('<div class="section-title" style="margin-top:0;">Executive Summary</div>', unsafe_allow_html=True)
+            
+            st.markdown(f'''
+            <div class="bento-card" style="text-align:center;padding:24px;">
+                <div style="font-size:2.8rem;font-weight:900;color:var(--text);line-height:1;">{matches_count}</div>
+                <div style="font-size:0.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-top:6px;letter-spacing:0.05em;">Qualified Matches</div>
+            </div>
+            ''', unsafe_allow_html=True)
+            
+            # CATEGORY FILTERS
+            st.markdown('<div class="section-title">Filter by Setup</div>', unsafe_allow_html=True)
+            
+            def set_tf_filter(tf):
+                st.session_state.trade_filter = tf
+                
+            st.button("All Setups", type="primary" if st.session_state.trade_filter == "All" else "secondary", on_click=set_tf_filter, args=("All",), use_container_width=True)
+            st.button("Breakout Swing (3-10d)", type="primary" if st.session_state.trade_filter == "Breakout Swing (3-10d)" else "secondary", on_click=set_tf_filter, args=("Breakout Swing (3-10d)",), use_container_width=True)
+            st.button("Short Term (1-3w)", type="primary" if st.session_state.trade_filter == "Short Term (1-3w)" else "secondary", on_click=set_tf_filter, args=("Short Term (1-3w)",), use_container_width=True)
+            st.button("Positional (2-6w)", type="primary" if st.session_state.trade_filter == "Positional (2-6w)" else "secondary", on_click=set_tf_filter, args=("Positional (2-6w)",), use_container_width=True)
+
+            st.markdown('<div class="section-title">Cap Allocation</div>', unsafe_allow_html=True)
+            light = st.session_state.theme_mode == 'light'
+            
+            if not display.empty and 'cap_category' in display.columns:
+                caps = display['cap_category'].replace('', 'Unclassified').fillna('Unclassified')
+                cap_counts = caps.value_counts()
+                labels = cap_counts.index.tolist()
+                values = cap_counts.values.tolist()
+                
+                palette = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6']
+                colors = [palette[i % len(palette)] for i in range(len(labels))]
+        
+                fig_donut = go.Figure(go.Pie(
+                    labels=labels,
+                    values=values,
+                    hole=0.7,
+                    marker_colors=colors,
+                    textinfo='none',
+                ))
+                fig_donut.update_layout(
+                    template='plotly_white' if light else 'plotly_dark',
+                    height=220,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    paper_bgcolor='#ffffff' if light else '#0d1017',
+                    font=dict(color='#111827' if light else '#f8fafc'),
+                    showlegend=True,
+                    legend=dict(orientation='h', y=-0.1, x=0, font=dict(color='#111827' if light else '#f8fafc')),
+                )
+                st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.markdown('<div class="small-muted" style="text-align:center;">No caps to display</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="section-title">20-Day Backtest Win Rate</div>', unsafe_allow_html=True)
+            fig_gauge = go.Figure(go.Indicator(
+                mode='gauge+number',
+                value=68.0,
+                number={'suffix': '%', 'font': {'size': 32, 'color': '#0f172a' if light else '#f8fafc'}},
+                gauge={
+                    'axis': {'range': [0, 100], 'tickwidth': 0, 'tickcolor': '#111827' if light else '#f8fafc'},
+                    'bar': {'color': '#10b981', 'thickness': 0.2},
+                    'bgcolor': '#e2e8f0' if light else '#1b2230',
+                    'borderwidth': 0,
+                },
+            ))
+            fig_gauge.update_layout(
+                template='plotly_white' if light else 'plotly_dark', 
+                height=180, 
+                margin=dict(l=20, r=20, t=10, b=10), 
+                paper_bgcolor='#ffffff' if light else '#0d1017',
+                font=dict(color='#111827' if light else '#f8fafc')
+            )
+            st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
+
+        with col_grid:
+            st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;"><div class="section-title" style="border:none;margin:0;padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({matches_count} Matches)</span></div><div class="small-muted">Ranked by Momentum Setup & EOD Delivery</div></div>', unsafe_allow_html=True)
+
+            if display.empty:
+                st.markdown('<div class="bento-card" style="text-align:center;padding:60px 20px;"><div style="font-size:1.1rem;font-weight:700;">No Setups Found</div><div class="small-muted" style="margin-top:8px">Try changing the filter or scanning the market.</div></div>', unsafe_allow_html=True)
+            else:
+                for start in range(0, len(display), 3):
+                    cols = st.columns(3)
+                    for j, col in enumerate(cols):
+                        idx = start + j
+                        if idx >= len(display): continue
+                        row = display.iloc[idx]
+                        
+                        timeframe, tf_cls = get_timeframe_status(row)
+
+                        with col:
+                            rating = int(float(row.get('rating', 0) or 0))
+                            score = float(row.get('score', 0) or 0)
+                            price = float(row.get('price', 0) or 0)
+                            rsi = float(row.get('rsi', 0) or 0)
+                            adx = float(row.get('adx', 0) or 0)
+                            macd = float(row.get('macd', 0) or 0)
+                            dly = row.get('delivery_pct')
+                            
+                            badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:8px;margin-right:6px;">{timeframe}</span>'
+                            if pd.notna(dly):
+                                badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;">EOD DEL: {dly}%</span>'
+
+                            card_html = (
+                                f'<div class="bento-stock-card">'
+                                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                                f'<span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK #{idx+1}</span>'
+                                f'<span class="badge badge-grey">{html.escape(str(row.get("cap_category","")))}</span>'
+                                f'</div>'
+                                f'<div style="font-weight:800;font-size:1.15rem;color:var(--text);margin-top:8px;line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>'
+                                f'<div class="small-muted" style="margin-bottom:10px;">{html.escape(str(row["symbol"]))}</div>'
+                                f'<div>{badges_html}</div>'
+                                f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">'
+                                f'<div style="font-weight:900;font-size:1.35rem;">{money(price)}</div>'
+                                f'<div style="font-size:.75rem;color:var(--accent);font-weight:700;">{float(row.get("distance_pct",0)):.2f}% to res.</div>'
+                                f'</div>'
+                                f'<div class="bar-row"><span class="bar-label">RSI</span><div class="bar-track"><div class="bar-fill" style="width:{min(rsi, 100)}%;background:var(--accent);"></div></div><span class="bar-val">{rsi:.0f}</span></div>'
+                                f'<div class="bar-row"><span class="bar-label">ADX</span><div class="bar-track"><div class="bar-fill" style="width:{min(adx*1.5, 100)}%;background:var(--accent);"></div></div><span class="bar-val">{adx:.0f}</span></div>'
+                                f'<div class="bar-row"><span class="bar-label">MACD</span><div class="bar-track"><div class="bar-fill" style="width:{min(abs(macd)*3, 100)}%;background:var(--accent);"></div></div><span class="bar-val">{macd:.1f}</span></div>'
+                                f'</div>'
+                            )
+                            st.markdown(card_html, unsafe_allow_html=True)
+                            if st.button('Launch Analytics ↗', key=f'stock_{row["symbol"]}_{idx}', use_container_width=True):
+                                st.session_state.selected_stock = row['symbol']
+                                st.session_state.selected_row = row.to_dict()
+                                st.session_state.page = 'detail'
+                                st.rerun()
+
+        # -------------------------------------------------------------------------
+        # MARKET NEWS & CORPORATE ANNOUNCEMENTS FEED
+        # -------------------------------------------------------------------------
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Market News & Exchange Filings Feed</div>', unsafe_allow_html=True)
+
+        time_1 = (datetime.now(IST) - pd.Timedelta(minutes=15)).strftime('%d %b %Y • %H:%M IST')
+        time_2 = (datetime.now(IST) - pd.Timedelta(hours=1)).strftime('%d %b %Y • %H:%M IST')
+        time_3 = (datetime.now(IST) - pd.Timedelta(hours=4)).strftime('%d %b %Y • %H:%M IST')
+
+        news_cols = st.columns(3)
+        news_data = [
+            {'time': time_1, 'headline': 'Sensex and Nifty open higher; Asian markets trade green as crude steadies.', 'tag': 'MARKET PULSE'},
+            {'time': time_2, 'headline': 'Q2 Results in focus: Top NIFTY 50 banks and pharma report earnings today.', 'tag': 'EARNINGS'},
+            {'time': time_3, 'headline': 'NSE regulatory circular indicates updates to EOD delivery reporting guidelines.', 'tag': 'EXCHANGE REGULATORY'},
+        ]
+
+        for col, news in zip(news_cols, news_data):
+            with col:
+                st.markdown(f'''
+                <div class="news-item">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <span class="news-time">{news['time']}</span>
+                        <span class="badge badge-brand">{news['tag']}</span>
+                    </div>
+                    <div class="news-headline">{news['headline']}</div>
+                </div>
+                ''', unsafe_allow_html=True)
