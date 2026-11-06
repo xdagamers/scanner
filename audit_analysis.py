@@ -14,14 +14,16 @@ import numpy as np
 import pandas as pd
 
 IST = ZoneInfo("Asia/Kolkata")
+# Simplified, user-friendly columns for the final exported Google Sheet
 ANALYSIS_OUTPUT_COLUMNS = [
-    # Keep the existing Analysis_Results header order first; appended columns
-    # are added to the right by Apps Script without deleting prior results.
-    "Analysis_Timestamp_IST", "Outcome", "Combination", "Signals",
-    "Success_Rate_Pct", "Avg_Return_Pct", "Median_Return_Pct",
-    "Avg_Best_Gain_Pct", "Avg_Max_Drawdown_Pct", "Train_Test_Split", "Notes",
-    "Train_Signals", "Train_Success_Rate_Pct", "Holdout_Signals",
-    "Holdout_Success_Rate_Pct", "Stop_Rate_Pct",
+    "Analysis_Timestamp_IST", 
+    "Outcome", 
+    "Setup_Rules", 
+    "Times_Occurred",
+    "Win_Rate_%", 
+    "Avg_Profit_%", 
+    "Stop_Hit_Rate_%",
+    "Overall_Score_(0-100)"
 ]
 
 # Thresholds are fixed in advance to limit arbitrary curve fitting.
@@ -277,8 +279,6 @@ def analyze_outcome_combinations(
     # Pre-extract metric arrays for fast vectorized slicing
     outcome_arr = work[outcome_col].to_numpy(dtype=float)
     ret_arr = pd.to_numeric(work.get("Return_20D_Pct", pd.Series(np.nan, index=work.index)), errors="coerce").to_numpy(dtype=float)
-    gain_arr = pd.to_numeric(work.get("Best_Gain_Pct", pd.Series(np.nan, index=work.index)), errors="coerce").to_numpy(dtype=float)
-    dd_arr = pd.to_numeric(work.get("Max_Drawdown_Pct", pd.Series(np.nan, index=work.index)), errors="coerce").to_numpy(dtype=float)
     stop_arr = _to_binary(work["Stop_Hit"]).to_numpy(dtype=float) if "Stop_Hit" in work.columns else np.full(n_rows, np.nan)
 
     # Date dispersion & chronological Train/Holdout split
@@ -294,14 +294,9 @@ def analyze_outcome_combinations(
         test_dates = set(unique_dates[cut_idx:])
         train_mask = scan_dates_series.isin(train_dates).to_numpy(dtype=bool)
         test_mask = scan_dates_series.isin(test_dates).to_numpy(dtype=bool)
-        split_label = f"Train {min(train_dates)}–{max(train_dates)}; holdout {min(test_dates)}–{max(test_dates)}"
     else:
         train_mask = np.ones(n_rows, dtype=bool)
         test_mask = np.zeros(n_rows, dtype=bool)
-        split_label = "NO_TIME_HOLDOUT: fewer than 5 distinct signal dates"
-
-    # Baseline win rate for edge comparison
-    baseline_wr = float(np.nanmean(outcome_arr) * 100.0) if len(outcome_arr) else 0.0
 
     # If user requests 3-way or 4-way combinations and condition_list is large,
     # bound the higher-order search to the top 32 most informative single conditions
@@ -330,21 +325,12 @@ def analyze_outcome_combinations(
         sel_ret = ret_arr[mask]
         valid_ret = sel_ret[np.isfinite(sel_ret)]
         avg_ret = float(valid_ret.mean()) if len(valid_ret) else np.nan
-        med_ret = float(np.median(valid_ret)) if len(valid_ret) else np.nan
-
-        sel_gain = gain_arr[mask]
-        valid_gain = sel_gain[np.isfinite(sel_gain)]
-        avg_gain = float(valid_gain.mean()) if len(valid_gain) else np.nan
-
-        sel_dd = dd_arr[mask]
-        valid_dd = sel_dd[np.isfinite(sel_dd)]
-        avg_dd = float(valid_dd.mean()) if len(valid_dd) else np.nan
 
         sel_stop = stop_arr[mask]
         valid_stop = sel_stop[np.isfinite(sel_stop)]
         stop_rate = float(valid_stop.mean() * 100.0) if len(valid_stop) else np.nan
 
-        # Train & Holdout stats
+        # Train & Holdout stats just for consistency score calculation (not exported)
         tr_mask = mask & train_mask
         te_mask = mask & test_mask
         tr_n = int(tr_mask.sum())
@@ -360,30 +346,16 @@ def analyze_outcome_combinations(
             win_rate, avg_ret, stop_rate, tr_wr, te_wr,
             unique_dt_cnt, total_unique_dates, has_holdout,
         )
-        edge_vs_base = win_rate - baseline_wr if np.isfinite(win_rate) else np.nan
 
         output.append({
             "Analysis_Timestamp_IST": now_string,
             "Outcome": outcome_col,
-            "Combination": " AND ".join(condition_names),
-            "Signals": n_sel,
-            "Success_Rate_Pct": round(win_rate, 2) if np.isfinite(win_rate) else np.nan,
-            "Avg_Return_Pct": round(avg_ret, 2) if np.isfinite(avg_ret) else np.nan,
-            "Median_Return_Pct": round(med_ret, 2) if np.isfinite(med_ret) else np.nan,
-            "Avg_Best_Gain_Pct": round(avg_gain, 2) if np.isfinite(avg_gain) else np.nan,
-            "Avg_Max_Drawdown_Pct": round(avg_dd, 2) if np.isfinite(avg_dd) else np.nan,
-            "Train_Test_Split": split_label,
-            "Notes": (
-                f"Consistency={consistency:.1f}/100 | Edge={edge_vs_base:+.1f}% vs base ({baseline_wr:.1f}%) | "
-                f"Active Dates={unique_dt_cnt}/{total_unique_dates} | Stop rate={stop_rate:.1f}%. "
-                f"Train n={tr_n} ({tr_wr:.1f}%), Holdout n={te_n} ({te_wr:.1f}%)."
-            ),
-            "Train_Signals": tr_n,
-            "Train_Success_Rate_Pct": round(tr_wr, 2) if np.isfinite(tr_wr) else np.nan,
-            "Holdout_Signals": te_n,
-            "Holdout_Success_Rate_Pct": round(te_wr, 2) if np.isfinite(te_wr) else np.nan,
-            "Stop_Rate_Pct": round(stop_rate, 2) if np.isfinite(stop_rate) else np.nan,
-            "_consistency_sort": consistency,
+            "Setup_Rules": " + ".join(condition_names),
+            "Times_Occurred": n_sel,
+            "Win_Rate_%": round(win_rate, 2) if np.isfinite(win_rate) else np.nan,
+            "Avg_Profit_%": round(avg_ret, 2) if np.isfinite(avg_ret) else np.nan,
+            "Stop_Hit_Rate_%": round(stop_rate, 2) if np.isfinite(stop_rate) else np.nan,
+            "Overall_Score_(0-100)": consistency,
         })
 
     # Order 1 & 2 evaluate all valid conditions; Order 3+ uses the top pool
@@ -406,17 +378,12 @@ def analyze_outcome_combinations(
         return pd.DataFrame(columns=ANALYSIS_OUTPUT_COLUMNS)
 
     out = pd.DataFrame(output)
-    # Sort by Consistency Score + Out-of-Sample / Overall Win Rate + Signal Count
-    if has_holdout and out["Holdout_Success_Rate_Pct"].notna().any():
-        out = out.sort_values(
-            ["_consistency_sort", "Holdout_Success_Rate_Pct", "Success_Rate_Pct", "Signals"],
-            ascending=[False, False, False, False], na_position="last"
-        )
-    else:
-        out = out.sort_values(
-            ["_consistency_sort", "Success_Rate_Pct", "Avg_Return_Pct", "Signals"],
-            ascending=[False, False, False, False], na_position="last"
-        )
+    
+    # Sort strictly by our primary, easy-to-understand metrics
+    out = out.sort_values(
+        ["Overall_Score_(0-100)", "Win_Rate_%", "Avg_Profit_%", "Times_Occurred"],
+        ascending=[False, False, False, False], na_position="last"
+    )
 
     out = out[ANALYSIS_OUTPUT_COLUMNS].reset_index(drop=True)
     return out
