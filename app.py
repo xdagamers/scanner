@@ -1376,12 +1376,13 @@ def render_home():
                 for idx, col in enumerate(top_cols):
                     top_row = stored_analysis.iloc[idx]
                     with col:
+                        # Updating the UI to read the newly renamed columns
                         st.markdown(
                             f'<div class="bento-card" style="padding:16px;">'
-                            f'<span class="badge badge-green">RANK #{idx+1} • {top_row["Success_Rate_Pct"]:.1f}% WIN</span>'
-                            f'<div style="font-weight:800;font-size:0.95rem;margin-top:10px;color:var(--text);">{html.escape(str(top_row["Combination"]))}</div>'
-                            f'<div class="small-muted" style="margin-top:8px;">Signals: <b>{int(top_row["Signals"])}</b> • Avg Ret: <b>{top_row["Avg_Return_Pct"]:+.2f}%</b> • Stop Rate: <b>{top_row["Stop_Rate_Pct"]:.1f}%</b></div>'
-                            f'<div class="small-muted" style="margin-top:6px;font-size:0.72rem;">{html.escape(str(top_row["Notes"]).split(".")[0])}</div>'
+                            f'<span class="badge badge-green">RANK #{idx+1} • {top_row.get("Win_Rate_%", 0):.1f}% WIN</span>'
+                            f'<div style="font-weight:800;font-size:0.95rem;margin-top:10px;color:var(--text);">{html.escape(str(top_row.get("Setup_Rules", "")))}</div>'
+                            f'<div class="small-muted" style="margin-top:8px;">Signals: <b>{int(top_row.get("Times_Occurred", 0))}</b> • Avg Profit: <b>{top_row.get("Avg_Profit_%", 0):+.2f}%</b> • Stop Rate: <b>{top_row.get("Stop_Hit_Rate_%", 0):.1f}%</b></div>'
+                            f'<div class="small-muted" style="margin-top:6px;font-size:0.72rem;">Consistency Score: {top_row.get("Overall_Score_(0-100)", 0)}/100</div>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )
