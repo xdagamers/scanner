@@ -212,7 +212,10 @@ def read_performance_keys(secrets) -> pd.DataFrame:
         columns=["Signal_ID", "Tracking_Day", "Data_Quality", "Scan_Date"]
     )
 
-
+def read_watchlist(secrets) -> pd.DataFrame:
+    result = _get(secrets, "read_watchlist")
+    return pd.DataFrame(result.get("data", []))
+    
 def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
     if analysis_df is None or analysis_df.empty:
         return 0
