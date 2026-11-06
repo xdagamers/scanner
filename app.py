@@ -1655,3 +1655,78 @@ if st.session_state.page == 'detail' and st.session_state.get('selected_stock'):
     render_detail(st.session_state.selected_stock, st.session_state.selected_row)
 else:
     render_home()
+# -----------------------------------------------------------------------------
+# MAIN DASHBOARD (BENTO GRID LAYOUT)
+# -----------------------------------------------------------------------------
+def render_home():
+    render_fintech_topbar()
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    render_ticker()
+    
+    # Create the Tabs for the Main Screen
+    tab_dash, tab_sikho = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)"])
+    
+    with tab_sikho:
+        # --- PASTE THE SIKHO COURSE CONTENT HERE ---
+        st.markdown("""
+        ## 📚 Sikho: The NIFTY Momentum Masterclass
+        Welcome to the engine room. This scanner doesn't just pick random stocks; it uses a specific mathematical formula to find **Momentum Breakouts**.
+        
+        ### 1. The Core Setup (When to enter)
+        * **Breakout Level:** The exact price ceiling the stock has struggled to cross in the past.
+        * **Resistance Touches:** How many times the stock has hit this ceiling and fallen back. **(Ideal: 3 to 10 touches).** 
+        * **Distance:** How far the current price is from the Breakout Level. **Ideal Entry Range:** `0.00% to +2.00%`.
+        * **Breakout Trigger:** The exact price where you should safely execute your buy order.
+
+        ### 2. The Fuel (Is the move real?)
+        * **RVOL (Relative Volume):** Compares today's volume to the average. **Ideal:** `> 1.5x`. High RVOL confirms the breakout is genuine.
+        * **EOD Delivery %:** The percentage of traded shares that buyers actually took home to their Demat accounts. **Ideal:** `> 55%`.
+
+        ### 3. The Momentum Engine (How fast will it go?)
+        * **RSI (Relative Strength Index):** Measures momentum. **The Sweet Spot:** `55 to 70`.
+        * **ADX (Average Directional Index):** Measures the *strength* of the trend. **Ideal:** `> 20`.
+        * **Squeeze:** Measures volatility compression. A coiled spring getting ready for expansion.
+
+        ### 4. Risk & Survival
+        * **ATR % (Average True Range):** How much the stock naturally swings up or down daily. Do not put your stop loss tighter than this!
+        * **Stop Reference:** If the price closes below this, the breakout has failed. Exit.
+        * **Risk / Reward:** **Ideal:** `> 1.5`.
+
+        ---
+        ### 🧠 The Master Formula: Predicting the Upward Move
+        To predict a highly probable **UPWARD** move, look for this exact combination:
+        1. **The Trigger:** `Distance` is between `0% and 2%`.
+        2. **The Confirmation:** `RVOL` is `> 1.5x` AND `EOD Delivery %` is `> 55%`.
+        3. **The Momentum:** `RSI` is glowing green between `55-70`, and `ADX` is `> 20`.
+        4. **The History:** `Resistance Touches` is `> 3`.
+        """)
+        # -------------------------------------------
+
+    with tab_dash:
+        # ACTION BAR (Bento Action Header)
+        col_search, col_scan, col_audit, col_track = st.columns([3, 2, 2, 2])
+        
+        audit_pending = st.session_state.get("audit_pending_rows") is not None
+        
+        with col_search:
+            st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Manual Ticker Search</div>', unsafe_allow_html=True)
+            sc1, sc2 = st.columns([3, 1])
+            with sc1:
+                query = st.text_input('Stock symbol', placeholder='e.g. RELIANCE, TCS...', key='stock_search_input', label_visibility='collapsed')
+            with sc2:
+                search_clicked = st.button('SEARCH', key='search_stock', use_container_width=True)
+
+        with col_scan:
+            st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Market Scanner</div>', unsafe_allow_html=True)
+            normal_clicked = st.button('🚀 SCAN MARKET', key='scan_market', use_container_width=True, disabled=audit_pending)
+            if normal_clicked: st.session_state.scan_intent = True
+
+        with col_audit:
+            st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
+            audit_clicked = st.button('📊 COLLECT AUDIT', key='collect_audit', use_container_width=True, disabled=audit_pending)
+
+        with col_track:
+            st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:transparent;">-</div>', unsafe_allow_html=True)
+            tracking_clicked = st.button('📈 UPDATE TRACKING', key='update_performance_tracking', use_container_width=True, disabled=audit_pending)
+
+        # ... (The rest of your exact render_home() code continues normally below here) ...
