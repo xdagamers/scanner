@@ -1048,7 +1048,7 @@ def render_home():
                 watchlist_df = read_watchlist(st.secrets)
             except Exception:
                 watchlist_df = pd.DataFrame()
-            render_watchlist_tab(st.secrets, watchlist_df)
+            render_watchlist_tab(watchlist_df)
 
     with tab_sikho:
         st.markdown('''
