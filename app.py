@@ -13,7 +13,6 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
-from sentiment_engine import get_headline_sentiment
 
 # Core backend engine imports
 from scanner import load_universe, scan_universe, scan_single, score_stock, fetch_history
@@ -1040,6 +1039,7 @@ def render_detail(symbol, row):
                 ''', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="bento-card"><span class="badge badge-brand">Live Feed</span><div style="margin-top:10px;font-weight:600;font-size:1.05rem;">No recent news articles or exchange filings found via Yahoo Finance for {symbol}.</div></div>', unsafe_allow_html=True)
+
     with tab_audit:
         st.markdown('<div class="section-title" style="margin-top:0;">Google Sheets Audit Export</div>', unsafe_allow_html=True)
         st.markdown('<div class="small-muted" style="margin-bottom:16px;">Raw technical properties formatted for your external sheet tracker.</div>', unsafe_allow_html=True)
