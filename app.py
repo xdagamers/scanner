@@ -13,6 +13,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
+from sentiment_engine import get_headline_sentiment
 
 # Core backend engine imports
 from scanner import load_universe, scan_universe, scan_single, score_stock, fetch_history
