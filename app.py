@@ -1023,18 +1023,23 @@ def render_detail(symbol, row):
                 pub_time = item.get('providerPublishTime')
                 time_str = datetime.fromtimestamp(pub_time).strftime('%d %b %Y • %H:%M IST') if pub_time else 'Recent'
                 
+                # Run the lightweight AI sentiment check
+                sentiment_tag, sentiment_cls = get_headline_sentiment(title)
+                
                 st.markdown(f'''
                 <div class="news-item">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                         <span class="news-time">{time_str}</span>
-                        <span class="badge badge-brand">{publisher}</span>
+                        <div>
+                            <span class="badge {sentiment_cls}" style="margin-right:6px;">{sentiment_tag}</span>
+                            <span class="badge badge-brand">{publisher}</span>
+                        </div>
                     </div>
                     <div class="news-headline"><a href="{link}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">{html.escape(title)} ↗</a></div>
                 </div>
                 ''', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="bento-card"><span class="badge badge-brand">Live Feed</span><div style="margin-top:10px;font-weight:600;font-size:1.05rem;">No recent news articles or exchange filings found via Yahoo Finance for {symbol}.</div></div>', unsafe_allow_html=True)
-
     with tab_audit:
         st.markdown('<div class="section-title" style="margin-top:0;">Google Sheets Audit Export</div>', unsafe_allow_html=True)
         st.markdown('<div class="small-muted" style="margin-bottom:16px;">Raw technical properties formatted for your external sheet tracker.</div>', unsafe_allow_html=True)
