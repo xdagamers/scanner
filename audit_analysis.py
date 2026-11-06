@@ -14,10 +14,12 @@ import numpy as np
 import pandas as pd
 
 IST = ZoneInfo("Asia/Kolkata")
+
 # Simplified, user-friendly columns for the final exported Google Sheet
+# These exactly match what the dashboard UI looks for to draw the Top 3 Cards.
 ANALYSIS_OUTPUT_COLUMNS = [
     "Analysis_Timestamp_IST", 
-    "Outcome", 
+    "Outcome_Goal", 
     "Setup_Rules", 
     "Times_Occurred",
     "Win_Rate_%", 
@@ -27,10 +29,9 @@ ANALYSIS_OUTPUT_COLUMNS = [
 ]
 
 # Thresholds are fixed in advance to limit arbitrary curve fitting.
-# Expanded to include Delivery_Pct, Resistance_Touches, Risk_Reward, and Relative Strength.
 DEFAULT_THRESHOLDS = {
     "Rating": [7, 8, 9, 10],
-    "Distance_Pct": [0.5, 1, 2, 3, 5],  # smaller distance is preferable, so <=
+    "Distance_Pct": [0.5, 1, 2, 3, 5], 
     "RVOL": [0.9, 1.15, 1.4, 1.8, 2.5],
     "ADX": [20, 25, 35],
     "RSI": [50, 55, 60, 65, 70],
@@ -90,13 +91,7 @@ def build_completed_outcomes(
     performance: pd.DataFrame,
     target_day: int = 20,
 ) -> tuple[pd.DataFrame, dict]:
-    """Join immutable signal snapshots to fully valid Day-N results (default Day 20).
-
-    In addition to "ever touched" flags, derive target-before-stop outcomes.
-    If the daily high and low touch a target and stop on the same day, order is
-    unknowable from OHLC so the corresponding before-stop outcome is NaN and is
-    excluded from that outcome's denominator.
-    """
+    """Join immutable signal snapshots to fully valid Day-N results (default Day 20)."""
     if signals is None or signals.empty:
         return pd.DataFrame(), {"signals_total": 0, "signals_matured_20d": 0, "signals_pending": 0}
     if performance is None or performance.empty:
@@ -105,20 +100,23 @@ def build_completed_outcomes(
     perf = performance.copy()
     perf["Tracking_Day"] = pd.to_numeric(perf.get("Tracking_Day"), errors="coerce")
     day_n = perf[perf["Tracking_Day"] == int(target_day)].copy()
-    # Fail closed: only a row explicitly marked OK can be a final outcome.
+    
     if "Data_Quality" in day_n:
         day_n = day_n[day_n["Data_Quality"].astype(str).str.strip().str.upper().eq("OK")]
     else:
         day_n = day_n.iloc[0:0]
+        
     if day_n.empty or "Signal_ID" not in signals.columns:
         return pd.DataFrame(), {
             "signals_total": int(len(signals)), "signals_matured_20d": 0,
             "signals_pending": int(len(signals)),
         }
+        
     if "Tracking_Date" in day_n.columns:
         day_n = day_n.sort_values("Tracking_Date")
     day_n = day_n.drop_duplicates("Signal_ID", keep="last")
     joined = signals.merge(day_n, on="Signal_ID", how="inner", suffixes=("_Signal", "_Performance"))
+    
     if joined.empty:
         return joined, {"signals_total": int(len(signals)), "signals_matured_20d": 0, "signals_pending": int(len(signals))}
 
@@ -135,9 +133,11 @@ def build_completed_outcomes(
 
     joined["Trade_Setup"] = _derive_trade_setup(joined)
     joined["Return_20D_Pct"] = pd.to_numeric(joined.get("Close_Return_Pct"), errors="coerce")
+    
     for outcome in ["Breakout_Hit", "T1_Hit", "T2_Hit", "T3_Hit", "Stop_Hit"]:
         if outcome in joined:
             joined[outcome] = _to_binary(joined[outcome])
+            
     for col in ["Best_Gain_Pct", "Max_Drawdown_Pct", "Return_20D_Pct"]:
         if col in joined:
             joined[col] = pd.to_numeric(joined[col], errors="coerce")
@@ -180,22 +180,18 @@ def _compute_Consistency_Score(
     sr = float(stop_rate) if np.isfinite(stop_rate) else 50.0
     ret = float(avg_ret) if np.isfinite(avg_ret) else 0.0
 
-    # Base score from win rate (50% weight) + low stop rate bonus (20% weight) + return bonus (15% weight)
     base = (wr * 0.50) + (max(0.0, 100.0 - sr) * 0.20) + (np.clip(ret * 2.5, -15.0, 20.0))
 
-    # Date dispersion bonus (up to 15 points): rewards setups that appear across multiple scan dates
     if total_unique_dates > 1:
         dispersion_ratio = min(1.0, unique_dates_count / max(2.0, total_unique_dates * 0.5))
         base += dispersion_ratio * 15.0
 
-    # Out-of-sample stability adjustment when time holdout exists
     if has_holdout and np.isfinite(train_wr) and np.isfinite(holdout_wr):
         drift = abs(holdout_wr - train_wr)
-        # Penalize severe overfitting where holdout collapses vs train
         if holdout_wr < train_wr - 15.0:
             base -= min(20.0, (train_wr - holdout_wr) * 0.6)
         elif drift <= 10.0 and holdout_wr >= 55.0:
-            base += 8.0  # Stability bonus
+            base += 8.0 
 
     return round(float(np.clip(base, 0.0, 100.0)), 1)
 
@@ -207,12 +203,7 @@ def analyze_outcome_combinations(
     min_signals: int = 25,
     max_order: int = 3,
 ) -> pd.DataFrame:
-    """Vectorized evaluation of 1-to-N factor combinations on matured outcome data.
-
-    Uses fast NumPy bitmasks and pre-filtered single conditions to evaluate
-    expanded technical, delivery, cap, and setup combinations while ranking by
-    both out-of-sample consistency and risk-adjusted expectancy.
-    """
+    """Vectorized evaluation of 1-to-N factor combinations on matured outcome data."""
     if outcomes is None or outcomes.empty or outcome_col not in outcomes.columns:
         return pd.DataFrame(columns=ANALYSIS_OUTPUT_COLUMNS)
 
@@ -220,6 +211,7 @@ def analyze_outcome_combinations(
     work = outcomes.copy()
     work[outcome_col] = _to_binary(work[outcome_col])
     work = work.loc[work[outcome_col].notna()].copy()
+    
     if work.empty or len(work) < max(1, int(min_signals)):
         return pd.DataFrame(columns=ANALYSIS_OUTPUT_COLUMNS)
 
@@ -229,7 +221,6 @@ def analyze_outcome_combinations(
     n_rows = len(work)
     min_sig = max(1, int(min_signals))
 
-    # Build candidate condition bitmasks (only keep conditions that have >= min_signals on their own)
     condition_list: list[tuple[str, str, np.ndarray]] = []
 
     for col, values in thresholds.items():
@@ -246,7 +237,6 @@ def analyze_outcome_combinations(
             if int(mask.sum()) >= min_sig:
                 condition_list.append((col, label, mask))
 
-    # Add bounded sweet-spot range conditions
     for col, label, low_val, high_val in RANGE_CONDITIONS:
         if col not in work.columns:
             continue
@@ -255,7 +245,6 @@ def analyze_outcome_combinations(
         if int(mask.sum()) >= min_sig:
             condition_list.append((col, label, mask))
 
-    # Add categorical scanner features including Trade_Setup, Cap_Category, Scanner_Status
     cat_cols = [
         "Trade_Setup", "Cap_Category", "Scanner_Status",
         "EMA_Structure", "Market_Regime", "Candlestick", "False_Breakout",
@@ -276,12 +265,10 @@ def analyze_outcome_combinations(
     if not condition_list:
         return pd.DataFrame(columns=ANALYSIS_OUTPUT_COLUMNS)
 
-    # Pre-extract metric arrays for fast vectorized slicing
     outcome_arr = work[outcome_col].to_numpy(dtype=float)
     ret_arr = pd.to_numeric(work.get("Return_20D_Pct", pd.Series(np.nan, index=work.index)), errors="coerce").to_numpy(dtype=float)
     stop_arr = _to_binary(work["Stop_Hit"]).to_numpy(dtype=float) if "Stop_Hit" in work.columns else np.full(n_rows, np.nan)
 
-    # Date dispersion & chronological Train/Holdout split
     scan_dates_series = pd.to_datetime(work.get("Scan_Date", pd.Series(dtype=str)), errors="coerce").dt.date
     unique_dates = sorted(set(scan_dates_series.dropna()))
     total_unique_dates = max(1, len(unique_dates))
@@ -298,9 +285,6 @@ def analyze_outcome_combinations(
         train_mask = np.ones(n_rows, dtype=bool)
         test_mask = np.zeros(n_rows, dtype=bool)
 
-    # If user requests 3-way or 4-way combinations and condition_list is large,
-    # bound the higher-order search to the top 32 most informative single conditions
-    # so execution always finishes in < 1 second without freezing Streamlit.
     single_ranked = sorted(
         condition_list,
         key=lambda item: (
@@ -326,11 +310,15 @@ def analyze_outcome_combinations(
         valid_ret = sel_ret[np.isfinite(sel_ret)]
         avg_ret = float(valid_ret.mean()) if len(valid_ret) else np.nan
 
+        # NEGATIVE NOISE FILTER: 
+        # Discard any setup that has less than 50% win rate or generates a negative average profit.
+        if np.isnan(win_rate) or win_rate < 50.0 or np.isnan(avg_ret) or avg_ret <= 0.0:
+            return
+
         sel_stop = stop_arr[mask]
         valid_stop = sel_stop[np.isfinite(sel_stop)]
         stop_rate = float(valid_stop.mean() * 100.0) if len(valid_stop) else np.nan
 
-        # Train & Holdout stats just for consistency score calculation (not exported)
         tr_mask = mask & train_mask
         te_mask = mask & test_mask
         tr_n = int(tr_mask.sum())
@@ -338,7 +326,6 @@ def analyze_outcome_combinations(
         tr_wr = float(np.nanmean(outcome_arr[tr_mask]) * 100.0) if tr_n > 0 else np.nan
         te_wr = float(np.nanmean(outcome_arr[te_mask]) * 100.0) if te_n > 0 else np.nan
 
-        # Distinct scan dates covered by this combination
         sel_dates = date_codes[mask]
         unique_dt_cnt = len(np.unique(sel_dates[sel_dates >= 0]))
 
@@ -349,7 +336,7 @@ def analyze_outcome_combinations(
 
         output.append({
             "Analysis_Timestamp_IST": now_string,
-            "Outcome": outcome_col,
+            "Outcome_Goal": outcome_col,
             "Setup_Rules": " + ".join(condition_names),
             "Times_Occurred": n_sel,
             "Win_Rate_%": round(win_rate, 2) if np.isfinite(win_rate) else np.nan,
@@ -358,7 +345,6 @@ def analyze_outcome_combinations(
             "Overall_Score_(0-100)": consistency,
         })
 
-    # Order 1 & 2 evaluate all valid conditions; Order 3+ uses the top pool
     max_ord = max(1, min(int(max_order), 4))
     for order in range(1, max_ord + 1):
         pool = condition_list if order <= 2 else higher_order_pool
@@ -379,7 +365,7 @@ def analyze_outcome_combinations(
 
     out = pd.DataFrame(output)
     
-    # Sort strictly by our primary, easy-to-understand metrics
+    # Sort strictly by our primary metrics
     out = out.sort_values(
         ["Overall_Score_(0-100)", "Win_Rate_%", "Avg_Profit_%", "Times_Occurred"],
         ascending=[False, False, False, False], na_position="last"
