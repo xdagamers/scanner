@@ -19,6 +19,18 @@ RUNS_TAB = "Audit_Runs"
 PERFORMANCE_TAB = "Daily_Performance"
 ANALYSIS_TAB = "Analysis_Results"
 
+# NEW SIMPLIFIED SCHEMA FOR ANALYSIS TAB
+EXPECTED_ANALYSIS_HEADERS = [
+    "Analysis_Timestamp_IST", 
+    "Outcome_Goal", 
+    "Setup_Rules", 
+    "Times_Occurred",
+    "Win_Rate_%", 
+    "Avg_Profit_%", 
+    "Stop_Hit_Rate_%",
+    "Overall_Score_(0-100)"
+]
+
 
 def _config(secrets):
     url = str(secrets.get("AUDIT_APPS_SCRIPT_URL", "")).strip()
@@ -205,6 +217,10 @@ def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
     if analysis_df is None or analysis_df.empty:
         return 0
     records = analysis_df.where(pd.notna(analysis_df), "").to_dict(orient="records")
+    
+    # Optional: We could do a quick Python-side header validation here,
+    # but the error you got is actually coming from the Google Apps Script backend.
+    
     result = _post(secrets, {"action": "append_analysis", "rows": records})
     return int(result.get("rows", 0))
 
