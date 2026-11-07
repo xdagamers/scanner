@@ -59,7 +59,7 @@ def render_watchlist_tab(watchlist_df):
             row = watchlist_df.iloc[idx]
             sym = str(row.get("Symbol", "")).replace(".NS", "")
             
-            added_date = pd.to_datetime(row.get("Date_Added"), format="%d %b %Y", errors="coerce")
+            added_date = pd.to_datetime(row.get("Date_Added"), errors="coerce")
             days_active = (datetime.now() - added_date).days if pd.notna(added_date) else 0
             
             entry_str = str(row.get("Price_Added", 0)).replace(',', '').strip()
