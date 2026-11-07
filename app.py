@@ -990,7 +990,35 @@ def render_detail(symbol, row):
         st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & Exchange Filings</div>', unsafe_allow_html=True)
         try:
             ticker_obj = yf.Ticker(symbol + '.NS')
-            news_list = ticker_obj.news
+            raw_news = ticker_obj.news
+            
+            # Robust parser for Yahoo Finance's changing API structure
+            news_list = []
+            if isinstance(raw_news, list):
+                for n in raw_news:
+                    content = n.get('content', n)
+                    title = content.get('title', n.get('title'))
+                    
+                    if title:
+                        pub = content.get('provider', {}).get('displayName', n.get('publisher', 'Exchange Source'))
+                        link_data = content.get('clickThroughUrl', {})
+                        link = link_data.get('url', n.get('link', '#'))
+                        
+                        pub_date = content.get('pubDate', n.get('providerPublishTime'))
+                        if isinstance(pub_date, str):
+                            try:
+                                pub_time = pd.to_datetime(pub_date).timestamp()
+                            except Exception:
+                                pub_time = None
+                        else:
+                            pub_time = pub_date
+                            
+                        news_list.append({
+                            'title': title,
+                            'publisher': pub,
+                            'link': link,
+                            'providerPublishTime': pub_time
+                        })
         except Exception:
             news_list = []
 
