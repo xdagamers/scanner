@@ -51,8 +51,9 @@ def render_watchlist_tab(watchlist_df):
     symbols = watchlist_df["Symbol"].dropna().unique().tolist()
     live_prices = fetch_live_watchlist_prices(symbols)
     
-    for start in range(0, len(watchlist_df), 3):
-        cols = st.columns(3)
+    # Switched to 4 columns to make the cards physically smaller/more compact
+    for start in range(0, len(watchlist_df), 4):
+        cols = st.columns(4)
         for j, col in enumerate(cols):
             idx = start + j
             if idx >= len(watchlist_df): continue
@@ -93,35 +94,35 @@ def render_watchlist_tab(watchlist_df):
             
             with col:
                 card_html = (
-                    f'<div class="bento-stock-card" style="padding:20px;">'
+                    f'<div class="bento-stock-card" style="padding:12px 14px;">'
                     
                     # Row 1: Symbol & CP
-                    f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">'
-                    f'<div style="font-size:1.5rem; font-weight:900; color:var(--text); letter-spacing:0.02em;">{html.escape(sym)}</div>'
-                    f'<div style="font-size:1.4rem; font-weight:900; color:var(--text);"><span style="font-size:1rem; font-weight:500; color:var(--text);">CP- </span>{money(live_price)}</div>'
+                    f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px;">'
+                    f'<div style="font-size:1.1rem; font-weight:900; color:var(--text); letter-spacing:0.02em;">{html.escape(sym)}</div>'
+                    f'<div style="font-size:1.05rem; font-weight:900; color:var(--text);"><span style="font-size:0.75rem; font-weight:500; color:var(--text);">CP- </span>{money(live_price)}</div>'
                     f'</div>'
                     
                     # Row 2: Entry & Pct Change
-                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">'
-                    f'<div style="font-size:0.85rem; color:var(--muted);">Entry: {money(entry_price)}</div>'
-                    f'<div style="font-size:1.15rem; font-weight:900; color:{color};">{arrow} {abs(change_pct):.2f}%</div>'
+                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
+                    f'<div style="font-size:0.75rem; color:var(--muted);">Entry: {money(entry_price)}</div>'
+                    f'<div style="font-size:0.9rem; font-weight:900; color:{color};">{arrow} {abs(change_pct):.2f}%</div>'
                     f'</div>'
                     
                     # Row 3: Trade Type & Days Active
-                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">'
-                    f'<div style="font-size:0.75rem; font-weight:800; color:#8ba2b5; text-transform:uppercase; letter-spacing:0.03em;">{html.escape(trade_type)} <span style="font-weight:500; color:var(--muted); text-transform:none;">{html.escape(exp_days)}</span></div>'
-                    f'<div style="font-size:0.75rem; font-weight:800; color:#8ba2b5; text-transform:uppercase; letter-spacing:0.03em;">{days_active} DAYS ACTIVE</div>'
+                    f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">'
+                    f'<div style="font-size:0.65rem; font-weight:800; color:#8ba2b5; text-transform:uppercase; letter-spacing:0.03em;">{html.escape(trade_type)} <span style="font-weight:500; color:var(--muted); text-transform:none;">{html.escape(exp_days)}</span></div>'
+                    f'<div style="font-size:0.65rem; font-weight:800; color:#8ba2b5; text-transform:uppercase; letter-spacing:0.03em;">{days_active} DAYS</div>'
                     f'</div>'
                     
                     # Row 4: Targets
-                    f'<div style="display:flex; gap:20px; align-items:center; padding-top:16px; border-top:1px solid rgba(139, 162, 181, 0.15);">'
-                    f'<div style="display:flex; flex-direction:column; gap:4px; flex:1; text-align:left;">'
-                    f'<span style="font-size:1rem; font-weight:400; color:var(--text);">Target -1</span>'
-                    f'<span style="font-size:1.25rem; font-weight:700; color:var(--text);">{t1}</span>'
+                    f'<div style="display:flex; gap:12px; align-items:center; padding-top:10px; border-top:1px solid rgba(139, 162, 181, 0.15);">'
+                    f'<div style="display:flex; flex-direction:column; gap:2px; flex:1; text-align:left;">'
+                    f'<span style="font-size:0.75rem; font-weight:500; color:var(--text);">Target -1</span>'
+                    f'<span style="font-size:0.95rem; font-weight:700; color:var(--text);">{t1}</span>'
                     f'</div>'
-                    f'<div style="display:flex; flex-direction:column; gap:4px; flex:1; text-align:left;">'
-                    f'<span style="font-size:1rem; font-weight:400; color:var(--text);">Target -2</span>'
-                    f'<span style="font-size:1.25rem; font-weight:700; color:var(--text);">{t2}</span>'
+                    f'<div style="display:flex; flex-direction:column; gap:2px; flex:1; text-align:left;">'
+                    f'<span style="font-size:0.75rem; font-weight:500; color:var(--text);">Target -2</span>'
+                    f'<span style="font-size:0.95rem; font-weight:700; color:var(--text);">{t2}</span>'
                     f'</div>'
                     f'</div>'
                     
