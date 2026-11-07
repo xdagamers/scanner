@@ -845,8 +845,9 @@ def render_detail(symbol, row):
             trade_type = timeframe.split(' (')[0]
             
             payload = {
+                "Symbol": symbol,
                 "Stock_Name": company,
-                "Date_Added": datetime.now(IST).strftime('%d %b %Y'),
+                "Date_Added": datetime.now(IST).strftime('%Y-%m-%d'),
                 "Price_Added": round(float(price), 2) if price else "",
                 "Trade_Type": trade_type,
                 "Expected_Days": exp_days,
