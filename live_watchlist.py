@@ -1,9 +1,15 @@
 import pandas as pd
 from datetime import datetime
+import time
 import streamlit as st
 import yfinance as yf
 import html
-from google_sheets_audit import delete_watchlist_row
+
+# Try to import the delete function, but don't crash if it's missing during test
+try:
+    from google_sheets_audit import delete_watchlist_row
+except ImportError:
+    pass
 
 def money(x):
     try:
@@ -167,20 +173,35 @@ def render_watchlist_tab(watchlist_df):
                 idx = start + j
                 if idx >= len(winners): continue
                 row, _ = winners[idx]
+                sym = str(row.get("Symbol", "")).replace(".NS", "")
                 card_html, _ = render_watchlist_card(row, live_prices)
+                
                 with col:
                     st.markdown(card_html, unsafe_allow_html=True)
                     
-                    # The sleek UI Delete Button
-                    if st.button(f"✕ Close Trade", key=f"del_{sym}_{idx}", use_container_width=True):
-                        with st.spinner(f"Closing {sym}..."):
-                            try:
-                                delete_watchlist_row(st.secrets, sym)
-                                st.toast(f"✅ {sym} removed from portfolio!")
-                                time.sleep(1) # Give the sheet a second to process
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error removing {sym}: {e}")
+                    # --- ADDED DELETION CONFIRMATION LOGIC ---
+                    confirm_key = f"confirm_del_{sym}_{idx}"
+                    if not st.session_state.get(confirm_key, False):
+                        if st.button(f"✕ Close Trade", key=f"del_win_{sym}_{idx}", use_container_width=True):
+                            st.session_state[confirm_key] = True
+                            st.rerun()
+                    else:
+                        st.markdown("<div style='text-align:center; font-size:0.75rem; font-weight:700; margin-bottom:6px; color:var(--red);'>Are you sure?</div>", unsafe_allow_html=True)
+                        cc1, cc2 = st.columns(2)
+                        if cc1.button("Yes", key=f"yes_win_{sym}_{idx}", use_container_width=True, type="primary"):
+                            with st.spinner(f"Closing..."):
+                                try:
+                                    delete_watchlist_row(st.secrets, sym)
+                                    st.toast(f"✅ {sym} removed!")
+                                    st.session_state[confirm_key] = False
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                        if cc2.button("No", key=f"no_win_{sym}_{idx}", use_container_width=True):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+                                
         st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
@@ -196,6 +217,31 @@ def render_watchlist_tab(watchlist_df):
                 idx = start + j
                 if idx >= len(losers): continue
                 row, _ = losers[idx]
+                sym = str(row.get("Symbol", "")).replace(".NS", "")
                 card_html, _ = render_watchlist_card(row, live_prices)
+                
                 with col:
                     st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    # --- ADDED DELETION CONFIRMATION LOGIC ---
+                    confirm_key = f"confirm_del_{sym}_{idx}"
+                    if not st.session_state.get(confirm_key, False):
+                        if st.button(f"✕ Close Trade", key=f"del_loss_{sym}_{idx}", use_container_width=True):
+                            st.session_state[confirm_key] = True
+                            st.rerun()
+                    else:
+                        st.markdown("<div style='text-align:center; font-size:0.75rem; font-weight:700; margin-bottom:6px; color:var(--red);'>Are you sure?</div>", unsafe_allow_html=True)
+                        cc1, cc2 = st.columns(2)
+                        if cc1.button("Yes", key=f"yes_loss_{sym}_{idx}", use_container_width=True, type="primary"):
+                            with st.spinner(f"Closing..."):
+                                try:
+                                    delete_watchlist_row(st.secrets, sym)
+                                    st.toast(f"✅ {sym} removed!")
+                                    st.session_state[confirm_key] = False
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                        if cc2.button("No", key=f"no_loss_{sym}_{idx}", use_container_width=True):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
