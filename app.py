@@ -742,6 +742,24 @@ def day_change(symbol, period='2y'):
     last, prev = float(hist.Close.iloc[-1]), float(hist.Close.iloc[-2])
     return last, last - prev, (last / prev - 1) * 100
 
+def ema(s, n):
+    return s.ewm(span=n, adjust=False).mean()
+
+def detect_pattern(df):
+    if len(df) < 3: return None
+    a, b, c = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    body = lambda x: abs(x['Close'] - x['Open'])
+    rng = lambda x: max(x['High'] - x['Low'], 1e-9)
+    if b['Close'] < b['Open'] < c['Close'] and c['Open'] <= b['Close'] and c['Close'] >= b['Open']: return "Bullish Engulfing"
+    lower = min(c['Open'], c['Close']) - c['Low']
+    upper = c['High'] - max(c['Open'], c['Close'])
+    if lower >= 2 * body(c) and upper <= body(c) * 1.2: return "Hammer"
+    if c['Close'] > c['Open'] and body(c) / rng(c) > 0.75: return "Bullish Marubozu"
+    if a['Close'] < a['Open'] and body(b) < body(a) * .5 and c['Close'] > c['Open'] and c['Close'] > (a['Open'] + a['Close']) / 2: return "Morning Star"
+    if b['Close'] < b['Open'] and c['Close'] > c['Open'] and c['Open'] < b['Low'] and c['Close'] > (b['Open'] + b['Close']) / 2: return "Piercing Line"
+    if all(x['Close'] > x['Open'] for _, x in df.iloc[-3:].iterrows()) and a['Close'] < b['Close'] < c['Close']: return "Three White Soldiers"
+    return None
+
 def detail_chart(symbol, row, period='2y'):
     hist = fetch_history(symbol, period)
     if hist is None or hist.empty:
@@ -749,13 +767,66 @@ def detail_chart(symbol, row, period='2y'):
         return
     light = st.session_state.theme_mode == 'light'
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=hist.index, open=hist.Open, high=hist.High, low=hist.Low, close=hist.Close, name=symbol))
-    fig.add_trace(go.Bar(x=hist.index, y=hist.Volume, name='Volume', yaxis='y2', opacity=0.25, marker_color='#3B82F6'))
+    
+    # 1. Base Candlestick
+    fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name=symbol))
+    
+    # 2. Add EMA 50 and EMA 200
+    if len(hist) >= 50:
+        ema50 = ema(hist['Close'], 50)
+        fig.add_trace(go.Scatter(x=hist.index, y=ema50, mode='lines', line=dict(color='#8B5CF6', width=1.5), name='EMA 50'))
+        
+        # Add dynamic floating label at the end of the line
+        fig.add_annotation(
+            x=hist.index[-1], y=ema50.iloc[-1],
+            xref="x", yref="y",
+            text="EMA 50", showarrow=False,
+            xanchor="left", yanchor="middle",
+            font=dict(color="#8B5CF6", size=10, weight="bold"),
+            bgcolor="rgba(139, 92, 246, 0.1)", borderpad=2, xshift=10
+        )
+        
+    if len(hist) >= 200:
+        ema200 = ema(hist['Close'], 200)
+        fig.add_trace(go.Scatter(x=hist.index, y=ema200, mode='lines', line=dict(color='#F59E0B', width=1.5), name='EMA 200'))
+        
+        # Add dynamic floating label at the end of the line
+        fig.add_annotation(
+            x=hist.index[-1], y=ema200.iloc[-1],
+            xref="x", yref="y",
+            text="EMA 200", showarrow=False,
+            xanchor="left", yanchor="middle",
+            font=dict(color="#F59E0B", size=10, weight="bold"),
+            bgcolor="rgba(245, 158, 11, 0.1)", borderpad=2, xshift=10
+        )
+    
+    # 3. Candlestick Pattern Recognition
+    pattern = detect_pattern(hist)
+    if pattern:
+        # Point arrow at the most recent candle's low
+        last_date = hist.index[-1]
+        last_low = hist['Low'].iloc[-1]
+        fig.add_annotation(
+            x=last_date, y=last_low,
+            xref="x", yref="y",
+            text=f"🎯 {pattern}",
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2, arrowcolor="#10b981",
+            ax=0, ay=30, # Arrow points UP to the low
+            font=dict(color="#10b981", size=11, weight="bold"),
+            bgcolor="rgba(16, 185, 129, 0.1)", bordercolor="#10b981", borderwidth=1, borderpad=4
+        )
+
+    # 4. Volume Bar
+    fig.add_trace(go.Bar(x=hist.index, y=hist['Volume'], name='Volume', yaxis='y2', opacity=0.25, marker_color='#3B82F6'))
+    
+    # 5. Breakout Line
     fig.add_hline(y=float(row.get('breakout_level', 0) or 0), line_dash='dash', line_color='#10b981', annotation_text=f"Breakout: ₹{row.get('breakout_level', 0):.2f}", annotation_position='top left')
+    
+    # Layout Config
     fig.update_layout(
         template='plotly_white' if light else 'plotly_dark',
         height=520,
-        margin=dict(l=10, r=10, t=25, b=10),
+        margin=dict(l=10, r=40, t=25, b=10), # Added extra right margin for EMA labels
         xaxis_rangeslider_visible=False,
         hovermode='x unified',
         paper_bgcolor='#ffffff' if light else '#0d1017',
