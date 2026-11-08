@@ -241,3 +241,22 @@ def append_watchlist_row(secrets, row_dict: dict) -> dict:
             "row": row_dict,
         },
     )
+def delete_watchlist_row(secrets, symbol):
+    """Sends a command to Google Apps Script to delete a specific ticker from the watchlist."""
+    url = secrets.get("SHEETS_WEBHOOK_URL")
+    if not url:
+        raise ValueError("Missing SHEETS_WEBHOOK_URL in secrets.")
+        
+    payload = {
+        "action": "delete_watchlist",
+        "payload": {
+            "Symbol": symbol
+        }
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete {symbol} from Watchlist: {str(e)}")
