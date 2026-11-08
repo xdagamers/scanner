@@ -816,6 +816,66 @@ def build_single_stock_export(symbol, row, scanned_at, rank=''):
         'ADX': round(float(row.get('adx')), 2), 'EOD Delivery %': row.get('delivery_pct', '—'), 'Market Regime': row.get('market_regime', ''),
     }])
 
+# --- NEW FUNCTION FOR ENTRY CHECKLIST ---
+def render_entry_zone_checklists(symbol, row, current_price):
+    try:
+        breakout_level = float(row.get('breakout_level', 0))
+        rsi_val = float(row.get('rsi', 0))
+        rvol_val = float(row.get('rvol', 0))
+    except (ValueError, TypeError):
+        breakout_level, rsi_val, rvol_val = 0.0, 0.0, 0.0
+
+    # PRE-BREAKOUT
+    if breakout_level > 0:
+        dist_pct = ((current_price - breakout_level) / breakout_level) * 100
+        prox_passed = -3.0 <= dist_pct <= 1.0
+    else:
+        prox_passed = False
+
+    rsi_passed = rsi_val >= 60.0
+    vol_trend_passed = rvol_val >= 1.0
+
+    # POST-BREAKOUT
+    close_passed = current_price > breakout_level if breakout_level > 0 else False
+    brk_vol_passed = rvol_val >= 1.5
+    
+    sustain_passed = False
+    try:
+        hist = fetch_history(symbol, '1mo')
+        if hist is not None and len(hist) >= 2:
+            last_2_closes = hist['Close'].dropna().tail(2).tolist()
+            sustain_passed = (len(last_2_closes) == 2 and 
+                              last_2_closes[0] > breakout_level and 
+                              last_2_closes[1] > breakout_level)
+    except Exception:
+        pass
+
+    def badge(condition, pending=False):
+        if condition: 
+            return "<span style='color:var(--accent); font-weight:800; font-size:0.75rem; padding:2px 8px; background:rgba(16,185,129,0.1); border-radius:4px;'>✅ PASSED</span>"
+        if pending: 
+            return "<span style='color:#fbbf24; font-weight:800; font-size:0.75rem; padding:2px 8px; background:rgba(251,191,36,0.1); border-radius:4px;'>⏳ PENDING</span>"
+        return "<span style='color:var(--red); font-weight:800; font-size:0.75rem; padding:2px 8px; background:rgba(239,68,68,0.1); border-radius:4px;'>❌ FAILED</span>"
+
+    html = f"""
+    <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:24px;">
+        <div class="bento-stock-card" style="flex:1; min-width:300px; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--card);">
+            <div style="font-size:1.05rem; font-weight:900; color:var(--text); margin-bottom:16px; border-bottom:1px solid rgba(139,162,181,0.15); padding-bottom:10px;">🎯 PRE-BREAKOUT SETUP</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Price Proximity <span style="color:var(--muted); font-size:0.75rem;">(-3% to +1%)</span></span> {badge(prox_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Bullish Momentum <span style="color:var(--muted); font-size:0.75rem;">(RSI > 60)</span></span> {badge(rsi_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:0.85rem; font-weight:500;">Volume Accumulation <span style="color:var(--muted); font-size:0.75rem;">(RVOL > 1.0)</span></span> {badge(vol_trend_passed)}</div>
+        </div>
+        <div class="bento-stock-card" style="flex:1; min-width:300px; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--card);">
+            <div style="font-size:1.05rem; font-weight:900; color:var(--text); margin-bottom:16px; border-bottom:1px solid rgba(139,162,181,0.15); padding-bottom:10px;">🚀 POST-BREAKOUT CONFIRMATION</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Daily Close <span style="color:var(--muted); font-size:0.75rem;">(> BO Level)</span></span> {badge(close_passed, pending=not close_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Breakout Volume <span style="color:var(--muted); font-size:0.75rem;">(RVOL > 1.5)</span></span> {badge(brk_vol_passed, pending=not close_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:0.85rem; font-weight:500;">Price Sustain <span style="color:var(--muted); font-size:0.75rem;">(Holds > 2 Days)</span></span> {badge(sustain_passed, pending=not sustain_passed)}</div>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+# -----------------------------------------------
+
 def render_detail(symbol, row):
     render_fintech_topbar()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -886,6 +946,9 @@ def render_detail(symbol, row):
     tab_tech, tab_fund, tab_news, tab_audit = st.tabs(['📈 Technical Analytics', '🏛️ Fundamental Health', '📰 News & Filings', '📊 Audit Details'])
 
     with tab_tech:
+        # INSERT THE ENTRY CHECKLIST HERE
+        render_entry_zone_checklists(symbol, row, float(price) if price else 0)
+        
         c_left, c_right = st.columns([3, 1])
         with c_left:
             st.markdown('<div class="section-title" style="margin-top:0;">Price Action & Volume</div>', unsafe_allow_html=True)
