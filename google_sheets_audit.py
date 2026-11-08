@@ -243,9 +243,11 @@ def append_watchlist_row(secrets, row_dict: dict) -> dict:
     )
 def delete_watchlist_row(secrets, symbol):
     """Sends a command to Google Apps Script to delete a specific ticker from the watchlist."""
-    url = secrets.get("SHEETS_WEBHOOK_URL")
+    # Check for all common variations of the Webhook URL key
+    url = secrets.get("SHEETS_WEBHOOK_URL") or secrets.get("WEBHOOK_URL") or secrets.get("GOOGLE_WEBHOOK_URL")
+    
     if not url:
-        raise ValueError("Missing SHEETS_WEBHOOK_URL in secrets.")
+        raise ValueError("Missing Webhook URL in secrets. Please check your Streamlit Secrets.")
         
     payload = {
         "action": "delete_watchlist",
