@@ -3,6 +3,7 @@ from datetime import datetime
 import streamlit as st
 import yfinance as yf
 import html
+from google_sheets_audit import delete_watchlist_row
 
 def money(x):
     try:
@@ -169,6 +170,17 @@ def render_watchlist_tab(watchlist_df):
                 card_html, _ = render_watchlist_card(row, live_prices)
                 with col:
                     st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    # The sleek UI Delete Button
+                    if st.button(f"✕ Close Trade", key=f"del_{sym}_{idx}", use_container_width=True):
+                        with st.spinner(f"Closing {sym}..."):
+                            try:
+                                delete_watchlist_row(st.secrets, sym)
+                                st.toast(f"✅ {sym} removed from portfolio!")
+                                time.sleep(1) # Give the sheet a second to process
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error removing {sym}: {e}")
         st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
     # ---------------------------------------------------------
