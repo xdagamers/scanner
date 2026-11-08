@@ -876,6 +876,27 @@ def render_entry_zone_checklists(symbol, row, current_price):
     st.markdown(html, unsafe_allow_html=True)
 # -----------------------------------------------
 
+
+def get_aggregate_sentiment(symbol):
+    try:
+        ticker_obj = yf.Ticker(symbol + '.NS')
+        raw_news = ticker_obj.news
+        bullish = 0
+        bearish = 0
+        if isinstance(raw_news, list):
+            for n in raw_news[:8]:
+                content = n.get('content', n)
+                title = content.get('title', n.get('title', ''))
+                if title:
+                    tag, cls = get_headline_sentiment(title)
+                    if 'Bullish' in tag or 'Positive' in tag: bullish += 1
+                    elif 'Bearish' in tag or 'Negative' in tag: bearish += 1
+        if bullish > bearish: return 'Bullish News 📈', 'badge-green'
+        elif bearish > bullish: return 'Bearish News 📉', 'badge-red'
+        else: return 'Neutral News ⚖️', 'badge-grey'
+    except Exception:
+        return 'News Sentiment: N/A', 'badge-grey'
+
 def render_detail(symbol, row):
     render_fintech_topbar()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -898,6 +919,23 @@ def render_detail(symbol, row):
     t2up = ((t2 / price) - 1) * 100 if price else 0
     t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
     timeframe, tf_cls = get_timeframe_status(row)
+    
+    # Calculate Dual Stop Losses
+    price_val = float(price) if price else 0.0
+    struct_stop = float(row.get('stop_reference', 0) or 0.0)
+    aggr_stop = price_val * 0.98
+    try:
+        hist1m = fetch_history(symbol, '1mo')
+        if hist1m is not None and not hist1m.empty:
+            aggr_stop = float(hist1m['Low'].tail(3).min()) # Last 3 days low for Breakout Candle Low
+    except Exception:
+        pass
+        
+    aggr_stop_pct = ((aggr_stop / price_val) - 1) * 100 if price_val else 0
+    struct_stop_pct = ((struct_stop / price_val) - 1) * 100 if price_val else 0
+    
+    # Aggregate News Sentiment
+    sent_tag, sent_cls = get_aggregate_sentiment(symbol)
 
     with col_watch:
         if st.button('⭐ Add to Watchlist', type='primary', use_container_width=True):
@@ -926,19 +964,26 @@ def render_detail(symbol, row):
                 st.error(f"Watchlist save failed: {e}")
 
     hero_html = (
-        f'<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;padding:24px;background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow);">'
-        f'<div>'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding:24px;background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow); flex-wrap:wrap; gap:20px;">'
+        
+        # Left side: Price & Sentiment
+        f'<div style="flex:1; min-width:300px;">'
         f'<div class="small-muted" style="font-size:.9rem;font-weight:600;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase;">{html.escape(str(company))}</div>'
-        f'<div style="display:flex;align-items:center;gap:12px;"><div style="font-size:2.4rem;font-weight:800;line-height:1.1;color:var(--text);">{html.escape(symbol)}</div> <span class="badge {tf_cls}">{timeframe}</span></div>'
+        f'<div style="display:flex;align-items:center;gap:12px;"><div style="font-size:2.4rem;font-weight:800;line-height:1.1;color:var(--text);">{html.escape(symbol)}</div> <span class="badge {tf_cls}">{timeframe}</span> <span class="badge {sent_cls}">{sent_tag}</span></div>'
         f'<div style="display:flex;align-items:center;gap:14px;margin-top:10px;">'
         f'<div style="font-size:1.8rem;font-weight:800;color:var(--text);">{money(price)}</div>'
         f'<div class="{change_cls}" style="font-weight:700;font-size:1.1rem;">{arrow} {money(change)} ({pct(change_pct)})</div>'
         f'</div>'
         f'</div>'
-        f'<div style="display:flex;gap:16px;">'
-        f'<div class="target-box"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside">{t1up:+.2f}%</div></div>'
-        f'<div class="target-box"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside">{t2up:+.2f}%</div></div>'
+        
+        # Right side: Targets & Dual Stops Grid
+        f'<div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">'
+        f'<div class="target-box" style="border-left: 3px solid var(--accent);"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside" style="color:var(--accent);">{t1up:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--brand);"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside" style="color:var(--brand);">{t2up:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--yellow);"><div class="target-label">Aggressive SL (Candle Low)</div><div class="target-value">{money(aggr_stop)}</div><div class="target-upside" style="color:var(--red);">{aggr_stop_pct:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--red);"><div class="target-label">Structural SL (EMA)</div><div class="target-value">{money(struct_stop)}</div><div class="target-upside" style="color:var(--red);">{struct_stop_pct:+.2f}%</div></div>'
         f'</div>'
+        
         f'</div>'
     )
     st.markdown(hero_html, unsafe_allow_html=True)
