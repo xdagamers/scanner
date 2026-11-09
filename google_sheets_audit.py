@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
 import textwrap
+import re
 
 def append_audit_batch(secrets, pending_rows, run_id, scan_timestamp_ist, scanner_period, max_distance_pct):
     return {"saved": True, "rows": len(pending_rows), "run_id": run_id}
@@ -36,20 +37,28 @@ def read_watchlist(secrets):
 def get_google_creds(secrets):
     pk = secrets.get("GCP_PRIVATE_KEY", "")
     
-    # --- THE PEM FIXER ---
-    # Extracts the mangled key, removes all formatting, and perfectly reconstructs 
-    # the 64-character chunking that cryptography.io strictly requires.
-    if "-----BEGIN PRIVATE KEY-----" in pk:
-        core = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
-        core = core.replace('\\n', '').replace('\n', '').replace(' ', '')
-        chunked = textwrap.fill(core, 64)
-        pk = f"-----BEGIN PRIVATE KEY-----\n{chunked}\n-----END PRIVATE KEY-----\n"
+    # --- THE BULLETPROOF PEM REBUILDER ---
+    # 1. Strip the header and footer completely
+    pk_clean = pk.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
+    
+    # 2. Use Regex to destroy ALL spaces, literal '\n', and invisible characters. 
+    # This leaves ONLY the pure Base64 cryptographic string.
+    pk_clean = re.sub(r'[^A-Za-z0-9+/=]', '', pk_clean)
+    
+    if not pk_clean:
+        raise ValueError("The GCP_PRIVATE_KEY in your Streamlit secrets is missing or completely empty.")
+        
+    # 3. Mathematically chunk it into exactly 64 characters per line (Google's strict requirement)
+    chunked = textwrap.fill(pk_clean, 64)
+    
+    # 4. Rebuild the perfect PEM string
+    final_pk = f"-----BEGIN PRIVATE KEY-----\n{chunked}\n-----END PRIVATE KEY-----\n"
         
     return {
         "type": "service_account",
         "project_id": secrets.get("GCP_PROJECT_ID"),
         "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-        "private_key": pk,
+        "private_key": final_pk,
         "client_email": secrets.get("GCP_CLIENT_EMAIL"),
         "client_id": secrets.get("GCP_CLIENT_ID"),
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
