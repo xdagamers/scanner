@@ -4,7 +4,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
-import json
 
 def append_audit_batch(secrets, pending_rows, run_id, scan_timestamp_ist, scanner_period, max_distance_pct):
     return {"saved": True, "rows": len(pending_rows), "run_id": run_id}
@@ -140,7 +139,6 @@ def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
                     sheet.update_cell(row_idx, exit_date_col, datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"))
                     return True
         except Exception as e:
-            print(e)
             pass
         return False
     except Exception as e:
