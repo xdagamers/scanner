@@ -1304,7 +1304,7 @@ def render_home():
     render_ticker()
     
     # Create the Tabs for the Main Screen
-    tab_dash, tab_sikho, tab_watch = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)", "👀 Live Watchlist"])
+    tab_dash, tab_sikho, tab_watch, tab_portfolio = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)", "👀 Live Watchlist", "🎮 Paper Portfolio"])
 
     with tab_watch:
         wc1, wc2 = st.columns([6, 2])
@@ -1321,6 +1321,116 @@ def render_home():
             except Exception:
                 watchlist_df = pd.DataFrame()
             render_watchlist_tab(watchlist_df)
+
+    with tab_portfolio:
+        st.markdown("<div style='font-size:1.05rem; font-weight:800; color:var(--text); padding-top:8px; margin-bottom:12px;'>🎮 Paper Trading Portfolio</div>", unsafe_allow_html=True)
+        
+        with st.spinner("Fetching paper trades from Google Sheets..."):
+            try:
+                paper_df = get_paper_trades(st.secrets)
+            except Exception:
+                paper_df = pd.DataFrame()
+            
+        if paper_df.empty:
+            st.info("No paper trades found. Go to the Scanner Dashboard, analyze a stock, and execute a trade!")
+        else:
+            open_trades = paper_df[paper_df['Status'] == 'OPEN'].copy()
+            closed_trades = paper_df[paper_df['Status'].astype(str).str.startswith('CLOSED')].copy()
+            
+            if open_trades.empty:
+                st.success("No open trades. You are all flat! Head to the scanner to find new setups.")
+            else:
+                st.markdown("<div class='small-muted' style='margin-bottom:16px;'>Live prices are pulled securely via Yahoo Finance APIs.</div>", unsafe_allow_html=True)
+                
+                # Fetch live prices for open trades
+                live_prices = {}
+                if len(open_trades) > 0:
+                    with st.spinner("Fetching live market prices..."):
+                        symbols_list = open_trades['Symbol'].unique().tolist()
+                        tickers = [str(s).replace('&', '%26') + '.NS' for s in symbols_list]
+                        try:
+                            raw_data = yf.download(tickers, period='1d', interval='1d', progress=False)
+                            for sym in symbols_list:
+                                ticker = str(sym).replace('&', '%26') + '.NS'
+                                try:
+                                    if len(symbols_list) == 1:
+                                        last_price = float(raw_data['Close'].iloc[-1])
+                                    elif isinstance(raw_data.columns, pd.MultiIndex):
+                                        if ticker in raw_data.columns.get_level_values(0):
+                                            last_price = float(raw_data[ticker]['Close'].iloc[-1])
+                                        elif ticker in raw_data.columns.get_level_values(1):
+                                            last_price = float(raw_data.xs(ticker, axis=1, level=1)['Close'].iloc[-1])
+                                        else:
+                                            last_price = float(open_trades[open_trades['Symbol'] == sym]['Entry_Price'].iloc[0])
+                                    else:
+                                        last_price = float(raw_data['Close'].iloc[-1])
+                                    live_prices[sym] = last_price
+                                except Exception:
+                                    live_prices[sym] = float(open_trades[open_trades['Symbol'] == sym]['Entry_Price'].iloc[0])
+                        except Exception:
+                            for sym in symbols_list:
+                                live_prices[sym] = float(open_trades[open_trades['Symbol'] == sym]['Entry_Price'].iloc[0])
+
+                # Display Open Trades
+                total_pnl = 0.0
+                for idx, trade in open_trades.iterrows():
+                    sym = trade['Symbol']
+                    entry_price = float(trade['Entry_Price'])
+                    qty = int(trade['Quantity'])
+                    live_price = live_prices.get(sym, entry_price)
+                    
+                    pnl = (live_price - entry_price) * qty
+                    total_pnl += pnl
+                    pnl_pct = ((live_price / entry_price) - 1) * 100 if entry_price > 0 else 0
+                    
+                    pnl_color = "var(--accent)" if pnl >= 0 else "var(--red)"
+                    pnl_sign = "+" if pnl >= 0 else ""
+                    
+                    st.markdown(f'''
+                    <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                        <div>
+                            <div style="font-weight:900; font-size:1.2rem; color:var(--text);">{sym}</div>
+                            <div class="small-muted">Entry: {money(entry_price)} | Qty: {qty}</div>
+                        </div>
+                        <div>
+                            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
+                            <div style="font-weight:800; font-size:1.1rem; color:var(--text);">{money(live_price)}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL</div>
+                            <div style="font-weight:900; font-size:1.2rem; color:{pnl_color};">{pnl_sign}{money(pnl)} ({pnl_sign}{pnl_pct:.2f}%)</div>
+                        </div>
+                    </div>
+                    ''', unsafe_allow_html=True)
+                    
+                    close_col1, close_col2 = st.columns([8, 2])
+                    with close_col2:
+                        if st.button(f"Close Trade", key=f"close_{trade['Trade_ID']}", use_container_width=True):
+                            with st.spinner("Closing trade in Google Sheets..."):
+                                close_paper_trade(st.secrets, trade['Trade_ID'], live_price, pnl)
+                            st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
+                            time.sleep(1)
+                            st.rerun()
+                
+                # Show Total PnL Header
+                total_color = "var(--accent)" if total_pnl >= 0 else "var(--red)"
+                total_sign = "+" if total_pnl >= 0 else ""
+                st.markdown(f'''
+                <div style="text-align:right; margin-top:8px; padding-right:16px;">
+                    <span class="small-muted" style="font-size:0.8rem; text-transform:uppercase; font-weight:700;">Total Open PnL:</span> 
+                    <span style="font-size:1.3rem; font-weight:900; color:{total_color}; margin-left:8px;">{total_sign}{money(total_pnl)}</span>
+                </div>
+                ''', unsafe_allow_html=True)
+            
+            # Show closed trades history
+            if not closed_trades.empty:
+                st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+                st.markdown("<div class='section-title'>Closed Trades History</div>", unsafe_allow_html=True)
+                
+                history_df = closed_trades.copy()
+                # Safely select columns that exist
+                cols_to_show = [c for c in ['Symbol', 'Entry_Date', 'Entry_Price', 'Exit_Price', 'Quantity', 'PnL', 'Status'] if c in history_df.columns]
+                st.dataframe(history_df[cols_to_show], use_container_width=True, hide_index=True)
 
     with tab_sikho:
         st.markdown('''
