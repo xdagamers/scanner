@@ -1059,6 +1059,36 @@ def render_detail(symbol, row):
     )
     st.markdown(hero_html, unsafe_allow_html=True)
 
+    # --- POSITION SIZER ---
+    st.markdown("<div class='section-title' style='margin-top:0;'>🛡️ Dynamic Position Sizer</div>", unsafe_allow_html=True)
+    
+    ps_col1, ps_col2, ps_col3 = st.columns([1, 1, 2])
+    with ps_col1:
+        max_risk = st.number_input("Max Risk Amount (₹)", min_value=100, value=2000, step=500, key=f"risk_{symbol}")
+    with ps_col2:
+        stop_choice = st.selectbox("Stop Loss Basis", ["Structural SL (EMA)", "Aggressive SL (Candle Low)"], key=f"sl_choice_{symbol}")
+    
+    active_sl = struct_stop if "Structural" in stop_choice else aggr_stop
+    risk_per_share = max(price_val - active_sl, 0.01) # Avoid division by zero
+    shares_to_buy = int(max_risk / risk_per_share)
+    capital_required = shares_to_buy * price_val
+    
+    with ps_col3:
+        st.markdown(f'''
+        <div style="display:flex; gap:16px; align-items:center; height:100%; padding-top:28px;">
+            <div class="bento-card" style="flex:1; margin-bottom:0; padding:12px 16px; border-color:var(--brand); background:var(--brand-bg);">
+                <div style="font-size:0.75rem; font-weight:700; color:var(--brand); text-transform:uppercase;">Recommended Size</div>
+                <div style="font-size:1.5rem; font-weight:900; color:var(--text); line-height:1.2;">{shares_to_buy} <span style="font-size:0.9rem; font-weight:600; color:var(--muted);">Shares</span></div>
+            </div>
+            <div class="bento-card" style="flex:1; margin-bottom:0; padding:12px 16px;">
+                <div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase;">Capital Required</div>
+                <div style="font-size:1.5rem; font-weight:900; color:var(--text); line-height:1.2;">{money(capital_required)}</div>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    # ----------------------
+
     tab_tech, tab_fund, tab_news, tab_audit = st.tabs(['📈 Technical Analytics', '🏛️ Fundamental Health', '📰 News & Filings', '📊 Audit Details'])
 
     with tab_tech:
@@ -1251,6 +1281,14 @@ def render_home():
     tab_dash, tab_sikho, tab_watch = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)", "👀 Live Watchlist"])
 
     with tab_watch:
+        wc1, wc2 = st.columns([6, 2])
+        with wc1:
+            st.markdown("<div style='font-size:1.05rem; font-weight:800; color:var(--text); padding-top:8px; margin-bottom:12px;'>👀 Live Tracked Setups</div>", unsafe_allow_html=True)
+        with wc2:
+            if st.button("🔄 Refresh Live Prices", use_container_width=True):
+                st.cache_data.clear() # Force Yahoo Finance to fetch the latest absolute second of pricing
+                st.rerun()
+                
         with st.spinner("Fetching live data from Yahoo Finance..."):
             try:
                 watchlist_df = read_watchlist(st.secrets)
