@@ -2,8 +2,7 @@ import time
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import gspread
-from google.oauth2.service_account import Credentials
+import json
 
 def append_audit_batch(secrets, pending_rows, run_id, scan_timestamp_ist, scanner_period, max_distance_pct):
     return {"saved": True, "rows": len(pending_rows), "run_id": run_id}
@@ -51,6 +50,8 @@ def get_google_creds(secrets):
 
 def log_paper_trade(secrets, trade_data):
     try:
+        import gspread
+        from google.oauth2.service_account import Credentials
         creds_dict = get_google_creds(secrets)
         credentials = Credentials.from_service_account_info(
             creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -89,6 +90,8 @@ def log_paper_trade(secrets, trade_data):
 
 def get_paper_trades(secrets):
     try:
+        import gspread
+        from google.oauth2.service_account import Credentials
         creds_dict = get_google_creds(secrets)
         credentials = Credentials.from_service_account_info(
             creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -109,6 +112,8 @@ def get_paper_trades(secrets):
         
 def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
     try:
+        import gspread
+        from google.oauth2.service_account import Credentials
         creds_dict = get_google_creds(secrets)
         credentials = Credentials.from_service_account_info(
             creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
