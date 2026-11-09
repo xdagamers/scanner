@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
+import json
 
 def append_audit_batch(secrets, pending_rows, run_id, scan_timestamp_ist, scanner_period, max_distance_pct):
     return {"saved": True, "rows": len(pending_rows), "run_id": run_id}
@@ -32,29 +33,30 @@ def append_watchlist_row(secrets, payload):
 def read_watchlist(secrets):
     return pd.DataFrame()
 
+def get_google_creds(secrets):
+    pk = secrets.get("GCP_PRIVATE_KEY", "")
+    pk = pk.replace("\\n", "\n")
+    pk = pk.replace("\n", "\n")
+    return {
+        "type": "service_account",
+        "project_id": secrets.get("GCP_PROJECT_ID"),
+        "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
+        "private_key": pk,
+        "client_email": secrets.get("GCP_CLIENT_EMAIL"),
+        "client_id": secrets.get("GCP_CLIENT_ID"),
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": secrets.get("GCP_CLIENT_CERT_URL")
+    }
+
 def log_paper_trade(secrets, trade_data):
-    """
-    Appends a new paper trade to the 'Paper_Trades' sheet.
-    """
     try:
-        creds_dict = {
-            "type": "service_account",
-            "project_id": secrets.get("GCP_PROJECT_ID"),
-            "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\\n', '\n'),
-            "client_email": secrets.get("GCP_CLIENT_EMAIL"),
-            "client_id": secrets.get("GCP_CLIENT_ID"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": secrets.get("GCP_CLIENT_CERT_URL")
-        }
-        
+        creds_dict = get_google_creds(secrets)
         credentials = Credentials.from_service_account_info(
             creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         client = gspread.authorize(credentials)
-        
         sheet_id = secrets.get("GOOGLE_SHEET_ID")
         doc = client.open_by_key(sheet_id)
         
@@ -83,30 +85,16 @@ def log_paper_trade(secrets, trade_data):
         sheet.append_row(row)
         return True
     except Exception as e:
-        print(f"Error logging paper trade: {e}")
+        print(f"Paper trade logging error: {e}")
         return True
 
 def get_paper_trades(secrets):
-    """Fetches all paper trades for the portfolio dashboard."""
     try:
-        creds_dict = {
-            "type": "service_account",
-            "project_id": secrets.get("GCP_PROJECT_ID"),
-            "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\\n', '\n'),
-            "client_email": secrets.get("GCP_CLIENT_EMAIL"),
-            "client_id": secrets.get("GCP_CLIENT_ID"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": secrets.get("GCP_CLIENT_CERT_URL")
-        }
-        
+        creds_dict = get_google_creds(secrets)
         credentials = Credentials.from_service_account_info(
             creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         client = gspread.authorize(credentials)
-        
         sheet_id = secrets.get("GOOGLE_SHEET_ID")
         doc = client.open_by_key(sheet_id)
         
@@ -117,30 +105,16 @@ def get_paper_trades(secrets):
         except gspread.exceptions.WorksheetNotFound:
             return pd.DataFrame()
     except Exception as e:
-        print(f"Error fetching paper trades: {e}")
+        print(f"Paper trade fetch error: {e}")
         return pd.DataFrame()
         
 def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
-    """Updates an existing paper trade when closed."""
     try:
-        creds_dict = {
-            "type": "service_account",
-            "project_id": secrets.get("GCP_PROJECT_ID"),
-            "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\\n', '\n'),
-            "client_email": secrets.get("GCP_CLIENT_EMAIL"),
-            "client_id": secrets.get("GCP_CLIENT_ID"),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": secrets.get("GCP_CLIENT_CERT_URL")
-        }
-        
+        creds_dict = get_google_creds(secrets)
         credentials = Credentials.from_service_account_info(
             creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         client = gspread.authorize(credentials)
-        
         sheet_id = secrets.get("GOOGLE_SHEET_ID")
         doc = client.open_by_key(sheet_id)
         
@@ -163,12 +137,12 @@ def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
                     exit_date_col = headers.index("Exit_Date") + 1
                     
                     sheet.update_cell(row_idx, exit_price_col, exit_price)
-                    sheet.update_cell(row_idx, exit_date_col, datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S'))
+                    sheet.update_cell(row_idx, exit_date_col, datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"))
                     return True
         except Exception as e:
             print(e)
             pass
         return False
     except Exception as e:
-        print(f"Error closing paper trade: {e}")
+        print(f"Paper trade closing error: {e}")
         return True
