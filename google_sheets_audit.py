@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
+import textwrap
 
 def append_audit_batch(secrets, pending_rows, run_id, scan_timestamp_ist, scanner_period, max_distance_pct):
     return {"saved": True, "rows": len(pending_rows), "run_id": run_id}
@@ -35,13 +36,14 @@ def read_watchlist(secrets):
 def get_google_creds(secrets):
     pk = secrets.get("GCP_PRIVATE_KEY", "")
     
-    # 1. Replace explicit escaped newlines (if present)
-    pk = pk.replace('\\n', '\n')
-    
-    # 2. Aggressively fix MalformedFraming (if TOML stripped newlines into spaces)
-    if "-----BEGIN PRIVATE KEY-----" in pk and "\n" not in pk:
-        body = pk.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replace(" ", "")
-        pk = f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"
+    # --- THE PEM FIXER ---
+    # Extracts the mangled key, removes all formatting, and perfectly reconstructs 
+    # the 64-character chunking that cryptography.io strictly requires.
+    if "-----BEGIN PRIVATE KEY-----" in pk:
+        core = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
+        core = core.replace('\\n', '').replace('\n', '').replace(' ', '')
+        chunked = textwrap.fill(core, 64)
+        pk = f"-----BEGIN PRIVATE KEY-----\n{chunked}\n-----END PRIVATE KEY-----\n"
         
     return {
         "type": "service_account",
@@ -57,42 +59,38 @@ def get_google_creds(secrets):
     }
 
 def log_paper_trade(secrets, trade_data):
+    creds_dict = get_google_creds(secrets)
+    credentials = Credentials.from_service_account_info(
+        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(credentials)
+    sheet_id = secrets.get("GOOGLE_SHEET_ID")
+    doc = client.open_by_key(sheet_id)
+    
     try:
-        creds_dict = get_google_creds(secrets)
-        credentials = Credentials.from_service_account_info(
-            creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-        client = gspread.authorize(credentials)
-        sheet_id = secrets.get("GOOGLE_SHEET_ID")
-        doc = client.open_by_key(sheet_id)
+        sheet = doc.worksheet("Paper_Trades")
+    except gspread.exceptions.WorksheetNotFound:
+        sheet = doc.add_worksheet(title="Paper_Trades", rows="1000", cols="15")
+        headers = ["Trade_ID", "Symbol", "Entry_Date", "Entry_Price", "Quantity", 
+                   "Invested_Capital", "Stop_Loss", "Target_1", "Target_2", "Status", "PnL"]
+        sheet.insert_row(headers, index=1)
         
-        try:
-            sheet = doc.worksheet("Paper_Trades")
-        except gspread.exceptions.WorksheetNotFound:
-            sheet = doc.add_worksheet(title="Paper_Trades", rows="1000", cols="15")
-            headers = ["Trade_ID", "Symbol", "Entry_Date", "Entry_Price", "Quantity", 
-                       "Invested_Capital", "Stop_Loss", "Target_1", "Target_2", "Status", "PnL"]
-            sheet.insert_row(headers, index=1)
-            
-        row = [
-            trade_data.get("Trade_ID", ""),
-            trade_data.get("Symbol", ""),
-            trade_data.get("Entry_Date", ""),
-            trade_data.get("Entry_Price", ""),
-            trade_data.get("Quantity", ""),
-            trade_data.get("Invested_Capital", ""),
-            trade_data.get("Stop_Loss", ""),
-            trade_data.get("Target_1", ""),
-            trade_data.get("Target_2", ""),
-            trade_data.get("Status", "OPEN"),
-            trade_data.get("PnL", "0.0")
-        ]
-        
-        sheet.append_row(row)
-        return True
-    except Exception as e:
-        print(f"Paper trade logging error: {e}")
-        raise e # Let it crash to UI if it fails again so we know exactly why
+    row = [
+        trade_data.get("Trade_ID", ""),
+        trade_data.get("Symbol", ""),
+        trade_data.get("Entry_Date", ""),
+        trade_data.get("Entry_Price", ""),
+        trade_data.get("Quantity", ""),
+        trade_data.get("Invested_Capital", ""),
+        trade_data.get("Stop_Loss", ""),
+        trade_data.get("Target_1", ""),
+        trade_data.get("Target_2", ""),
+        trade_data.get("Status", "OPEN"),
+        trade_data.get("PnL", "0.0")
+    ]
+    
+    sheet.append_row(row)
+    return True
 
 def get_paper_trades(secrets):
     try:
@@ -104,50 +102,40 @@ def get_paper_trades(secrets):
         sheet_id = secrets.get("GOOGLE_SHEET_ID")
         doc = client.open_by_key(sheet_id)
         
-        try:
-            sheet = doc.worksheet("Paper_Trades")
-            data = sheet.get_all_records()
-            return pd.DataFrame(data)
-        except gspread.exceptions.WorksheetNotFound:
-            return pd.DataFrame()
+        sheet = doc.worksheet("Paper_Trades")
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
     except Exception as e:
-        print(f"Paper trade fetch error: {e}")
+        print(f"Fetch error: {e}")
         return pd.DataFrame()
         
 def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
-    try:
-        creds_dict = get_google_creds(secrets)
-        credentials = Credentials.from_service_account_info(
-            creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-        client = gspread.authorize(credentials)
-        sheet_id = secrets.get("GOOGLE_SHEET_ID")
-        doc = client.open_by_key(sheet_id)
-        
-        try:
-            sheet = doc.worksheet("Paper_Trades")
-            records = sheet.get_all_records()
-            for i, row in enumerate(records):
-                if str(row.get("Trade_ID")) == str(trade_id):
-                    row_idx = i + 2 
-                    sheet.update_cell(row_idx, 10, f"CLOSED: {target_hit}" if target_hit else "CLOSED") 
-                    sheet.update_cell(row_idx, 11, pnl) 
-                    
-                    headers = sheet.row_values(1)
-                    if "Exit_Price" not in headers:
-                        sheet.update_cell(1, len(headers) + 1, "Exit_Price")
-                        sheet.update_cell(1, len(headers) + 2, "Exit_Date")
-                        headers = sheet.row_values(1)
-                        
-                    exit_price_col = headers.index("Exit_Price") + 1
-                    exit_date_col = headers.index("Exit_Date") + 1
-                    
-                    sheet.update_cell(row_idx, exit_price_col, exit_price)
-                    sheet.update_cell(row_idx, exit_date_col, datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"))
-                    return True
-        except Exception as e:
-            pass
-        return False
-    except Exception as e:
-        print(f"Paper trade closing error: {e}")
-        return True
+    creds_dict = get_google_creds(secrets)
+    credentials = Credentials.from_service_account_info(
+        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(credentials)
+    sheet_id = secrets.get("GOOGLE_SHEET_ID")
+    doc = client.open_by_key(sheet_id)
+    
+    sheet = doc.worksheet("Paper_Trades")
+    records = sheet.get_all_records()
+    for i, row in enumerate(records):
+        if str(row.get("Trade_ID")) == str(trade_id):
+            row_idx = i + 2 
+            sheet.update_cell(row_idx, 10, f"CLOSED: {target_hit}" if target_hit else "CLOSED") 
+            sheet.update_cell(row_idx, 11, pnl) 
+            
+            headers = sheet.row_values(1)
+            if "Exit_Price" not in headers:
+                sheet.update_cell(1, len(headers) + 1, "Exit_Price")
+                sheet.update_cell(1, len(headers) + 2, "Exit_Date")
+                headers = sheet.row_values(1)
+                
+            exit_price_col = headers.index("Exit_Price") + 1
+            exit_date_col = headers.index("Exit_Date") + 1
+            
+            sheet.update_cell(row_idx, exit_price_col, exit_price)
+            sheet.update_cell(row_idx, exit_date_col, datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S"))
+            return True
+    return False
