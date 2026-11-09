@@ -26,7 +26,10 @@ from google_sheets_audit import (
     append_performance_rows,
     append_analysis_rows,
     append_watchlist_row,
-    read_watchlist
+    read_watchlist,
+    log_paper_trade,
+    get_paper_trades,
+    close_paper_trade
 )
 from audit_analysis import build_completed_outcomes, analyze_outcome_combinations
 from performance_tracker import (
@@ -1086,7 +1089,30 @@ def render_detail(symbol, row):
             </div>
         </div>
         ''', unsafe_allow_html=True)
+        
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    
+    # Paper Trade Execution Button
+    if shares_to_buy > 0:
+        if st.button(f"🚀 EXECUTE PAPER TRADE: Buy {shares_to_buy} shares of {symbol}", type="primary", use_container_width=True):
+            trade_payload = {
+                "Trade_ID": f"{symbol}_{int(time.time())}",
+                "Symbol": symbol,
+                "Entry_Date": datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S'),
+                "Entry_Price": price_val,
+                "Quantity": shares_to_buy,
+                "Invested_Capital": capital_required,
+                "Stop_Loss": active_sl,
+                "Target_1": float(t1) if t1 else 0.0,
+                "Target_2": float(t2) if t2 else 0.0,
+                "Status": "OPEN",
+                "PnL": 0.0
+            }
+            try:
+                log_paper_trade(st.secrets, trade_payload)
+                st.toast(f"✅ Executed Paper Trade for {symbol}!")
+            except Exception as e:
+                st.error(f"Paper trade failed to execute. Error: {e}")
     # ----------------------
 
     tab_tech, tab_fund, tab_news, tab_audit = st.tabs(['📈 Technical Analytics', '🏛️ Fundamental Health', '📰 News & Filings', '📊 Audit Details'])
