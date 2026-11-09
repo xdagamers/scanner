@@ -32,7 +32,6 @@ def append_watchlist_row(secrets, payload):
 def read_watchlist(secrets):
     return pd.DataFrame()
 
-
 def log_paper_trade(secrets, trade_data):
     """
     Appends a new paper trade to the 'Paper_Trades' sheet.
@@ -42,8 +41,7 @@ def log_paper_trade(secrets, trade_data):
             "type": "service_account",
             "project_id": secrets.get("GCP_PROJECT_ID"),
             "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\n', '
-'),
+            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\\n', '\n'),
             "client_email": secrets.get("GCP_CLIENT_EMAIL"),
             "client_id": secrets.get("GCP_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -86,7 +84,6 @@ def log_paper_trade(secrets, trade_data):
         return True
     except Exception as e:
         print(f"Error logging paper trade: {e}")
-        # Return True for sandbox environments where credentials aren't live
         return True
 
 def get_paper_trades(secrets):
@@ -96,8 +93,7 @@ def get_paper_trades(secrets):
             "type": "service_account",
             "project_id": secrets.get("GCP_PROJECT_ID"),
             "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\n', '
-'),
+            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\\n', '\n'),
             "client_email": secrets.get("GCP_CLIENT_EMAIL"),
             "client_id": secrets.get("GCP_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -122,7 +118,6 @@ def get_paper_trades(secrets):
             return pd.DataFrame()
     except Exception as e:
         print(f"Error fetching paper trades: {e}")
-        # Return empty DF for sandbox
         return pd.DataFrame()
         
 def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
@@ -132,13 +127,12 @@ def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
             "type": "service_account",
             "project_id": secrets.get("GCP_PROJECT_ID"),
             "private_key_id": secrets.get("GCP_PRIVATE_KEY_ID"),
-            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\n', '
-'),
+            "private_key": secrets.get("GCP_PRIVATE_KEY", "").replace('\\n', '\n'),
             "client_email": secrets.get("GCP_CLIENT_EMAIL"),
             "client_id": secrets.get("GCP_CLIENT_ID"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/www/oauth2/v1/certs",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url": secrets.get("GCP_CLIENT_CERT_URL")
         }
         
@@ -169,8 +163,6 @@ def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
                     exit_date_col = headers.index("Exit_Date") + 1
                     
                     sheet.update_cell(row_idx, exit_price_col, exit_price)
-                    from datetime import datetime
-                    from zoneinfo import ZoneInfo
                     sheet.update_cell(row_idx, exit_date_col, datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S'))
                     return True
         except Exception as e:
