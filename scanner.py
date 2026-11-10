@@ -57,42 +57,53 @@ def _load_csv(url):
 
 
 def load_universe():
-    """Load the official NIFTY LargeMidcap 250 universe.
-
-    The constituent source is attempted from NSE first and from the official
-    Nifty Indices host second if NSE's archive server returns 403/other errors.
-    Scanner scoring/ranking/criteria are unchanged.
-    """
+    """Load the official NIFTY 500 universe and classify caps accurately."""
     errors = []
-    for url in (NSE_URL, NIFTYINDICES_URL):
+    
+    # Official NSE Links for accurate mapping
+    n500_url = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
+    n100_url = "https://nsearchives.nseindia.com/content/indices/ind_nifty100list.csv"
+    nmid_url = "https://nsearchives.nseindia.com/content/indices/ind_niftymidcap150list.csv"
+    
+    try:
+        # Load the base 500 stocks
+        df_500 = _load_csv(n500_url)
+        symbol_col = next((c for c in df_500.columns if c.strip().lower() == "symbol"), None)
+        name_col = next((c for c in df_500.columns if c.strip().lower() in {"company name", "company_name"}), None)
+        
+        out = pd.DataFrame({
+            "symbol": df_500[symbol_col].astype(str).str.strip(),
+            "company_name": df_500[name_col].astype(str).str.strip() if name_col else df_500[symbol_col].astype(str).str.strip(),
+        })
+        out = out[out.symbol.ne("") & out.symbol.ne("nan")].drop_duplicates("symbol").reset_index(drop=True)
+        
+        # Load large and mid caps for explicit mapping
         try:
-            df = _load_csv(url)
-            symbol_col = next((c for c in df.columns if c.strip().lower() == "symbol"), None)
-            if symbol_col is None:
-                raise ValueError(f"No Symbol column in {url}")
-            name_col = next((c for c in df.columns if c.strip().lower() in {"company name", "company_name"}), None)
-
-            # Classify dynamically based on Nifty 500 structure
-            def classify_cap(idx):
-                if idx < 100: return "Large Cap"
-                elif idx < 250: return "Mid Cap"
-                else: return "Small Cap"
+            large_caps = set(_load_csv(n100_url)['Symbol'].astype(str).str.strip())
+        except Exception:
+            large_caps = set()
             
-            out = pd.DataFrame({
-                "symbol": df[symbol_col].astype(str).str.strip(),
-                "company_name": df[name_col].astype(str).str.strip() if name_col else df[symbol_col].astype(str).str.strip(),
-            })
-            out = out[out.symbol.ne("") & out.symbol.ne("nan")]
-            out = out.drop_duplicates("symbol").reset_index(drop=True)
-            out["cap_category"] = [classify_cap(i) for i in range(len(out))]
+        try:
+            mid_caps = set(_load_csv(nmid_url)['Symbol'].astype(str).str.strip())
+        except Exception:
+            mid_caps = set()
+            
+        # Classify based on official membership
+        def classify_symbol(sym):
+            if sym in large_caps: return "Large Cap"
+            if sym in mid_caps: return "Mid Cap"
+            return "Small Cap"
+            
+        out["cap_category"] = out["symbol"].apply(classify_symbol)
 
-            if len(out) < 200:
-                raise ValueError(f"Expected a broad market universe, got only {len(out)} symbols")
-            return out
-        except Exception as e:
-            errors.append(str(e))
-    raise RuntimeError("Could not load official NIFTY LargeMidcap 250 constituents: " + " | ".join(errors))
-
+        if len(out) < 200:
+            raise ValueError(f"Expected a broad market universe, got only {len(out)} symbols")
+        return out
+        
+    except Exception as e:
+        errors.append(str(e))
+        
+    raise RuntimeError("Could not load official NIFTY 500 constituents: " + " | ".join(errors))
 
 def yf_symbol(symbol):
     return symbol.replace("&", "%26") + ".NS"
