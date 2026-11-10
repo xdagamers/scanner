@@ -122,6 +122,8 @@ if 'audit_append_in_progress' not in st.session_state:
     st.session_state.audit_append_in_progress = False
 if 'trade_filter' not in st.session_state:
     st.session_state.trade_filter = 'All'
+if 'cap_filter' not in st.session_state:
+    st.session_state.cap_filter = 'All Caps'
 
 # -----------------------------------------------------------------------------
 # FINTECH ANALYTICS CSS
@@ -540,10 +542,13 @@ def get_timeframe_status(row):
     
     if dist <= 2.0 and rsi >= 60 and adx >= 20:
         return 'Breakout Swing (3-10d)', 'badge-accent'
-    elif rsi >= 55:
+    elif dist <= 4.0 and rsi >= 55:
         return 'Short Term (1-3w)', 'badge-brand'
-    else:
+    elif dist <= 7.0 and rsi >= 50:
         return 'Positional (2-6w)', 'badge-yellow'
+    else:
+        return 'Long Term (3-8m)', 'badge-brand'
+
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_market_snapshot():
@@ -1051,11 +1056,13 @@ def render_detail(symbol, row):
         f'</div>'
         
         # Right side: Targets & Dual Stops Grid
-        f'<div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">'
-        f'<div class="target-box" style="border-left: 3px solid var(--accent);"><div class="target-label">Target 1</div><div class="target-value">{money(t1)}</div><div class="target-upside" style="color:var(--accent);">{t1up:+.2f}%</div></div>'
-        f'<div class="target-box" style="border-left: 3px solid var(--brand);"><div class="target-label">Target 2</div><div class="target-value">{money(t2)}</div><div class="target-upside" style="color:var(--brand);">{t2up:+.2f}%</div></div>'
-        f'<div class="target-box" style="border-left: 3px solid var(--yellow);"><div class="target-label">Aggressive SL (Candle Low)</div><div class="target-value">{money(aggr_stop)}</div><div class="target-upside" style="color:var(--red);">{aggr_stop_pct:+.2f}%</div></div>'
-        f'<div class="target-box" style="border-left: 3px solid var(--red);"><div class="target-label">Structural SL (EMA)</div><div class="target-value">{money(struct_stop)}</div><div class="target-upside" style="color:var(--red);">{struct_stop_pct:+.2f}%</div></div>'
+        f'<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px;">'
+        f'<div class="target-box" style="border-left: 3px solid var(--accent);"><div class="target-label">Target 1 (Swing)</div><div class="target-value">{money(t1)}</div><div class="target-upside" style="color:var(--accent);">{t1up:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--brand);"><div class="target-label">Target 2 (Positional)</div><div class="target-value">{money(t2)}</div><div class="target-upside" style="color:var(--brand);">{t2up:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid #8b5cf6;"><div class="target-label">Target 3 (Long Term)</div><div class="target-value">{money(t3)}</div><div class="target-upside" style="color:#8b5cf6;">{((t3/price)-1)*100 if price else 0:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--yellow);"><div class="target-label">Aggressive SL</div><div class="target-value">{money(aggr_stop)}</div><div class="target-upside" style="color:var(--red);">{aggr_stop_pct:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--red);"><div class="target-label">Structural SL</div><div class="target-value">{money(struct_stop)}</div><div class="target-upside" style="color:var(--red);">{struct_stop_pct:+.2f}%</div></div>'
+        f'<div class="target-box" style="border-left: 3px solid var(--border);"><div class="target-label">Risk/Reward (T2)</div><div class="target-value">{float(row.get("risk_reward", 0)):.2f}x</div><div class="target-upside" style="color:var(--muted);">Ratio</div></div>'
         f'</div>'
         
         f'</div>'
@@ -1461,11 +1468,12 @@ def render_home():
         * **Real-World Representation:** Distance measures how close a runner is to the starting line. 
         * **The Sweet Spot:** **$0.00\%$ to $+2.00\%$**. If distance is negative, the stock is approaching resistance. If it is slightly positive ($+0.5\%$), it has just breached the ceiling. If it is $> 5\%$, the move is overextended.
 
-        ### 4. Timeframe Badge (`Breakout Swing`, `Short Term`, `Positional`)
+        ### 4. Timeframe Badge (`Breakout Swing`, `Short Term`, `Positional`, `Long Term`)
         * **What it is:** An automated classification of the trade duration based on indicator velocity (RSI, ADX, and Price Proximity).
         * **Breakout Swing (3–10d):** Tight proximity ($\le 2\%$), RSI $\ge 60$, ADX $\ge 20$. Ready to explode immediately.
         * **Short Term (1–3w):** Moderate momentum building a continuation pattern.
         * **Positional (2–6w):** Deep base accumulation requiring multi-week patience.
+        * **Long Term (3-8m):** Extended timeframe breakout targets based on macro targets.
 
         ---
 
@@ -1529,7 +1537,7 @@ def render_home():
         * **Bullish Engulfing:** A large green candle completely swallows the previous red candle. Sellers tried to push price down, but buyers overwhelmed them completely by the close.
         * **Hammer:** A small body with a long lower shadow (wick) at least twice the size of the body. Sellers drove prices down intraday, but aggressive institutional buyers stepped in at the lows and bought the entire dip before the close.
         * **Morning Star:** A three-candle bottom reversal pattern indicating the exhaustion of sellers and a rapid shift in control to buyers.
-        * **Bullish Marubozu:** A strong green candle with virtually no wicks (opens near the low, closes near the high). Absolute, multidimensional buyer dominance.
+        * **Bullish Marubozu:** A strong green candle with virtually no wicks (opens near the low, closes near the high). Absolute, uncontested buyer dominance.
 
         ---
 
@@ -1984,6 +1992,8 @@ def render_home():
             
             if st.session_state.trade_filter != "All":
                 display = display[display['timeframe_val'] == st.session_state.trade_filter]
+            if st.session_state.cap_filter != "All Caps":
+                display = display[display['cap_category'] == st.session_state.cap_filter]
 
             sort_cols = [c for c in ['rating', 'score', 'rank_score', 'distance_pct'] if c in display.columns]
             if sort_cols:
@@ -2016,7 +2026,19 @@ def render_home():
             st.button("Breakout Swing (3-10d)", type="primary" if st.session_state.trade_filter == "Breakout Swing (3-10d)" else "secondary", on_click=set_tf_filter, args=("Breakout Swing (3-10d)",), use_container_width=True)
             st.button("Short Term (1-3w)", type="primary" if st.session_state.trade_filter == "Short Term (1-3w)" else "secondary", on_click=set_tf_filter, args=("Short Term (1-3w)",), use_container_width=True)
             st.button("Positional (2-6w)", type="primary" if st.session_state.trade_filter == "Positional (2-6w)" else "secondary", on_click=set_tf_filter, args=("Positional (2-6w)",), use_container_width=True)
+            st.button("Long Term (3-8m)", type="primary" if st.session_state.trade_filter == "Long Term (3-8m)" else "secondary", on_click=set_tf_filter, args=("Long Term (3-8m)",), use_container_width=True)
 
+            st.markdown('<div class="section-title">Filter by Cap Size</div>', unsafe_allow_html=True)
+            def set_cap_filter(cf):
+                st.session_state.cap_filter = cf
+            
+            c_cap1, c_cap2 = st.columns(2)
+            with c_cap1:
+                st.button("All Caps", type="primary" if st.session_state.cap_filter == "All Caps" else "secondary", on_click=set_cap_filter, args=("All Caps",), use_container_width=True)
+                st.button("Mid Cap", type="primary" if st.session_state.cap_filter == "Mid Cap" else "secondary", on_click=set_cap_filter, args=("Mid Cap",), use_container_width=True)
+            with c_cap2:
+                st.button("Large Cap", type="primary" if st.session_state.cap_filter == "Large Cap" else "secondary", on_click=set_cap_filter, args=("Large Cap",), use_container_width=True)
+                st.button("Small Cap", type="primary" if st.session_state.cap_filter == "Small Cap" else "secondary", on_click=set_cap_filter, args=("Small Cap",), use_container_width=True)
 
             st.markdown('<div class="section-title">Cap Allocation</div>', unsafe_allow_html=True)
             light = st.session_state.theme_mode == 'light'
