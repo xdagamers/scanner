@@ -7,8 +7,8 @@ import yfinance as yf
 
 # NIFTY LargeMidcap 250 = NIFTY 100 + NIFTY Midcap 150.
 # This is the official NSE "top 250" broad large+mid-cap universe.
-NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_niftylargemidcap250list.csv"
-NIFTYINDICES_URL = "https://www.niftyindices.com/IndexConstituent/ind_niftylargemidcap250list.csv"
+NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
+NIFTYINDICES_URL = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
 LEGACY_NSE_URL = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
@@ -71,15 +71,23 @@ def load_universe():
             if symbol_col is None:
                 raise ValueError(f"No Symbol column in {url}")
             name_col = next((c for c in df.columns if c.strip().lower() in {"company name", "company_name"}), None)
+
+            # Classify dynamically based on Nifty 500 structure
+            def classify_cap(idx):
+                if idx < 100: return "Large Cap"
+                elif idx < 250: return "Mid Cap"
+                else: return "Small Cap"
+            
             out = pd.DataFrame({
                 "symbol": df[symbol_col].astype(str).str.strip(),
                 "company_name": df[name_col].astype(str).str.strip() if name_col else df[symbol_col].astype(str).str.strip(),
-                "cap_category": "Large+Mid Cap",
             })
             out = out[out.symbol.ne("") & out.symbol.ne("nan")]
             out = out.drop_duplicates("symbol").reset_index(drop=True)
+            out["cap_category"] = [classify_cap(i) for i in range(len(out))]
+
             if len(out) < 200:
-                raise ValueError(f"Expected a large+midcap universe, got only {len(out)} symbols")
+                raise ValueError(f"Expected a broad market universe, got only {len(out)} symbols")
             return out
         except Exception as e:
             errors.append(str(e))
