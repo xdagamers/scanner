@@ -1433,38 +1433,134 @@ def render_home():
                 st.dataframe(history_df[cols_to_show], use_container_width=True, hide_index=True)
 
     with tab_sikho:
-        st.markdown('''
-        ## 📚 Sikho: The NIFTY Momentum Masterclass
-        Welcome to the engine room. This scanner doesn't just pick random stocks; it uses a specific mathematical formula to find **Momentum Breakouts**.
-        
-        ### 1. The Core Setup (When to enter)
-        * **Breakout Level:** The exact price ceiling the stock has struggled to cross in the past.
-        * **Resistance Touches:** How many times the stock has hit this ceiling and fallen back. **(Ideal: 3 to 10 touches).** 
-        * **Distance:** How far the current price is from the Breakout Level. **Ideal Entry Range:** `0.00% to +2.00%`.
-        * **Breakout Trigger:** The exact price where you should safely execute your buy order.
+        st.markdown("""
+        # 📚 SIKHO: The Complete NIFTY Momentum Intelligence Masterclass
+        ## Institutional-Grade Technical & Fundamental Reference Manual
 
-        ### 2. The Fuel (Is the move real?)
-        * **RVOL (Relative Volume):** Compares today's volume to the average. **Ideal:** `> 1.5x`. High RVOL confirms the breakout is genuine.
-        * **EOD Delivery %:** The percentage of traded shares that buyers actually took home to their Demat accounts. **Ideal:** `> 55%`.
+        Welcome to the definitive manual for your proprietary scanner and analytics dashboard. This curriculum is engineered to break down **every single technical term, indicator, badge, and metric** displayed anywhere across your app screen. 
 
-        ### 3. The Momentum Engine (How fast will it go?)
-        * **RSI (Relative Strength Index):** Measures momentum. **The Sweet Spot:** `55 to 70`.
-        * **ADX (Average Directional Index):** Measures the *strength* of the trend. **Ideal:** `> 20`.
-        * **Squeeze:** Measures volatility compression. A coiled spring getting ready for expansion.
-
-        ### 4. Risk & Survival
-        * **ATR % (Average True Range):** How much the stock naturally swings up or down daily. Do not put your stop loss tighter than this!
-        * **Stop Reference:** If the price closes below this, the breakout has failed. Exit.
-        * **Risk / Reward:** **Ideal:** `> 1.5`.
+        You will learn exactly what each value represents mathematically, why it matters in real-world market dynamics, and how combinations of these metrics signal high-probability institutional accumulation.
 
         ---
-        ### 🧠 The Master Formula: Predicting the Upward Move
-        To predict a highly probable **UPWARD** move, look for this exact combination:
-        1. **The Trigger:** `Distance` is between `0% and 2%`.
-        2. **The Confirmation:** `RVOL` is `> 1.5x` AND `EOD Delivery %` is `> 55%`.
-        3. **The Momentum:** `RSI` is glowing green between `55-70`, and `ADX` is `> 20`.
-        4. **The History:** `Resistance Touches` is `> 3`.
-        ''')
+
+        ## SECTION 1: Dashboard Home & Scanner Results Screen
+        When you run the scanner or view the Bento grid of matching stocks, several core metrics appear on each stock card. Here is what they mean:
+
+        ### 1. Cap Category (`Large Cap`, `Large+Mid Cap`, etc.)
+        * **What it is:** The market capitalization classification of the company based on its total valuation on the NSE/BSE.
+        * **Why it matters:** Large caps provide institutional liquidity and lower volatility during macro pullbacks; mid/small caps provide explosive momentum velocity.
+        * **Real-World Representation:** Large caps are like massive cargo ships—harder to move, but impossible to sink easily. Smaller caps are speedboats—faster returns, but higher risk in choppy waters.
+
+        ### 2. Score (`Score: 0 to 100`)
+        * **What it is:** The proprietary composite mathematical rating calculated by your scanner engine, weighing volume, momentum, trend, and proximity.
+        * **Why it matters:** It filters out 200+ NIFTY stocks down to the top tier instantly. 
+        * **The Threshold:** Scores **$\ge 80$** represent elite setups; **$65-79$** represent strong institutional setups.
+
+        ### 3. Distance to Resistance (`Distance %`)
+        * **What it is:** The percentage gap between the current stock price and its detected historical breakout ceiling (`Breakout Level`).
+        * **Real-World Representation:** Distance measures how close a runner is to the starting line. 
+        * **The Sweet Spot:** **$0.00\%$ to $+2.00\%$**. If distance is negative, the stock is approaching resistance. If it is slightly positive ($+0.5\%$), it has just breached the ceiling. If it is $> 5\%$, the move is overextended.
+
+        ### 4. Timeframe Badge (`Breakout Swing`, `Short Term`, `Positional`)
+        * **What it is:** An automated classification of the trade duration based on indicator velocity (RSI, ADX, and Price Proximity).
+        * **Breakout Swing (3–10d):** Tight proximity ($\le 2\%$), RSI $\ge 60$, ADX $\ge 20$. Ready to explode immediately.
+        * **Short Term (1–3w):** Moderate momentum building a continuation pattern.
+        * **Positional (2–6w):** Deep base accumulation requiring multi-week patience.
+
+        ---
+
+        ## SECTION 2: Technical Analytics View (The Detail Screen)
+        When you click **"Launch Analytics"**, you open the deep-dive command center. Every parameter displayed in the metrics grid and charts corresponds to specific market behavior:
+
+        ### 2.1 Breakout Level & Breakout Trigger
+        * **Breakout Level:** The exact historical price ceiling where sellers previously stepped in and pushed the stock down (tested across 3 to 10 resistance touches).
+        * **Breakout Trigger:** A dynamic buffer price slightly *above* the Breakout Level. 
+        * **Real-World Representation:** The Breakout Level is the physical ceiling of a room. The Trigger is the exact height where you punch through drywall to confirm you are outside the room. Buying at the trigger ensures you don't get faked out by a false breakout.
+
+        ### 2.2 Relative Volume (`RVOL`)
+        * **What it is:** Today’s trading volume divided by its historical average volume (typically a 20-period moving average).
+        * **What the values represent:**
+          * **$< 0.8x$:** Low volume. Retail-only activity; avoid breakouts.
+          * **$1.1x$ to $1.4x$:** Moderate institutional interest.
+          * **$\ge 1.5x$:** **High Conviction.** Massive institutional block deals or accumulation occurring.
+        * **Real-World Combination:** An RVOL of $\ge 1.5x$ *combined* with a Distance of $0–2\%$ is your primary institutional footprint flag.
+
+        ### 2.3 Relative Strength Index (`RSI`)
+        * **What it is:** Momentum oscillator measuring the speed and change of price movements on a 0 to 100 scale.
+        * **What the values represent:**
+          * **$55$ to $70$ (The Sweet Spot):** The stock is in a healthy, aggressive bull phase. 
+          * **$> 75$:** Overheated / Parabolic. High risk of a short-term shakeout.
+          * **$< 45$:** Bearish control; momentum is dead.
+
+        ### 2.4 Average Directional Index (`ADX`)
+        * **What it is:** Trend strength indicator (0 to 100), measuring *how powerfully* a trend is moving regardless of direction.
+        * **What the values represent:**
+          * **$< 18$:** Choppy, range-bound, or sideways market. Breakouts fail here.
+          * **$20$ to $25$:** A trend is successfully forming.
+          * **$> 25$ to $40+$:** **Strong Trending Market.** Institutions are driving a sustained directional wave.
+
+        ### 2.5 MACD (Moving Average Convergence Divergence)
+        * **What it is:** Trend-following momentum indicator showing the relationship between two exponential moving averages.
+        * **Why it matters:** Positive MACD values with expanding histogram bars confirm that short-term momentum is accelerating faster than long-term average momentum.
+
+        ### 2.6 ATR % (Average True Range Percentage)
+        * **What it is:** Measures absolute daily volatility as a percentage of the stock price.
+        * **Real-World Representation:** ATR tells you how much a stock naturally "breathes" or fluctuates daily. If a stock has an ATR of $3\%$, normal daily noise is $3\%$. 
+        * **Why it matters:** Your Stop-Loss *must* be wider than your ATR %; otherwise, normal daily market breathing will trigger your stop-loss and knock you out of a winning trade prematurely.
+
+        ### 2.7 EOD Delivery % (`Delivery %`)
+        * **What it is:** The exact percentage of traded shares that were transferred into investors' Demat accounts at the end of the trading day rather than squared off intraday.
+        * **What the values represent:**
+          * **$< 45\%$:** Day-trader heavy, speculative churn.
+          * **$> 55\%$ to $70+\%$:** **Structural Accumulation.** Buyers are locking shares away in long-term portfolios.
+
+        ---
+
+        ## SECTION 3: Candlestick Patterns & Chart Overlays
+        The Plotly chart on your analytics view features automated pattern recognition and institutional moving averages:
+
+        ### 3.1 EMA 50 & EMA 200 (Exponential Moving Averages)
+        * **EMA 50 (Purple Line):** Represents the medium-term institutional trend (approx. 10 weeks of trading data). Healthy swing trade stocks ride above the EMA 50.
+        * **EMA 200 (Yellow Line):** Represents the macro bull/bear dividing line (approx. 40 weeks). 
+        * **Real-World Representation:** When Price > EMA 50 > EMA 200 in a clean stacked formation, it means short-term, medium-term, and long-term participants are all making money. The path of least resistance is strictly upward.
+
+        ### 3.2 Automated Candlestick Pattern Recognition (`🎯`)
+        Your app scans the last 3 candles to detect high-probability institutional reversal and continuation formations:
+        * **Bullish Engulfing:** A large green candle completely swallows the previous red candle. Sellers tried to push price down, but buyers overwhelmed them completely by the close.
+        * **Hammer:** A small body with a long lower shadow (wick) at least twice the size of the body. Sellers drove prices down intraday, but aggressive institutional buyers stepped in at the lows and bought the entire dip before the close.
+        * **Morning Star:** A three-candle bottom reversal pattern indicating the exhaustion of sellers and a rapid shift in control to buyers.
+        * **Bullish Marubozu:** A strong green candle with virtually no wicks (opens near the low, closes near the high). Absolute, multidimensional buyer dominance.
+
+        ---
+
+        ## SECTION 4: The Master Combination Matrix (How Terms Work Together)
+        In real-world trading, single indicators can lie. True institutional edge comes from **confluence**—when multiple parameters align simultaneously. Here is how you should read your app's signals in combination:
+
+        | Market Condition | Metric Combination on Your App | Real-World Meaning | Action |
+        | :--- | :--- | :--- | :--- |
+        | **Elite Breakout** | Distance $\le 2\%$ + RVOL $\ge 1.5x$ + Delivery $> 55\%$ + RSI $55-70$ | Institutions are sweeping the order book to break resistance on heavy delivery volume. | **A+ Setup:** Execute Paper Trade / Plan Entry. |
+        | **Fakeout Trap** | Distance $\le 1\%$ + RVOL $< 0.8x$ + Delivery $< 40\%$ + RSI $> 75$ | Retail hype pushing price to resistance with zero institutional backing; volume is dying. | **Avoid / Ignore:** High probability of reversal. |
+        | **Coiled Spring** | Squeeze Active + ADX $> 22$ + EMA Structure Stacked + ATR contracting | Volatility has compressed to historic lows inside an uptrend; expansion is imminent. | **Watch Closely:** Set alert for breakout trigger. |
+        | **Trend Exhaustion** | RSI $> 80$ + ADX falling from $40$ + RVOL declining over 3 days | Momentum is burning out; early buyers are starting to take profits off the table. | **Tighten Stops / Take Profit.** |
+
+        ---
+
+        ## SECTION 5: Risk Management & The Paper Portfolio Dashboard
+        Once a stock passes all technical and fundamental criteria, the app shifts from **Analysis** to **Execution & Tracking**:
+
+        ### 5.1 Dual Stop-Loss Framework
+        * **Aggressive Stop (Candle Low):** Placed right under the low of the breakout candle. Used when you want zero tolerance for failure; if the very next day reverses, you cut losses immediately.
+        * **Structural Stop (EMA / ATR):** Placed below the rising EMA 50. Used for positional trades where you want to give a large-cap stock room to fluctuate through normal 3–5 day market pullbacks.
+
+        ### 5.2 Dynamic Position Sizer & Capital Required
+        * **Max Risk Amount (₹):** The maximum rupees you are willing to lose if the trade hits your stop-loss (e.g., ₹2,000).
+        * **Recommended Shares:** Automatically computed via formula: $\text{Shares} = \frac{\text{Max Risk}}{\text{Price} - \text{Stop Loss}}$. This ensures your position size scales dynamically based on stock volatility.
+
+        ### 5.3 Live PnL & Paper Portfolio Tracking
+        * When you click **🚀 Execute Paper Trade**, the trade is logged via webhook into your Google Sheet (`Paper_Trades` tab).
+        * The **Paper Portfolio Tab** pings Yahoo Finance in real time to fetch live market prices, calculating your **Unrealized PnL** in Rupees and Percentage.
+        * Clicking **Close Trade** instantly logs your exit price, final profit/loss, and timestamp back to the sheet, archiving your performance in the Closed Trades History table.
+        """)
 
     with tab_dash:
         # ACTION BAR (Bento Action Header)
