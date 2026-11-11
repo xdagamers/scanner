@@ -1,247 +1,193 @@
+import html
+import numpy as np
 import pandas as pd
-from datetime import datetime
-import time
 import streamlit as st
 import yfinance as yf
-import html
 
-# Try to import the delete function, but don't crash if it's missing during test
-try:
-    from google_sheets_audit import delete_watchlist_row
-except ImportError:
-    pass
 
-def money(x):
+def _clean_num(val, default=0.0):
     try:
-        return f'₹{float(x):,.2f}'
-    except:
-        return '—'
-
-@st.cache_data(ttl=30, show_spinner=False)
-def fetch_live_watchlist_prices(symbols):
-    """Fetches live prices using yfinance."""
-    live_prices = {}
-    if not symbols: return live_prices
-    
-    try:
-        tickers = [f"{s.replace('.NS', '')}.NS" for s in symbols]
-        data = yf.download(tickers, period="1d", interval="1m", progress=False)
-        if not data.empty:
-            for sym, ticker in zip(symbols, tickers):
-                if isinstance(data.columns, pd.MultiIndex):
-                    try: live_prices[sym] = float(data['Close'][ticker].dropna().iloc[-1])
-                    except: pass
-                else:
-                    try: live_prices[sym] = float(data['Close'].dropna().iloc[-1])
-                    except: pass
+        if pd.isna(val):
+            return default
+        cleaned = str(val).replace("₹", "").replace(",", "").replace("%", "").strip()
+        return float(cleaned) if cleaned else default
     except Exception:
-        pass
-        
+        return default
+
+
+def _money(x):
+    return f"₹{x:,.2f}" if x is not None and np.isfinite(x) and x > 0 else "—"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_live_watchlist_prices(symbols_tuple):
+    """Fetch live prices for watchlist symbols with MultiIndex handling and fast_info fallback."""
+    live_prices = {}
+    for sym in symbols_tuple:
+        clean_sym = str(sym).strip().upper().replace(".NS", "")
+        if not clean_sym:
+            continue
+        yf_sym = clean_sym.replace("&", "%26") + ".NS"
+        price_found = None
+
+        # Primary Method: 5-day 1d download
+        try:
+            t_df = yf.download(yf_sym, period="5d", interval="1d", progress=False, auto_adjust=True)
+            if t_df is not None and not t_df.empty:
+                close_col = t_df["Close"]
+                if isinstance(close_col, pd.DataFrame):
+                    close_col = close_col.iloc[:, 0]
+                close_series = close_col.dropna()
+                if not close_series.empty:
+                    price_found = float(close_series.iloc[-1])
+        except Exception:
+            pass
+
+        # Fallback Method: Yahoo Finance fast_info
+        if price_found is None or not np.isfinite(price_found) or price_found <= 0:
+            try:
+                fi = yf.Ticker(yf_sym).fast_info
+                lp = fi.get("lastPrice") or fi.get("regularMarketPrice") or fi.get("previousClose")
+                if lp and float(lp) > 0:
+                    price_found = float(lp)
+            except Exception:
+                pass
+
+        if price_found is not None and np.isfinite(price_found) and price_found > 0:
+            live_prices[clean_sym] = price_found
+
     return live_prices
 
-def render_watchlist_card(row, live_prices):
-    """Helper function to render a single watchlist card."""
-    sym = str(row.get("Symbol", "")).replace(".NS", "")
-    
-    added_date = pd.to_datetime(row.get("Date_Added"), errors="coerce")
-    days_active = (datetime.now() - added_date).days if pd.notna(added_date) else 0
-    
-    entry_str = str(row.get("Price_Added", 0)).replace(',', '').strip()
-    try:
-        entry_price = float(entry_str)
-    except ValueError:
-        entry_price = 0.0
-        
-    live_price = live_prices.get(sym, entry_price)
-    change_pct = ((live_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
-    
-    if change_pct > 0:
-        arrow, color, border = "▲", "var(--accent)", "border:1px solid rgba(16, 185, 129, 0.3);"
-    elif change_pct < 0:
-        arrow, color, border = "▼", "var(--red)", "border:1px solid rgba(239, 68, 68, 0.3);"
-    else:
-        arrow, color, border = "−", "var(--muted)", ""
-        
-    trade_type = str(row.get("Trade_Type", "SWING"))
-    exp_days = str(row.get("Expected_Days", ""))
-    
-    try: t1 = f'{float(row.get("Target_1", 0)):.2f}'
-    except: t1 = "—"
-        
-    try: t2 = f'{float(row.get("Target_2", 0)):.2f}'
-    except: t2 = "—"
-    
-    card_html = (
-        f'<div class="bento-stock-card" style="padding:12px 14px; {border}">'
-        
-        # Row 1: Symbol & CP
-        f'<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px;">'
-        f'<div style="font-size:1.1rem; font-weight:900; color:var(--text); letter-spacing:0.02em;">{html.escape(sym)}</div>'
-        f'<div style="font-size:1.05rem; font-weight:900; color:var(--text);"><span style="font-size:0.75rem; font-weight:500; color:var(--text);">CP- </span>{money(live_price)}</div>'
-        f'</div>'
-        
-        # Row 2: Entry & Pct Change
-        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">'
-        f'<div style="font-size:0.75rem; color:var(--muted);">Entry: {money(entry_price)}</div>'
-        f'<div style="font-size:0.9rem; font-weight:900; color:{color};">{arrow} {abs(change_pct):.2f}%</div>'
-        f'</div>'
-        
-        # Row 3: Trade Type & Days Active
-        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">'
-        f'<div style="font-size:0.65rem; font-weight:800; color:#8ba2b5; text-transform:uppercase; letter-spacing:0.03em;">{html.escape(trade_type)} <span style="font-weight:500; color:var(--muted); text-transform:none;">{html.escape(exp_days)}</span></div>'
-        f'<div style="font-size:0.65rem; font-weight:800; color:#8ba2b5; text-transform:uppercase; letter-spacing:0.03em;">{days_active} DAYS</div>'
-        f'</div>'
-        
-        # Row 4: Targets
-        f'<div style="display:flex; gap:12px; align-items:center; padding-top:10px; border-top:1px solid rgba(139, 162, 181, 0.15);">'
-        f'<div style="display:flex; flex-direction:column; gap:2px; flex:1; text-align:left;">'
-        f'<span style="font-size:0.75rem; font-weight:500; color:var(--text);">Target -1</span>'
-        f'<span style="font-size:0.95rem; font-weight:700; color:var(--text);">{t1}</span>'
-        f'</div>'
-        f'<div style="display:flex; flex-direction:column; gap:2px; flex:1; text-align:left;">'
-        f'<span style="font-size:0.75rem; font-weight:500; color:var(--text);">Target -2</span>'
-        f'<span style="font-size:0.95rem; font-weight:700; color:var(--text);">{t2}</span>'
-        f'</div>'
-        f'</div>'
-        
-        f'</div>'
-    )
-    return card_html, change_pct
 
 def render_watchlist_tab(watchlist_df):
-    
-    if watchlist_df.empty:
-        st.markdown('<div class="section-title" style="margin:0; border:none;">Active Positions & Watchlist</div>', unsafe_allow_html=True)
-        st.info("Your Manual_Watch_List is currently empty. Add stocks from the scanner!")
+    if watchlist_df is None or watchlist_df.empty:
+        st.info("Your Live Watchlist is empty. Go to the Scanner Dashboard, launch analytics on a stock, and click '⭐ Add to Watchlist'!")
         return
 
-    if "Symbol" not in watchlist_df.columns:
-        watchlist_df["Symbol"] = watchlist_df.get("Stock_Name", "")
-        
-    symbols = watchlist_df["Symbol"].dropna().unique().tolist()
-    live_prices = fetch_live_watchlist_prices(symbols)
-    
-    # Bifurcate the portfolio based on actual live calculations
-    winners = []
-    losers = []
-    
-    for idx, row in watchlist_df.iterrows():
-        sym = str(row.get("Symbol", "")).replace(".NS", "")
-        entry_str = str(row.get("Price_Added", 0)).replace(',', '').strip()
-        try: entry_price = float(entry_str)
-        except ValueError: entry_price = 0.0
-            
-        live_price = live_prices.get(sym, entry_price)
-        change_pct = ((live_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
-        
-        # Categorize
-        if change_pct >= 0:
-            winners.append((row, change_pct))
+    df = watchlist_df.copy()
+    if "Symbol" not in df.columns:
+        st.warning("Watchlist sheet does not contain a 'Symbol' column.")
+        return
+
+    df["Symbol_Clean"] = df["Symbol"].astype(str).str.strip().str.upper().str.replace(".NS", "", regex=False)
+    df = df[df["Symbol_Clean"].ne("") & df["Symbol_Clean"].ne("NAN")].reset_index(drop=True)
+
+    if df.empty:
+        st.info("No valid stock symbols found in your watchlist.")
+        return
+
+    # Optional simulated capital per watchlist stock to see rupee Unrealized PnL alongside % return
+    wc_col1, wc_col2 = st.columns([6, 2])
+    with wc_col1:
+        st.markdown(
+            "<div class='small-muted' style='margin-bottom:12px;'>Live prices are pulled in real time via Yahoo Finance APIs and compared against your saved Price_Added.</div>",
+            unsafe_allow_html=True,
+        )
+    with wc_col2:
+        sim_capital = st.number_input(
+            "Simulated Capital / Stock (₹)",
+            min_value=1000,
+            value=25000,
+            step=5000,
+            key="watchlist_sim_cap",
+        )
+
+    symbols_tuple = tuple(df["Symbol_Clean"].unique().tolist())
+    live_prices = fetch_live_watchlist_prices(symbols_tuple)
+
+    total_sim_pnl = 0.0
+    total_sim_invested = 0.0
+
+    for idx, row in df.iterrows():
+        sym = row["Symbol_Clean"]
+        company = str(row.get("Stock_Name", sym) or sym)
+        date_added = str(row.get("Date_Added", "—") or "—")
+        trade_type = str(row.get("Trade_Type", "Setup") or "Setup")
+        exp_days = str(row.get("Expected_Days", "N/A") or "N/A")
+
+        price_added = _clean_num(row.get("Price_Added", 0))
+        live_price = live_prices.get(sym, price_added)
+
+        t1 = _clean_num(row.get("Target_1", 0))
+        t2 = _clean_num(row.get("Target_2", 0))
+        t3 = _clean_num(row.get("Target_3", 0))
+        trigger = _clean_num(row.get("Trigger_Price", 0))
+
+        # Calculate Unrealized Return % and Simulated Rupee PnL
+        if price_added > 0 and live_price > 0:
+            diff_per_share = live_price - price_added
+            return_pct = ((live_price / price_added) - 1.0) * 100.0
+            sim_qty = max(1, int(sim_capital // price_added))
+            sim_pnl = diff_per_share * sim_qty
+            total_sim_pnl += sim_pnl
+            total_sim_invested += (price_added * sim_qty)
         else:
-            losers.append((row, change_pct))
-            
-    # Sort by performance (highest gainers first, biggest losers first)
-    winners = sorted(winners, key=lambda x: x[1], reverse=True)
-    losers = sorted(losers, key=lambda x: x[1])
+            diff_per_share = 0.0
+            return_pct = 0.0
+            sim_qty = 0
+            sim_pnl = 0.0
 
-    # Header with Portfolio Summary Stats
-    header_html = (
-        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px; padding:16px 20px; background:var(--card); border:1px solid var(--border); border-radius:12px;">'
-        f'<div style="display:flex; align-items:center; gap:24px;">'
-        f'<div style="font-size:1.2rem; font-weight:800; color:var(--text); letter-spacing:-0.02em;">Live Portfolio Snapshot</div>'
-        f'<div style="display:flex; gap:16px;">'
-        f'<span class="badge badge-brand">Total Trades: {len(watchlist_df)}</span>'
-        f'<span class="badge badge-green">🟢 In Profit: {len(winners)}</span>'
-        f'<span class="badge badge-red">🔴 In Loss: {len(losers)}</span>'
-        f'</div>'
-        f'</div>'
-        f'<span class="badge badge-grey">🟢 Yahoo Finance Live Feed</span>'
-        f'</div>'
-    )
-    st.markdown(header_html, unsafe_allow_html=True)
-    
-    # ---------------------------------------------------------
-    # SECTION 1: PROFITABLE TRADES (GREEN)
-    # ---------------------------------------------------------
-    if winners:
-        st.markdown(f'<div class="section-title" style="margin-top:0; border-bottom:2px solid var(--accent); padding-bottom:8px; display:inline-block;">Profitable Positions <span style="color:var(--muted); font-size:0.9rem;">({len(winners)})</span></div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        
-        for start in range(0, len(winners), 4):
-            cols = st.columns(4)
-            for j, col in enumerate(cols):
-                idx = start + j
-                if idx >= len(winners): continue
-                row, _ = winners[idx]
-                sym = str(row.get("Symbol", "")).replace(".NS", "")
-                card_html, _ = render_watchlist_card(row, live_prices)
-                
-                with col:
-                    st.markdown(card_html, unsafe_allow_html=True)
-                    
-                    # --- ADDED DELETION CONFIRMATION LOGIC ---
-                    confirm_key = f"confirm_del_{sym}_{idx}"
-                    if not st.session_state.get(confirm_key, False):
-                        if st.button(f"✕ Close Trade", key=f"del_win_{sym}_{idx}", use_container_width=True):
-                            st.session_state[confirm_key] = True
-                            st.rerun()
-                    else:
-                        st.markdown("<div style='text-align:center; font-size:0.75rem; font-weight:700; margin-bottom:6px; color:var(--red);'>Are you sure?</div>", unsafe_allow_html=True)
-                        cc1, cc2 = st.columns(2)
-                        if cc1.button("Yes", key=f"yes_win_{sym}_{idx}", use_container_width=True, type="primary"):
-                            with st.spinner(f"Closing..."):
-                                try:
-                                    delete_watchlist_row(st.secrets, sym)
-                                    st.toast(f"✅ {sym} removed!")
-                                    st.session_state[confirm_key] = False
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error: {e}")
-                        if cc2.button("No", key=f"no_win_{sym}_{idx}", use_container_width=True):
-                            st.session_state[confirm_key] = False
-                            st.rerun()
-                                
-        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        pnl_color = "var(--accent)" if return_pct >= 0 else "var(--red)"
+        pnl_sign = "+" if return_pct >= 0 else ""
 
-    # ---------------------------------------------------------
-    # SECTION 2: NEGATIVE TRADES (RED)
-    # ---------------------------------------------------------
-    if losers:
-        st.markdown(f'<div class="section-title" style="margin-top:0; border-bottom:2px solid var(--red); padding-bottom:8px; display:inline-block;">Positions in Loss <span style="color:var(--muted); font-size:0.9rem;">({len(losers)})</span></div>', unsafe_allow_html=True)
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        
-        for start in range(0, len(losers), 4):
-            cols = st.columns(4)
-            for j, col in enumerate(cols):
-                idx = start + j
-                if idx >= len(losers): continue
-                row, _ = losers[idx]
-                sym = str(row.get("Symbol", "")).replace(".NS", "")
-                card_html, _ = render_watchlist_card(row, live_prices)
-                
-                with col:
-                    st.markdown(card_html, unsafe_allow_html=True)
-                    
-                    # --- ADDED DELETION CONFIRMATION LOGIC ---
-                    confirm_key = f"confirm_del_{sym}_{idx}"
-                    if not st.session_state.get(confirm_key, False):
-                        if st.button(f"✕ Close Trade", key=f"del_loss_{sym}_{idx}", use_container_width=True):
-                            st.session_state[confirm_key] = True
-                            st.rerun()
-                    else:
-                        st.markdown("<div style='text-align:center; font-size:0.75rem; font-weight:700; margin-bottom:6px; color:var(--red);'>Are you sure?</div>", unsafe_allow_html=True)
-                        cc1, cc2 = st.columns(2)
-                        if cc1.button("Yes", key=f"yes_loss_{sym}_{idx}", use_container_width=True, type="primary"):
-                            with st.spinner(f"Closing..."):
-                                try:
-                                    delete_watchlist_row(st.secrets, sym)
-                                    st.toast(f"✅ {sym} removed!")
-                                    st.session_state[confirm_key] = False
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error: {e}")
-                        if cc2.button("No", key=f"no_loss_{sym}_{idx}", use_container_width=True):
-                            st.session_state[confirm_key] = False
-                            st.rerun()
+        # Status badge against Trigger & Targets
+        if t3 > 0 and live_price >= t3:
+            status_badge = "<span class='badge badge-green'>🎯 T3 REACHED</span>"
+        elif t2 > 0 and live_price >= t2:
+            status_badge = "<span class='badge badge-green'>🎯 T2 REACHED</span>"
+        elif t1 > 0 and live_price >= t1:
+            status_badge = "<span class='badge badge-green'>✅ T1 REACHED</span>"
+        elif trigger > 0 and live_price >= trigger:
+            status_badge = "<span class='badge badge-accent'>🚀 ABOVE TRIGGER</span>"
+        else:
+            status_badge = "<span class='badge badge-yellow'>⏳ IN WATCH ZONE</span>"
+
+        st.markdown(
+            f"""
+            <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                <div style="flex:1.5; min-width:220px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span style="font-weight:900; font-size:1.2rem; color:var(--text);">{html.escape(sym)}</span>
+                        <span class="badge badge-brand">{html.escape(trade_type)} ({html.escape(exp_days)})</span>
+                        {status_badge}
+                    </div>
+                    <div class="small-muted" style="margin-top:4px;">{html.escape(company)} • Added: {html.escape(date_added)}</div>
+                    <div class="small-muted" style="margin-top:4px;">
+                        Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b>{_money(t1)}</b> &nbsp;|&nbsp; T2: <b>{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
+                    </div>
+                </div>
+                <div>
+                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
+                    <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
+                </div>
+                <div>
+                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
+                    <div style="font-weight:800; font-size:1.1rem; color:var(--text);">{_money(live_price)}</div>
+                </div>
+                <div style="text-align:right; min-width:170px;">
+                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
+                    <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">
+                        {pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})
+                    </div>
+                    <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if total_sim_invested > 0:
+        tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
+        tot_sign = "+" if total_sim_pnl >= 0 else ""
+        tot_pct = (total_sim_pnl / total_sim_invested) * 100.0
+        st.markdown(
+            f"""
+            <div style="text-align:right; margin-top:8px; padding-right:16px;">
+                <span class="small-muted" style="font-size:0.8rem; text-transform:uppercase; font-weight:700;">Total Watchlist Simulated PnL:</span>
+                <span style="font-size:1.3rem; font-weight:900; color:{tot_color}; margin-left:8px;">
+                    {tot_sign}₹{total_sim_pnl:,.2f} ({tot_sign}{tot_pct:.2f}%)
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
