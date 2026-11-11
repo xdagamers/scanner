@@ -7,6 +7,7 @@ Google Sheet. This module contains no scanner logic.
 from __future__ import annotations
 
 from datetime import datetime
+import time
 import uuid
 from typing import Any
 
@@ -215,10 +216,12 @@ def read_performance_keys(secrets) -> pd.DataFrame:
         columns=["Signal_ID", "Tracking_Day", "Data_Quality", "Scan_Date"]
     )
 
+
 def read_watchlist(secrets) -> pd.DataFrame:
     result = _get(secrets, "read_watchlist")
     return pd.DataFrame(result.get("data", []))
-    
+
+
 def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
     if analysis_df is None or analysis_df.empty:
         return 0
@@ -231,6 +234,7 @@ def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
 def test_connection(secrets) -> dict:
     return _get(secrets, "ping")
 
+
 def append_watchlist_row(secrets, row_dict: dict) -> dict:
     if not row_dict:
         return {"saved": False, "reason": "empty"}
@@ -241,26 +245,23 @@ def append_watchlist_row(secrets, row_dict: dict) -> dict:
             "row": row_dict,
         },
     )
-    
-def delete_watchlist_row(secrets, symbol):
-    url = secrets.get("SHEETS_WEBHOOK_URL") or secrets.get("WEBHOOK_URL") or secrets.get("GOOGLE_WEBHOOK_URL")
-    
-    if not url:
-        raise ValueError("Missing Webhook URL in secrets. Please check your Streamlit Secrets.")
-        
-    payload = {
-        "action": "delete_watchlist",
-        "payload": {
-            "Symbol": symbol
-        }
-    }
-    
-    try:
-        response = requests.post(url, json=payload, timeout=15)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        raise RuntimeError(f"Failed to delete {symbol} from Watchlist: {str(e)}")
+
+
+def delete_watchlist_row(secrets, symbol: str) -> dict:
+    """Deletes a stock from Manual_Watch_List using the authenticated _post bridge."""
+    clean_sym = str(symbol).strip().upper()
+    if not clean_sym:
+        return {"ok": False, "reason": "empty_symbol"}
+    return _post(
+        secrets,
+        {
+            "action": "delete_watchlist",
+            "symbol": clean_sym,
+            "Symbol": clean_sym,
+            "payload": {"Symbol": clean_sym},
+        },
+    )
+
 
 # --- PAPER TRADING FUNCTIONS VIA APPS SCRIPT WEBHOOK ---
 
@@ -274,19 +275,20 @@ def log_paper_trade(secrets, trade_data):
         },
     )
 
+
 def get_paper_trades(secrets):
     """Fetches all paper trades via the Google Apps Script webhook."""
     try:
-        from zoneinfo import ZoneInfo # ensure import
         result = _get(secrets, "get_paper_trades")
         return pd.DataFrame(result.get("data", []))
     except Exception as e:
         print(f"Error fetching paper trades: {e}")
         return pd.DataFrame()
 
+
 def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
     """Sends a command to close a paper trade via Google Apps Script."""
-    from zoneinfo import ZoneInfo # ensure import
+    from zoneinfo import ZoneInfo
     return _post(
         secrets,
         {
