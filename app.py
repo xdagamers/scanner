@@ -758,12 +758,13 @@ def detect_pattern(df):
     a, b, c = df.iloc[-3], df.iloc[-2], df.iloc[-1]
     body = lambda x: abs(x['Close'] - x['Open'])
     rng = lambda x: max(x['High'] - x['Low'], 1e-9)
-    if b['Close'] < b['Open'] < c['Close'] and c['Open'] <= b['Close'] and c['Close'] >= b['Open']: return "Bullish Engulfing"
+    clv_c = (c['Close'] - c['Low']) / rng(c)
+    if b['Close'] < b['Open'] < c['Close'] and c['Open'] <= b['Close'] and c['Close'] >= b['Open'] and clv_c >= 0.65: return "Bullish Engulfing"
     lower = min(c['Open'], c['Close']) - c['Low']
     upper = c['High'] - max(c['Open'], c['Close'])
-    if lower >= 2 * body(c) and upper <= body(c) * 1.2: return "Hammer"
+    if lower >= 2 * body(c) and upper <= body(c) * 1.0 and clv_c >= 0.60: return "Hammer"
     if c['Close'] > c['Open'] and body(c) / rng(c) > 0.75: return "Bullish Marubozu"
-    if a['Close'] < a['Open'] and body(b) < body(a) * .5 and c['Close'] > c['Open'] and c['Close'] > (a['Open'] + a['Close']) / 2: return "Morning Star"
+    if a['Close'] < a['Open'] and body(b) < body(a) * 0.5 and c['Close'] > c['Open'] and c['Close'] > (a['Open'] + a['Close']) / 2: return "Morning Star"
     if b['Close'] < b['Open'] and c['Close'] > c['Open'] and c['Open'] < b['Low'] and c['Close'] > (b['Open'] + b['Close']) / 2: return "Piercing Line"
     if all(x['Close'] > x['Open'] for _, x in df.iloc[-3:].iterrows()) and a['Close'] < b['Close'] < c['Close']: return "Three White Soldiers"
     return None
@@ -901,22 +902,24 @@ def render_entry_zone_checklists(symbol, row, current_price):
         breakout_level = float(row.get('breakout_level', 0))
         rsi_val = float(row.get('rsi', 0))
         rvol_val = float(row.get('rvol', 0))
+        comp_vol = float(row.get('component_volume', 0.5))
+        false_bo = bool(row.get('false_breakout', False))
     except (ValueError, TypeError):
-        breakout_level, rsi_val, rvol_val = 0.0, 0.0, 0.0
+        breakout_level, rsi_val, rvol_val, comp_vol, false_bo = 0.0, 0.0, 0.0, 0.5, False
 
-    # PRE-BREAKOUT
+    # PRE-BREAKOUT (Aligned with scanner-v2 institutional rules)
     if breakout_level > 0:
         dist_pct = ((current_price - breakout_level) / breakout_level) * 100
-        prox_passed = -3.0 <= dist_pct <= 1.0
+        prox_passed = -3.0 <= dist_pct <= 1.5
     else:
         prox_passed = False
 
-    rsi_passed = rsi_val >= 60.0
-    vol_trend_passed = rvol_val >= 1.0
+    rsi_passed = 54.0 <= rsi_val <= 73.0
+    vol_trend_passed = (rvol_val >= 1.0 or comp_vol >= 0.50) and (comp_vol > 0.10) and (not false_bo)
 
     # POST-BREAKOUT
-    close_passed = current_price > breakout_level if breakout_level > 0 else False
-    brk_vol_passed = rvol_val >= 1.5
+    close_passed = (current_price > breakout_level) and (comp_vol > 0.10) if breakout_level > 0 else False
+    brk_vol_passed = (rvol_val >= 1.4) and (comp_vol >= 0.70)
     
     sustain_passed = False
     try:
@@ -1176,6 +1179,23 @@ def render_detail(symbol, row):
             if row.get('delivery_pct'):
                 st.markdown(f'<div class="bento-card" style="text-align:center;"><span class="badge badge-green">EOD Delivery Confirmed</span><div style="font-size:1.6rem;font-weight:900;margin-top:8px;color:var(--accent);">{row.get("delivery_pct")}%</div><div class="small-muted">Deliverable Quantity Exchange Archive</div></div>', unsafe_allow_html=True)
 
+        # Institutional Diagnostic Summary from Scanner v2
+        expl_text = str(row.get('explanation', '') or '')
+        has_warning = ('WARNING' in expl_text) or bool(row.get('false_breakout', False)) or (float(row.get('component_volume', 0.5) or 0.5) <= 0.10)
+        diag_border = 'var(--red)' if has_warning else 'var(--accent)'
+        diag_badge = '<span class="badge badge-red">⚠️ TRAP / REJECTION WARNING</span>' if has_warning else '<span class="badge badge-green">🛡️ INSTITUTIONAL ANTI-TRAP PASSED</span>'
+        if expl_text:
+            st.markdown(
+                f'<div class="bento-card" style="border-left: 4px solid {diag_border}; padding: 14px 18px; margin-bottom: 16px;">'
+                f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+                f'<span class="small-muted" style="text-transform:uppercase; font-weight:700; font-size:0.72rem;">Scanner v2 Diagnostic Thesis</span>'
+                f'{diag_badge}'
+                f'</div>'
+                f'<div style="font-size:0.92rem; font-weight:600; color:var(--text);">{html.escape(expl_text)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
         st.markdown('<div class="section-title">Technical Parameters</div>', unsafe_allow_html=True)
         fields = [
             ('Breakout level', money(row.get('breakout_level')), 'distance'), ('Breakout trigger', money(row.get('breakout_trigger')), None),
@@ -1183,11 +1203,16 @@ def render_detail(symbol, row):
             ('Score', f"{row.get('score',0):.1f}/100", 'score'), ('RVOL', f"{row.get('rvol',0):.2f}x", 'rvol'),
             ('RSI', f"{row.get('rsi',0):.1f}", 'rsi'), ('ADX', f"{row.get('adx',0):.1f}", 'adx'),
             ('EMA structure', row.get('ema_structure', '—'), None), ('MACD', f"{row.get('macd',0):.3f}", None),
-            ('ATR %', f"{row.get('atr_pct',0):.2f}%", None), ('Squeeze', f"{row.get('squeeze',0):.2f}", None),
+            ('ATR %', f"{row.get('atr_pct',0):.2f}%", None), ('VCP Squeeze', f"{row.get('squeeze',0):.2f}", None),
             ('NIFTY rel strength', pct(row.get('nifty_relative_strength')), None), ('60D rel strength', pct(row.get('relative_strength')), None),
             ('Candlestick', row.get('candlestick', '—'), None), ('Resistance touches', row.get('resistance_touches', '—'), None),
             ('Risk / reward', f"{row.get('risk_reward',0):.2f}", 'rr'), ('Market regime', row.get('market_regime', '—'), None),
             ('Stop reference', money(row.get('stop_reference')), None), ('EOD Delivery %', f"{row.get('delivery_pct','—')}%" if pd.notna(row.get('delivery_pct')) else '—', 'rvol'),
+            ('Rank Score (v2)', f"{float(row.get('rank_score', row.get('score', 0))):.1f}/100", 'score'),
+            ('Vol Quality Score', f"{float(row.get('component_volume', 0))*100:.0f}%", 'score'),
+            ('Multi-TF RS Score', f"{float(row.get('component_relative_strength', 0))*100:.0f}%", 'score'),
+            ('False BO Risk', 'Yes ⚠️' if row.get('false_breakout') else 'Clean ✅', None),
+            ('Setup Status', row.get('status', '—'), None),
         ]
         for start in range(0, len(fields), 5):
             cols = st.columns(5)
@@ -1398,6 +1423,36 @@ def render_home():
                                 
                         if price_found is not None and np.isfinite(price_found) and price_found > 0:
                             live_prices[sym] = price_found
+
+                # Pre-calculate Open Trades summary metrics (Total, In Profit, In Loss)
+                open_count = len(open_trades)
+                prof_trades = 0
+                loss_trades = 0
+                for _, tr_row in open_trades.iterrows():
+                    s_clean = str(tr_row['Symbol']).strip().upper().replace('.NS', '')
+                    ep_val = clean_num(tr_row.get('Entry_Price', 0))
+                    lp_val = live_prices.get(s_clean, ep_val)
+                    if lp_val > ep_val:
+                        prof_trades += 1
+                    elif lp_val < ep_val:
+                        loss_trades += 1
+
+                st.markdown(f'''
+                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:20px;">
+                    <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--brand);">
+                        <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700;">Total Open Paper Trades</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:var(--text); margin-top:4px;">{open_count}</div>
+                    </div>
+                    <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--accent); background:var(--accent-bg);">
+                        <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--accent);">Trades in Profit</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:var(--accent); margin-top:4px;">{prof_trades}</div>
+                    </div>
+                    <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--red); background:var(--red-bg);">
+                        <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--red);">Trades in Loss</div>
+                        <div style="font-size:1.8rem; font-weight:900; color:var(--red); margin-top:4px;">{loss_trades}</div>
+                    </div>
+                </div>
+                ''', unsafe_allow_html=True)
 
                 # Display Open Trades
                 total_pnl = 0.0
@@ -1926,7 +1981,7 @@ def render_home():
             st.session_state.scan_result = None
             scan_placeholder = st.empty()
             try:
-                scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating 250 Equities & EOD Delivery</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
+                scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating NIFTY 500 Universe & Anti-Trap Filters</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
                 with st.spinner('Executing models & fetching EOD data…'):
                     result = scan_universe(max_distance=10.0, period='2y', top_n=500)
                     result = enrich_shortlist_with_delivery(result)
@@ -2018,7 +2073,7 @@ def render_home():
             if st.session_state.cap_filter != "All Caps":
                 display = display[display['cap_category'] == st.session_state.cap_filter]
 
-            sort_cols = [c for c in ['rating', 'score', 'rank_score', 'distance_pct'] if c in display.columns]
+            sort_cols = [c for c in ['rank_score', 'score', 'rating', 'distance_pct'] if c in display.columns]
             if sort_cols:
                 display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind='stable').reset_index(drop=True)
                 
@@ -2140,9 +2195,13 @@ def render_home():
                             macd = float(row.get('macd', 0) or 0)
                             dly = row.get('delivery_pct')
                             
+                            score_cls = 'badge-green' if score >= 80 else 'badge-brand' if score >= 65 else 'badge-yellow'
                             badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:8px;margin-right:6px;">{timeframe}</span>'
+                            badges_html += f'<span class="badge {score_cls}" style="margin-bottom:8px;margin-right:6px;">SCORE: {score:.0f} ({rating}/10)</span>'
                             if pd.notna(dly):
-                                badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;">EOD DEL: {dly}%</span>'
+                                badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;margin-right:6px;">EOD DEL: {dly}%</span>'
+                            if row.get('false_breakout') or float(row.get('component_volume', 0.5) or 0.5) <= 0.10:
+                                badges_html += '<span class="badge badge-red" style="margin-bottom:8px;">⚠️ TRAP RISK</span>'
 
                             card_html = (
                                 f'<div class="bento-stock-card">'
