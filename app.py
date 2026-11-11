@@ -1330,7 +1330,13 @@ def render_home():
             render_watchlist_tab(watchlist_df)
 
     with tab_portfolio:
-        st.markdown("<div style='font-size:1.05rem; font-weight:800; color:var(--text); padding-top:8px; margin-bottom:12px;'>🎮 Paper Trading Portfolio</div>", unsafe_allow_html=True)
+        pc1, pc2 = st.columns([6, 2])
+        with pc1:
+            st.markdown("<div style='font-size:1.05rem; font-weight:800; color:var(--text); padding-top:8px; margin-bottom:12px;'>🎮 Paper Trading Portfolio</div>", unsafe_allow_html=True)
+        with pc2:
+            if st.button("🔄 Refresh Live PnL", key="refresh_paper_pnl", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
         
         with st.spinner("Fetching paper trades from Google Sheets..."):
             try:
@@ -1341,54 +1347,71 @@ def render_home():
         if paper_df.empty:
             st.info("No paper trades found. Go to the Scanner Dashboard, analyze a stock, and execute a trade!")
         else:
-            open_trades = paper_df[paper_df['Status'] == 'OPEN'].copy()
-            closed_trades = paper_df[paper_df['Status'].astype(str).str.startswith('CLOSED')].copy()
+            paper_df['Status_Clean'] = paper_df['Status'].astype(str).str.strip().str.upper()
+            open_trades = paper_df[paper_df['Status_Clean'] == 'OPEN'].copy()
+            closed_trades = paper_df[paper_df['Status_Clean'].str.startswith('CLOSED')].copy()
             
+            def clean_num(val, default=0.0):
+                try:
+                    if pd.isna(val):
+                        return default
+                    cleaned = str(val).replace('₹', '').replace(',', '').strip()
+                    return float(cleaned) if cleaned else default
+                except Exception:
+                    return default
+
             if open_trades.empty:
                 st.success("No open trades. You are all flat! Head to the scanner to find new setups.")
             else:
                 st.markdown("<div class='small-muted' style='margin-bottom:16px;'>Live prices are pulled securely via Yahoo Finance APIs.</div>", unsafe_allow_html=True)
                 
-                # Fetch live prices for open trades
+                # Fetch live prices reliably for open trades
                 live_prices = {}
-                if len(open_trades) > 0:
-                    with st.spinner("Fetching live market prices..."):
-                        symbols_list = open_trades['Symbol'].unique().tolist()
-                        tickers = [str(s).replace('&', '%26') + '.NS' for s in symbols_list]
+                with st.spinner("Fetching live market prices..."):
+                    symbols_list = [str(s).strip().upper().replace('.NS', '') for s in open_trades['Symbol'].unique() if str(s).strip()]
+                    for sym in symbols_list:
+                        yf_sym = sym.replace('&', '%26') + '.NS'
+                        price_found = None
+                        
+                        # Primary Method: 5-day 1d download
                         try:
-                            raw_data = yf.download(tickers, period='1d', interval='1d', progress=False)
-                            for sym in symbols_list:
-                                ticker = str(sym).replace('&', '%26') + '.NS'
-                                try:
-                                    if len(symbols_list) == 1:
-                                        last_price = float(raw_data['Close'].iloc[-1])
-                                    elif isinstance(raw_data.columns, pd.MultiIndex):
-                                        if ticker in raw_data.columns.get_level_values(0):
-                                            last_price = float(raw_data[ticker]['Close'].iloc[-1])
-                                        elif ticker in raw_data.columns.get_level_values(1):
-                                            last_price = float(raw_data.xs(ticker, axis=1, level=1)['Close'].iloc[-1])
-                                        else:
-                                            last_price = float(open_trades[open_trades['Symbol'] == sym]['Entry_Price'].iloc[0])
-                                    else:
-                                        last_price = float(raw_data['Close'].iloc[-1])
-                                    live_prices[sym] = last_price
-                                except Exception:
-                                    live_prices[sym] = float(open_trades[open_trades['Symbol'] == sym]['Entry_Price'].iloc[0])
+                            t_df = yf.download(yf_sym, period='5d', interval='1d', progress=False, auto_adjust=True)
+                            if t_df is not None and not t_df.empty:
+                                close_col = t_df['Close']
+                                if isinstance(close_col, pd.DataFrame):
+                                    close_col = close_col.iloc[:, 0]
+                                close_series = close_col.dropna()
+                                if not close_series.empty:
+                                    price_found = float(close_series.iloc[-1])
                         except Exception:
-                            for sym in symbols_list:
-                                live_prices[sym] = float(open_trades[open_trades['Symbol'] == sym]['Entry_Price'].iloc[0])
+                            pass
+                        
+                        # Fallback Method: Yahoo Finance fast_info
+                        if price_found is None or not np.isfinite(price_found) or price_found <= 0:
+                            try:
+                                fi = yf.Ticker(yf_sym).fast_info
+                                lp = fi.get('lastPrice') or fi.get('regularMarketPrice') or fi.get('previousClose')
+                                if lp and float(lp) > 0:
+                                    price_found = float(lp)
+                            except Exception:
+                                pass
+                                
+                        if price_found is not None and np.isfinite(price_found) and price_found > 0:
+                            live_prices[sym] = price_found
 
                 # Display Open Trades
                 total_pnl = 0.0
+                total_invested = 0.0
                 for idx, trade in open_trades.iterrows():
-                    sym = trade['Symbol']
-                    entry_price = float(trade['Entry_Price'])
-                    qty = int(trade['Quantity'])
+                    sym = str(trade['Symbol']).strip().upper().replace('.NS', '')
+                    entry_price = clean_num(trade.get('Entry_Price', 0))
+                    qty = int(round(clean_num(trade.get('Quantity', 0))))
                     live_price = live_prices.get(sym, entry_price)
                     
                     pnl = (live_price - entry_price) * qty
                     total_pnl += pnl
-                    pnl_pct = ((live_price / entry_price) - 1) * 100 if entry_price > 0 else 0
+                    total_invested += (entry_price * qty)
+                    pnl_pct = ((live_price / entry_price) - 1) * 100 if entry_price > 0 else 0.0
                     
                     pnl_color = "var(--accent)" if pnl >= 0 else "var(--red)"
                     pnl_sign = "+" if pnl >= 0 else ""
@@ -1396,8 +1419,8 @@ def render_home():
                     st.markdown(f'''
                     <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
                         <div>
-                            <div style="font-weight:900; font-size:1.2rem; color:var(--text);">{sym}</div>
-                            <div class="small-muted">Entry: {money(entry_price)} | Qty: {qty}</div>
+                            <div style="font-weight:900; font-size:1.2rem; color:var(--text);">{html.escape(sym)}</div>
+                            <div class="small-muted">Entry: {money(entry_price)} | Qty: {qty} | Invested: {money(entry_price * qty)}</div>
                         </div>
                         <div>
                             <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
@@ -1412,9 +1435,9 @@ def render_home():
                     
                     close_col1, close_col2 = st.columns([8, 2])
                     with close_col2:
-                        if st.button(f"Close Trade", key=f"close_{trade['Trade_ID']}", use_container_width=True):
+                        if st.button("Close Trade", key=f"close_{trade['Trade_ID']}_{idx}", use_container_width=True):
                             with st.spinner("Closing trade in Google Sheets..."):
-                                close_paper_trade(st.secrets, trade['Trade_ID'], live_price, pnl)
+                                close_paper_trade(st.secrets, trade['Trade_ID'], round(live_price, 2), round(pnl, 2))
                             st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
                             time.sleep(1)
                             st.rerun()
@@ -1422,10 +1445,11 @@ def render_home():
                 # Show Total PnL Header
                 total_color = "var(--accent)" if total_pnl >= 0 else "var(--red)"
                 total_sign = "+" if total_pnl >= 0 else ""
+                total_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
                 st.markdown(f'''
                 <div style="text-align:right; margin-top:8px; padding-right:16px;">
                     <span class="small-muted" style="font-size:0.8rem; text-transform:uppercase; font-weight:700;">Total Open PnL:</span> 
-                    <span style="font-size:1.3rem; font-weight:900; color:{total_color}; margin-left:8px;">{total_sign}{money(total_pnl)}</span>
+                    <span style="font-size:1.3rem; font-weight:900; color:{total_color}; margin-left:8px;">{total_sign}{money(total_pnl)} ({total_sign}{total_pct:.2f}%)</span>
                 </div>
                 ''', unsafe_allow_html=True)
             
@@ -1435,7 +1459,6 @@ def render_home():
                 st.markdown("<div class='section-title'>Closed Trades History</div>", unsafe_allow_html=True)
                 
                 history_df = closed_trades.copy()
-                # Safely select columns that exist
                 cols_to_show = [c for c in ['Symbol', 'Entry_Date', 'Entry_Price', 'Exit_Price', 'Quantity', 'PnL', 'Status'] if c in history_df.columns]
                 st.dataframe(history_df[cols_to_show], use_container_width=True, hide_index=True)
 
