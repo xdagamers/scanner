@@ -76,7 +76,6 @@ def render_watchlist_tab(watchlist_df):
         st.info("No valid stock symbols found in your watchlist.")
         return
 
-    # Optional simulated capital per watchlist stock to see rupee Unrealized PnL alongside % return
     wc_col1, wc_col2 = st.columns([6, 2])
     with wc_col1:
         st.markdown(
@@ -95,8 +94,14 @@ def render_watchlist_tab(watchlist_df):
     symbols_tuple = tuple(df["Symbol_Clean"].unique().tolist())
     live_prices = fetch_live_watchlist_prices(symbols_tuple)
 
+    # Pre-calculate counts and cards so we can render the summary banner at the top
+    total_stocks = len(df)
+    positive_count = 0
+    loss_count = 0
+    flat_count = 0
     total_sim_pnl = 0.0
     total_sim_invested = 0.0
+    cards_html_list = []
 
     for idx, row in df.iterrows():
         sym = row["Symbol_Clean"]
@@ -113,7 +118,6 @@ def render_watchlist_tab(watchlist_df):
         t3 = _clean_num(row.get("Target_3", 0))
         trigger = _clean_num(row.get("Trigger_Price", 0))
 
-        # Calculate Unrealized Return % and Simulated Rupee PnL
         if price_added > 0 and live_price > 0:
             diff_per_share = live_price - price_added
             return_pct = ((live_price / price_added) - 1.0) * 100.0
@@ -121,16 +125,23 @@ def render_watchlist_tab(watchlist_df):
             sim_pnl = diff_per_share * sim_qty
             total_sim_pnl += sim_pnl
             total_sim_invested += (price_added * sim_qty)
+
+            if diff_per_share > 0:
+                positive_count += 1
+            elif diff_per_share < 0:
+                loss_count += 1
+            else:
+                flat_count += 1
         else:
             diff_per_share = 0.0
             return_pct = 0.0
             sim_qty = 0
             sim_pnl = 0.0
+            flat_count += 1
 
         pnl_color = "var(--accent)" if return_pct >= 0 else "var(--red)"
         pnl_sign = "+" if return_pct >= 0 else ""
 
-        # Status badge against Trigger & Targets
         if t3 > 0 and live_price >= t3:
             status_badge = "<span class='badge badge-green'>🎯 T3 REACHED</span>"
         elif t2 > 0 and live_price >= t2:
@@ -142,7 +153,7 @@ def render_watchlist_tab(watchlist_df):
         else:
             status_badge = "<span class='badge badge-yellow'>⏳ IN WATCH ZONE</span>"
 
-        st.markdown(
+        cards_html_list.append(
             f"""
             <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
                 <div style="flex:1.5; min-width:220px;">
@@ -172,9 +183,37 @@ def render_watchlist_tab(watchlist_df):
                     <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
+
+    # Render Top Summary KPI Cards (Total, In Profit, In Loss)
+    win_rate_pct = (positive_count / total_stocks * 100.0) if total_stocks > 0 else 0.0
+    loss_rate_pct = (loss_count / total_stocks * 100.0) if total_stocks > 0 else 0.0
+
+    summary_html = f"""
+    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:20px;">
+        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--brand);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700;">Total Stocks in Watchlist</div>
+            <div style="font-size:1.8rem; font-weight:900; color:var(--text); margin-top:4px;">{total_stocks}</div>
+            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">Active Tracked Setups ({flat_count} Flat)</div>
+        </div>
+        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--accent); background:var(--accent-bg);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--accent);">Stocks in Positive (Profit)</div>
+            <div style="font-size:1.8rem; font-weight:900; color:var(--accent); margin-top:4px;">{positive_count}</div>
+            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">{win_rate_pct:.1f}% of Watchlist Green</div>
+        </div>
+        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--red); background:var(--red-bg);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--red);">Stocks in Loss (Negative)</div>
+            <div style="font-size:1.8rem; font-weight:900; color:var(--red); margin-top:4px;">{loss_count}</div>
+            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">{loss_rate_pct:.1f}% of Watchlist Red</div>
+        </div>
+    </div>
+    """
+    st.markdown(summary_html, unsafe_allow_html=True)
+
+    # Render Individual Watchlist Cards
+    for card_html in cards_html_list:
+        st.markdown(card_html, unsafe_allow_html=True)
 
     if total_sim_invested > 0:
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
