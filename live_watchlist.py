@@ -1,8 +1,16 @@
 import html
+import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+
+from google_sheets_audit import delete_watchlist_row, log_paper_trade
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _clean_num(val, default=0.0):
@@ -94,14 +102,14 @@ def render_watchlist_tab(watchlist_df):
     symbols_tuple = tuple(df["Symbol_Clean"].unique().tolist())
     live_prices = fetch_live_watchlist_prices(symbols_tuple)
 
-    # Pre-calculate counts and cards so we can render the summary banner at the top
+    # Pre-calculate counts and row payloads so we can render the summary banner at the top
     total_stocks = len(df)
     positive_count = 0
     loss_count = 0
     flat_count = 0
     total_sim_pnl = 0.0
     total_sim_invested = 0.0
-    cards_html_list = []
+    rendered_items = []
 
     for idx, row in df.iterrows():
         sym = row["Symbol_Clean"]
@@ -121,7 +129,7 @@ def render_watchlist_tab(watchlist_df):
         if price_added > 0 and live_price > 0:
             diff_per_share = live_price - price_added
             return_pct = ((live_price / price_added) - 1.0) * 100.0
-            sim_qty = max(1, int(sim_capital // price_added))
+            sim_qty = max(1, int(sim_capital // live_price))
             sim_pnl = diff_per_share * sim_qty
             total_sim_pnl += sim_pnl
             total_sim_invested += (price_added * sim_qty)
@@ -135,7 +143,7 @@ def render_watchlist_tab(watchlist_df):
         else:
             diff_per_share = 0.0
             return_pct = 0.0
-            sim_qty = 0
+            sim_qty = max(1, int(sim_capital // live_price)) if live_price > 0 else 1
             sim_pnl = 0.0
             flat_count += 1
 
@@ -153,38 +161,46 @@ def render_watchlist_tab(watchlist_df):
         else:
             status_badge = "<span class='badge badge-yellow'>⏳ IN WATCH ZONE</span>"
 
-        cards_html_list.append(
-            f"""
-            <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
-                <div style="flex:1.5; min-width:220px;">
-                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <span style="font-weight:900; font-size:1.2rem; color:var(--text);">{html.escape(sym)}</span>
-                        <span class="badge badge-brand">{html.escape(trade_type)} ({html.escape(exp_days)})</span>
-                        {status_badge}
-                    </div>
-                    <div class="small-muted" style="margin-top:4px;">{html.escape(company)} • Added: {html.escape(date_added)}</div>
-                    <div class="small-muted" style="margin-top:4px;">
-                        Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b>{_money(t1)}</b> &nbsp;|&nbsp; T2: <b>{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
-                    </div>
+        card_html = f"""
+        <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:8px;">
+            <div style="flex:1.5; min-width:220px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-weight:900; font-size:1.2rem; color:var(--text);">{html.escape(sym)}</span>
+                    <span class="badge badge-brand">{html.escape(trade_type)} ({html.escape(exp_days)})</span>
+                    {status_badge}
                 </div>
-                <div>
-                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
-                    <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
-                </div>
-                <div>
-                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
-                    <div style="font-weight:800; font-size:1.1rem; color:var(--text);">{_money(live_price)}</div>
-                </div>
-                <div style="text-align:right; min-width:170px;">
-                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
-                    <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">
-                        {pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})
-                    </div>
-                    <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
+                <div class="small-muted" style="margin-top:4px;">{html.escape(company)} • Added: {html.escape(date_added)}</div>
+                <div class="small-muted" style="margin-top:4px;">
+                    Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b>{_money(t1)}</b> &nbsp;|&nbsp; T2: <b>{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
                 </div>
             </div>
-            """
-        )
+            <div>
+                <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
+                <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
+            </div>
+            <div>
+                <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
+                <div style="font-weight:800; font-size:1.1rem; color:var(--text);">{_money(live_price)}</div>
+            </div>
+            <div style="text-align:right; min-width:170px;">
+                <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
+                <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">
+                    {pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})
+                </div>
+                <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
+            </div>
+        </div>
+        """
+
+        rendered_items.append({
+            "idx": idx,
+            "sym": sym,
+            "live_price": live_price,
+            "sim_qty": sim_qty,
+            "t1": t1,
+            "t2": t2,
+            "card_html": card_html,
+        })
 
     # Render Top Summary KPI Cards (Total, In Profit, In Loss)
     win_rate_pct = (positive_count / total_stocks * 100.0) if total_stocks > 0 else 0.0
@@ -211,9 +227,58 @@ def render_watchlist_tab(watchlist_df):
     """
     st.markdown(summary_html, unsafe_allow_html=True)
 
-    # Render Individual Watchlist Cards
-    for card_html in cards_html_list:
-        st.markdown(card_html, unsafe_allow_html=True)
+    # Render Individual Watchlist Cards with Action Buttons (Promote to Paper Trade & Remove)
+    for item in rendered_items:
+        st.markdown(item["card_html"], unsafe_allow_html=True)
+        act_spacer, act_col1, act_col2 = st.columns([5.5, 2.5, 2.0])
+        with act_col1:
+            if st.button(
+                f"🚀 Paper Trade ({item['sim_qty']} sh)",
+                key=f"wl_promote_{item['sym']}_{item['idx']}",
+                use_container_width=True,
+            ):
+                ep = float(item["live_price"]) if item["live_price"] > 0 else 0.0
+                if ep <= 0:
+                    st.error(f"Cannot execute paper trade for {item['sym']}: live price unavailable.")
+                else:
+                    sl_default = round(ep * 0.96, 2)  # Default 4% structural stop buffer
+                    t1_val = float(item["t1"]) if item["t1"] > 0 else round(ep * 1.06, 2)
+                    t2_val = float(item["t2"]) if item["t2"] > 0 else round(ep * 1.12, 2)
+                    trade_payload = {
+                        "Trade_ID": f"{item['sym']}_{int(time.time())}",
+                        "Symbol": item["sym"],
+                        "Entry_Date": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+                        "Entry_Price": round(ep, 2),
+                        "Quantity": int(item["sim_qty"]),
+                        "Invested_Capital": round(ep * int(item["sim_qty"]), 2),
+                        "Stop_Loss": sl_default,
+                        "Target_1": t1_val,
+                        "Target_2": t2_val,
+                        "Status": "OPEN",
+                        "PnL": 0.0,
+                    }
+                    try:
+                        with st.spinner(f"Logging paper trade for {item['sym']}..."):
+                            log_paper_trade(st.secrets, trade_payload)
+                        st.toast(f"✅ Executed Paper Trade: {item['sim_qty']} shares of {item['sym']} @ ₹{ep:,.2f}!")
+                        time.sleep(0.8)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Paper trade failed: {e}")
+        with act_col2:
+            if st.button(
+                "🗑️ Remove",
+                key=f"wl_del_{item['sym']}_{item['idx']}",
+                use_container_width=True,
+            ):
+                try:
+                    with st.spinner(f"Removing {item['sym']} from Watchlist..."):
+                        delete_watchlist_row(st.secrets, item["sym"])
+                    st.toast(f"🗑️ Removed {item['sym']} from Manual_Watch_List!")
+                    time.sleep(0.8)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not delete {item['sym']}: {e}")
 
     if total_sim_invested > 0:
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
