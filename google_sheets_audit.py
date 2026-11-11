@@ -109,7 +109,20 @@ def append_audit_batch(
         return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_result"}
 
     try:
-        records = rows.where(pd.notna(rows), "").to_dict(orient="records")
+        clean_df = rows.copy()
+        if "Symbol" in clean_df.columns:
+            valid_sym = (
+                clean_df["Symbol"].notna()
+                & clean_df["Symbol"].astype(str).str.strip().ne("")
+                & ~clean_df["Symbol"].astype(str).str.strip().str.lower().isin(["nan", "none", "<na>"])
+            )
+            clean_df = clean_df[valid_sym].copy()
+        if "Price" in clean_df.columns:
+            valid_p = pd.to_numeric(clean_df["Price"], errors="coerce") > 0
+            clean_df = clean_df[valid_p].copy()
+        if clean_df.empty:
+            return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_after_filter"}
+        records = clean_df.where(pd.notna(clean_df), "").replace({None: ""}).to_dict(orient="records")
     except Exception as exc:
         raise RuntimeError(f"Could not prepare audit rows for Google Sheets: {exc}") from exc
 
