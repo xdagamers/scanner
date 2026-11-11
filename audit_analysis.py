@@ -28,38 +28,40 @@ ANALYSIS_OUTPUT_COLUMNS = [
     "Overall_Score_(0-100)"
 ]
 
-# Thresholds are fixed in advance to limit arbitrary curve fitting.
+# Thresholds synchronized with Scanner v2 institutional anti-trap and scoring tiers.
 DEFAULT_THRESHOLDS = {
     "Rating": [7, 8, 9, 10],
-    "Distance_Pct": [0.5, 1, 2, 3, 5], 
-    "RVOL": [0.9, 1.15, 1.4, 1.8, 2.5],
+    "Distance_Pct": [0.5, 1.0, 1.5, 2.0, 3.0, 5.0], 
+    "RVOL": [1.0, 1.3, 1.5, 1.8, 2.2],
     "ADX": [20, 25, 35],
-    "RSI": [50, 55, 60, 65, 70],
-    "Score": [60, 70, 80, 90],
-    "Rank_Score": [40, 50, 60, 70, 80],
-    "Delivery_Pct": [35, 50, 65],
-    "Resistance_Touches": [3, 4, 6],
+    "RSI": [54, 58, 60, 65, 70],
+    "Score": [65, 75, 80, 85, 90],
+    "Rank_Score": [55, 65, 70, 75, 80, 85],
+    "Delivery_Pct": [40, 50, 55, 65],
+    "Resistance_Touches": [3, 4, 5],
     "Risk_Reward": [1.5, 2.0, 2.5],
-    "NIFTY_Relative_Strength_Pct": [0.0, 3.0, 5.0],
+    "NIFTY_Relative_Strength_Pct": [0.0, 2.0, 5.0, 10.0],
     "Relative_Strength_60D_Pct": [0.0, 5.0, 10.0],
-    "Component_Proximity": [0.5, 0.7, 0.85],
-    "Component_Resistance": [0.25, 0.5, 0.75],
-    "Component_Volume": [0.5, 0.7, 0.85],
-    "Component_Trend": [0.5, 0.7],
-    "Component_Momentum": [0.5, 0.7],
-    "Component_ADX": [0.5, 0.7],
-    "Component_Squeeze": [0.5, 0.7],
-    "Component_Relative_Strength": [0.5, 0.7],
-    "Component_Candle": [0.5, 0.7],
-    "Component_Market_Regime": [0.5, 0.7],
+    "Component_Proximity": [0.7, 0.82, 0.92],
+    "Component_Resistance": [0.5, 0.75, 0.9],
+    "Component_Volume": [0.55, 0.70, 0.85],
+    "Component_Trend": [0.65, 0.75, 0.9],
+    "Component_Momentum": [0.6, 0.8, 0.9],
+    "Component_ADX": [0.6, 0.75, 0.9],
+    "Component_Squeeze": [0.65, 0.85, 1.0],
+    "Component_Relative_Strength": [0.6, 0.78, 0.95],
+    "Component_Candle": [0.8, 1.0],
+    "Component_Market_Regime": [0.55, 1.0],
 }
 
-# Bounded range conditions capture "sweet spot" momentum without over-extension.
+# Bounded range conditions capture Scanner v2 "sweet spot" momentum & VCP contraction without over-extension.
 RANGE_CONDITIONS = [
-    ("RSI", "RSI_55_68", 55.0, 68.0),
-    ("RSI", "RSI_50_65", 50.0, 65.0),
-    ("ADX", "ADX_20_40", 20.0, 40.0),
-    ("Distance_Pct", "Distance_Pct_0_2", 0.0, 2.0),
+    ("RSI", "RSI_54_70_SweetSpot", 54.0, 70.0),
+    ("RSI", "RSI_58_68_Prime", 58.0, 68.0),
+    ("ADX", "ADX_20_40_Trend", 20.0, 40.0),
+    ("Distance_Pct", "Distance_Pct_-0.5_2.0_EntryZone", -0.5, 2.0),
+    ("ATR_Ratio", "ATR_Ratio_0.4_0.85_VCP_Squeeze", 0.40, 0.85),
+    ("ATR_Ratio", "ATR_Ratio_0.4_0.95_TightBase", 0.40, 0.95),
 ]
 
 
@@ -73,14 +75,17 @@ def _to_binary(series: pd.Series) -> pd.Series:
 
 
 def _derive_trade_setup(df: pd.DataFrame) -> pd.Series:
-    """Reconstructs the exact 3 trade setup categories used on the dashboard."""
+    """Reconstructs the exact 4 trade setup categories used on the app.py dashboard."""
     adx = pd.to_numeric(df.get("ADX", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0.0)
     rsi = pd.to_numeric(df.get("RSI", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0.0)
     dist = pd.to_numeric(df.get("Distance_Pct", pd.Series(99.0, index=df.index)), errors="coerce").fillna(99.0)
 
-    setup = pd.Series("Positional (2-6w)", index=df.index, dtype=object)
-    short_mask = rsi >= 55.0
+    setup = pd.Series("Long Term (3-8m)", index=df.index, dtype=object)
+    pos_mask = (dist <= 7.0) & (rsi >= 50.0)
+    short_mask = (dist <= 4.0) & (rsi >= 55.0)
     swing_mask = (dist <= 2.0) & (rsi >= 60.0) & (adx >= 20.0)
+
+    setup.loc[pos_mask] = "Positional (2-6w)"
     setup.loc[short_mask] = "Short Term (1-3w)"
     setup.loc[swing_mask] = "Breakout Swing (3-10d)"
     return setup
@@ -126,12 +131,27 @@ def build_completed_outcomes(
         "Scanner_Status", "Delivery_Pct", "Deliverable_Qty", "Resistance_Touches",
         "Resistance_Recency", "Risk_Reward", "NIFTY_Relative_Strength_Pct",
         "Relative_Strength_60D_Pct", "ATR_Pct", "ATR_Ratio",
+        "Component_Proximity", "Component_Resistance", "Component_Volume", "Component_Trend",
+        "Component_Momentum", "Component_ADX", "Component_Squeeze", "Component_Relative_Strength",
+        "Component_Candle", "Component_Market_Regime", "Explanation",
     ]
     for col in signal_cols:
         if col not in joined and f"{col}_Signal" in joined:
             joined[col] = joined[f"{col}_Signal"]
 
     joined["Trade_Setup"] = _derive_trade_setup(joined)
+
+    # Derive Scanner v2 Anti-Trap Flags from saved component scores and explanation string
+    comp_vol_num = pd.to_numeric(joined.get("Component_Volume", pd.Series(0.5, index=joined.index)), errors="coerce").fillna(0.5)
+    false_bo_bin = _to_binary(joined.get("False_Breakout", pd.Series(False, index=joined.index))).fillna(0.0)
+    expl_series = joined.get("Explanation", pd.Series("", index=joined.index)).astype(str)
+
+    has_trap = (false_bo_bin > 0) | (comp_vol_num <= 0.10) | expl_series.str.contains("WARNING", case=False, na=False)
+    joined["Anti_Trap_Status"] = np.where(has_trap, "TRAP_WARNING", "CLEAN_SETUP")
+
+    has_20d_acc = expl_series.str.contains("20D accumulation", case=False, na=False) | (comp_vol_num >= 0.70)
+    joined["Volume_Accumulation"] = np.where(has_20d_acc, "CONFIRMED", "NEUTRAL")
+
     joined["Return_20D_Pct"] = pd.to_numeric(joined.get("Close_Return_Pct"), errors="coerce")
     
     for outcome in ["Breakout_Hit", "T1_Hit", "T2_Hit", "T3_Hit", "Stop_Hit"]:
@@ -174,13 +194,18 @@ def _compute_Consistency_Score(
     unique_dates_count: int,
     total_unique_dates: int,
     has_holdout: bool,
+    is_stop_goal: bool = False,
 ) -> float:
     """Computes a 0-100 composite edge & consistency score to rank combinations."""
     wr = float(win_rate) if np.isfinite(win_rate) else 0.0
     sr = float(stop_rate) if np.isfinite(stop_rate) else 50.0
     ret = float(avg_ret) if np.isfinite(avg_ret) else 0.0
 
-    base = (wr * 0.50) + (max(0.0, 100.0 - sr) * 0.20) + (np.clip(ret * 2.5, -15.0, 20.0))
+    if is_stop_goal:
+        # When evaluating "Stop_Before_Target" (finding trap setups to avoid), higher stop rate = higher warning score
+        base = (wr * 0.65) + (np.clip(-ret * 2.5, 0.0, 20.0))
+    else:
+        base = (wr * 0.50) + (max(0.0, 100.0 - sr) * 0.20) + (np.clip(ret * 2.5, -15.0, 20.0))
 
     if total_unique_dates > 1:
         dispersion_ratio = min(1.0, unique_dates_count / max(2.0, total_unique_dates * 0.5))
@@ -220,6 +245,7 @@ def analyze_outcome_combinations(
 
     n_rows = len(work)
     min_sig = max(1, int(min_signals))
+    is_stop_goal = str(outcome_col).strip() == "Stop_Before_Target"
 
     condition_list: list[tuple[str, str, np.ndarray]] = []
 
@@ -248,6 +274,7 @@ def analyze_outcome_combinations(
     cat_cols = [
         "Trade_Setup", "Cap_Category", "Scanner_Status",
         "EMA_Structure", "Market_Regime", "Candlestick", "False_Breakout",
+        "Anti_Trap_Status", "Volume_Accumulation",
     ]
     for col in cat_cols:
         if col not in work.columns:
@@ -293,7 +320,7 @@ def analyze_outcome_combinations(
         ),
         reverse=True,
     )
-    higher_order_pool = single_ranked[:32] if len(single_ranked) > 32 else single_ranked
+    higher_order_pool = single_ranked[:36] if len(single_ranked) > 36 else single_ranked
 
     output = []
     now_string = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
@@ -310,9 +337,11 @@ def analyze_outcome_combinations(
         valid_ret = sel_ret[np.isfinite(sel_ret)]
         avg_ret = float(valid_ret.mean()) if len(valid_ret) else np.nan
 
-        # NEGATIVE NOISE FILTER: 
-        # Discard any setup that has less than 50% win rate or generates a negative average profit.
-        if np.isnan(win_rate) or win_rate < 50.0 or np.isnan(avg_ret) or avg_ret <= 0.0:
+        # Filter: For positive target outcomes, require >= 50% hit rate and positive return.
+        # For "Stop_Before_Target" (trap discovery mode), allow negative returns so user can see high-failure combinations!
+        if np.isnan(win_rate) or win_rate < 50.0:
+            return
+        if not is_stop_goal and (np.isnan(avg_ret) or avg_ret <= 0.0):
             return
 
         sel_stop = stop_arr[mask]
@@ -332,6 +361,7 @@ def analyze_outcome_combinations(
         consistency = _compute_Consistency_Score(
             win_rate, avg_ret, stop_rate, tr_wr, te_wr,
             unique_dt_cnt, total_unique_dates, has_holdout,
+            is_stop_goal=is_stop_goal,
         )
 
         output.append({
@@ -368,7 +398,7 @@ def analyze_outcome_combinations(
     # Sort strictly by our primary metrics
     out = out.sort_values(
         ["Overall_Score_(0-100)", "Win_Rate_%", "Avg_Profit_%", "Times_Occurred"],
-        ascending=[False, False, False, False], na_position="last"
+        ascending=[False, False, not is_stop_goal, False], na_position="last"
     )
 
     out = out[ANALYSIS_OUTPUT_COLUMNS].reset_index(drop=True)
