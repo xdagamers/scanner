@@ -18,20 +18,20 @@ HEADERS = {
 }
 
 DEFAULT_WEIGHTS = {
-    "proximity": 16,
+    "proximity": 18,
     "resistance": 12,
     "volume": 16,
-    "trend": 16,
+    "trend": 14,
     "momentum": 10,
-    "adx": 7,
-    "squeeze": 10,
-    "relative_strength": 8,
+    "adx": 8,
+    "squeeze": 8,
+    "relative_strength": 9,
     "candle": 2,
     "market_regime": 3,
 }
 
-# Institutional Liquidity Filter: Minimum ₹10 Crore 20-day median daily turnover
-MIN_MEDIAN_TURNOVER_INR = 10_00_00_000
+# Minimum 20-day median daily traded turnover in Rupees (₹5 Crore) to avoid illiquid operator traps
+MIN_MEDIAN_TURNOVER_INR = 5_00_00_000
 
 
 def _load_csv(url):
@@ -59,7 +59,7 @@ def _load_csv(url):
 
 
 def load_universe():
-    """Load the official NIFTY 500 universe and classify Large/Mid/Small caps accurately."""
+    """Load the official NIFTY 500 universe and classify caps accurately."""
     errors = []
 
     n500_urls = [
@@ -208,7 +208,7 @@ def ema(s, n):
 
 
 def rsi(close, n=14):
-    """Wilder's RSI with explicit behaviour for zero-loss and flat-price windows."""
+    """RSI with explicit behaviour for zero-loss and flat-price windows."""
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -247,34 +247,6 @@ def adx(df, n=14):
     return dx.ewm(alpha=1 / n, adjust=False).mean(), plus_di, minus_di
 
 
-def obv_accumulation(df, window=20):
-    """Check if On-Balance Volume (OBV) is trending above its 20-day EMA (institutional accumulation)."""
-    if len(df) < window + 5:
-        return True
-    direction = np.sign(df.Close.diff()).fillna(0.0)
-    obv = (direction * df.Volume.fillna(0.0)).cumsum()
-    obv_ema = obv.ewm(span=window, adjust=False).mean()
-    return bool(obv.iloc[-1] >= obv_ema.iloc[-1])
-
-
-def pocket_pivot_check(df, lookback=10):
-    """O'Neil / Kacher Pocket Pivot: Today is an up-day and today's volume exceeds
-    the largest down-day volume over the prior `lookback` sessions.
-    """
-    if len(df) < lookback + 2:
-        return False
-    today = df.iloc[-1]
-    prev_close = float(df.Close.iloc[-2])
-    if float(today.Close) <= prev_close:
-        return False
-    prior = df.iloc[-lookback - 1:-1]
-    prior_diffs = df.Close.diff().iloc[-lookback - 1:-1]
-    down_vols = prior.Volume[prior_diffs < 0]
-    if down_vols.empty:
-        return True
-    return bool(float(today.Volume) > float(down_vols.max()))
-
-
 def candle_pattern(df):
     if len(df) < 3:
         return "None"
@@ -282,6 +254,7 @@ def candle_pattern(df):
     body = lambda x: abs(x.Close - x.Open)
     rng = lambda x: max(x.High - x.Low, 1e-9)
     clv_c = (c.Close - c.Low) / rng(c)
+    # Require strong upper-range close to avoid labeling weak candles as bullish patterns
     if b.Close < b.Open < c.Close and c.Open <= b.Close and c.Close >= b.Open and clv_c >= 0.65:
         return "Bullish Engulfing"
     lower = min(c.Open, c.Close) - c.Low
@@ -302,8 +275,8 @@ def candle_pattern(df):
 
 
 def resistance_level(df, lookback=180):
-    """Find a structural resistance ceiling using 5-bar fractal swing highs + 150D/252D highs.
-    Prevents locking onto minor bounces trapped underneath major overhead supply.
+    """Find a structural resistance ceiling using 5-bar fractal swing highs + major 150D/252D highs.
+    Prevents locking onto minor 3-day bounces trapped underneath heavy overhead supply.
     """
     hist = df.iloc[:-1].tail(lookback).copy()
     current = float(df.Close.iloc[-1])
@@ -311,6 +284,7 @@ def resistance_level(df, lookback=180):
         return np.nan, 0, 999
     h = hist.High.astype(float)
 
+    # 5-bar fractal swing high (stronger structural pivot than 3-bar) with 3-bar fallback
     swing5 = (h > h.shift(1)) & (h > h.shift(2)) & (h >= h.shift(-1)) & (h >= h.shift(-2))
     highs = h[swing5].dropna()
     if len(highs) < 2:
@@ -319,7 +293,7 @@ def resistance_level(df, lookback=180):
     if highs.empty:
         return float(h.max()), 1, lookback
 
-    tolerance = 0.015
+    tolerance = 0.015  # 1.5% cluster zone width for institutional supply zones
     clusters = []
     for level in sorted(highs.tolist()):
         for cluster in clusters:
@@ -344,9 +318,11 @@ def resistance_level(df, lookback=180):
         distance = (top - current) / top * 100
 
         if -1.5 <= distance <= 12.0:
+            # Penalize minor clusters that have a massive un-cleared 150D supply wall sitting 2% to 7% right above them
             overhead_gap_pct = (major_high_150 - top) / top * 100 if top > 0 else 0
             overhead_penalty = 8.0 if (1.8 <= overhead_gap_pct <= 7.0 and touches < 3) else 0.0
             strength = (touches * 5.0) + max(0.0, 5.0 - recency / 25.0) - overhead_penalty
+            # Sort by combination of structural strength and proximity so weak 1-touch minor peaks don't win
             rank_metric = abs(distance) - (0.35 * min(touches, 5)) + overhead_penalty
             candidates.append((rank_metric, -strength, top, touches, recency))
 
@@ -363,6 +339,7 @@ def false_breakout_info(df, breakout_lvl=None, lookback=20, tolerance=0.0025):
         return False, 0
     recent = df.tail(lookback + 4).copy()
 
+    # Check against the actual structural breakout level first
     if breakout_lvl is not None and np.isfinite(breakout_lvl) and breakout_lvl > 0:
         for i in range(len(recent) - 1):
             bar = recent.iloc[i]
@@ -373,6 +350,7 @@ def false_breakout_info(df, breakout_lvl=None, lookback=20, tolerance=0.0025):
                     if float(recent.iloc[j].Close) < breakout_lvl * 0.992:
                         return True, (len(recent) - 1) - i
 
+    # Fallback rolling high check
     for i in range(5, len(recent) - 1):
         resistance = float(recent.iloc[:i].High.max())
         bar = recent.iloc[i]
@@ -409,17 +387,6 @@ def relative_strength_vs_index(stock_df, index_df, window=60):
         return 0.0
 
 
-def ibd_weighted_rs_excess(stock_df, index_df):
-    """William O'Neil / IBD Weighted Relative Strength Excess Return:
-    40% * 3M (63D) + 20% * 6M (126D) + 20% * 9M (189D) + 20% * 12M (252D).
-    """
-    r63 = relative_strength_vs_index(stock_df, index_df, 63)
-    r126 = relative_strength_vs_index(stock_df, index_df, 126)
-    r189 = relative_strength_vs_index(stock_df, index_df, min(189, len(stock_df) - 5))
-    r252 = relative_strength_vs_index(stock_df, index_df, min(250, len(stock_df) - 5))
-    return (0.40 * r63) + (0.20 * r126) + (0.20 * r189) + (0.20 * r252)
-
-
 def _market_regime(index_df):
     if index_df is None or len(index_df) < 220:
         return 0.5, "Unknown"
@@ -449,7 +416,7 @@ def component_scores(df, nifty_df=None, sector_df=None):
     high_p = _safe_float(df.High.iloc[-1], price)
     low_p = _safe_float(df.Low.iloc[-1], price)
 
-    # 1. Institutional Liquidity Filter (₹10 Cr median 20D turnover)
+    # 1. Liquidity Guardrail: Filter out illiquid small-cap stocks prone to operator manipulation
     recent_turnover = (close.tail(20) * volume.tail(20)).median()
     if not np.isfinite(recent_turnover) or recent_turnover < MIN_MEDIAN_TURNOVER_INR:
         return None
@@ -470,77 +437,346 @@ def component_scores(df, nifty_df=None, sector_df=None):
     adx_series, plus_di, minus_di = adx(df)
     adx_v, plus_v, minus_v = map(_safe_float, [adx_series.iloc[-1], plus_di.iloc[-1], minus_di.iloc[-1]])
 
-    # Moving Averages for Minervini Stage 2 Trend Template (20 EMA, 50 EMA/SMA, 150 SMA, 200 SMA)
     e20_series, e50_series = ema(close, 20), ema(close, 50)
     e20, e50 = _safe_float(e20_series.iloc[-1]), _safe_float(e50_series.iloc[-1])
-    sma50 = _safe_float(close.rolling(50).mean().iloc[-1], e50)
-    sma150 = _safe_float(close.rolling(150).mean().iloc[-1], e50)
-    sma200_series = close.rolling(200).mean()
-    e200 = _safe_float(sma200_series.iloc[-1])
-    sma200_22d_ago = _safe_float(sma200_series.iloc[-22], e200) if len(sma200_series) >= 22 else e200
+    e200_series = close.rolling(200).mean()
+    e200 = _safe_float(e200_series.iloc[-1])
 
-    # 52-Week High / Low Structure (Minervini Rules 6 & 7)
-    high_252 = _safe_float(df.High.tail(252).max(), breakout)
-    low_252 = _safe_float(df.Low.tail(252).min(), price * 0.7)
-    pct_below_52w_high = (high_252 - price) / high_252 * 100 if high_252 > 0 else 0.0
-    pct_above_52w_low = (price - low_252) / low_252 * 100 if low_252 > 0 else 0.0
-
-    # 2. Direction-Aware Volume, Pocket Pivots, VDU & OBV Accumulation
+    # 2. Direction-Aware Volume & Institutional 20-Day Up/Down Volume Accumulation
     prior_20d_avg_volume = volume.rolling(20, min_periods=15).mean().shift(1).iloc[-1]
     rvol = _safe_float(volume.iloc[-1] / prior_20d_avg_volume, 0) if _safe_float(prior_20d_avg_volume) > 0 else 0.0
 
     day_range = max(high_p - low_p, 1e-9)
-    clv = (price - low_p) / day_range  # Close Location Value (upper 30% close >= 0.70)
+    clv = (price - low_p) / day_range  # Close Location Value (0.0 = closed at low, 1.0 = closed at high)
     prev_close = _safe_float(close.iloc[-2], price)
-    is_bullish_bar = (price >= prev_close) and (clv >= 0.50)
+    is_bullish_bar = (price >= prev_close) and (clv >= 0.45)
     is_distribution_trap = (rvol >= 1.3) and ((price < open_p and clv < 0.40) or (price < prev_close))
 
-    # 20-Day Up/Down Volume Ratio + OBV Slope + Pocket Pivot + Prior 5-Day Volume Dry-Up (VDU)
+    # 20-day Up/Down Volume Ratio (Institutional Footprint inside the base)
     price_diff_20 = close.diff().tail(20)
     vol_20 = volume.tail(20).fillna(0.0)
     up_vol = float(vol_20[price_diff_20 > 0].sum())
     down_vol = float(vol_20[price_diff_20 < 0].sum())
     ud_vol_ratio = (up_vol / down_vol) if down_vol > 0 else (2.0 if up_vol > 0 else 1.0)
-    obv_bullish = obv_accumulation(df, 20)
-    has_pocket_pivot = pocket_pivot_check(df, 10)
-    prior_5d_vdu = bool(volume.iloc[-6:-1].min() <= 0.65 * _safe_float(prior_20d_avg_volume, 1.0)) if len(volume) >= 7 else False
 
     if is_distribution_trap:
+        # Heavy selling / upper-wick rejection at resistance: do not reward high RVOL!
         volume_s = 0.05
     elif is_bullish_bar:
-        base_v = 1.0 if rvol >= 2.2 else 0.85 if rvol >= 1.5 else 0.72 if rvol >= 1.25 else 0.55 if rvol >= 1.0 else 0.35
-        acc_bonus = (0.12 if ud_vol_ratio >= 1.30 else 0.0) + (0.08 if obv_bullish else -0.10) + (0.08 if has_pocket_pivot else 0.0)
+        base_v = 1.0 if rvol >= 2.2 else 0.85 if rvol >= 1.6 else 0.70 if rvol >= 1.3 else 0.50 if rvol >= 1.05 else 0.30
+        acc_bonus = 0.15 if ud_vol_ratio >= 1.35 else (0.05 if ud_vol_ratio >= 1.1 else -0.15)
         volume_s = float(np.clip(base_v + acc_bonus, 0.05, 1.0))
     else:
-        # Pre-breakout quiet consolidation day: reward Volume Dry-Up (VDU) + strong 20D accumulation
-        vdu_bonus = 0.20 if (prior_5d_vdu and distance > 0 and clv >= 0.40) else 0.0
-        volume_s = float(np.clip((0.50 if ud_vol_ratio >= 1.30 else 0.30) + vdu_bonus + (0.10 if obv_bullish else -0.10), 0.10, 0.85))
+        # Quiet consolidation day near resistance: judge primarily by 20-day accumulation ratio
+        volume_s = 0.55 if ud_vol_ratio >= 1.4 else 0.35 if ud_vol_ratio >= 1.1 else 0.15
 
-    # 3. Proximity & Resistance Quality
-    proximity = 1.0 if -0.5 <= distance <= 0.5 else 0.94 if distance <= 1.2 else 0.85 if distance <= 2.2 else 0.72 if distance <= 3.2 else 0.55 if distance <= 5.0 else 0.30 if distance <= 8.0 else 0.05 if distance <= 10.0 else 0.0
+    # 3. Proximity & Resistance Quality (with 52-Week Overhead Supply Check)
+    high_252 = _safe_float(df.High.tail(252).max(), breakout)
+    pct_below_52w = (high_252 - price) / high_252 * 100 if high_252 > 0 else 0.0
+
+    proximity = 1.0 if -0.5 <= distance <= 0.5 else 0.92 if distance <= 1.2 else 0.82 if distance <= 2.2 else 0.70 if distance <= 3.2 else 0.55 if distance <= 5.0 else 0.30 if distance <= 8.0 else 0.05 if distance <= 10.0 else 0.0
     resistance = min(1.0, touches / 4.0)
     if recency <= 35:
         resistance = min(1.0, resistance + 0.10)
-    if pct_below_52w_high <= 10.0:
+    # Boost resistance score if breaking out near 52-week highs (clear sky, zero overhead supply)
+    if pct_below_52w <= 5.0:
         resistance = min(1.0, resistance + 0.15)
-    elif pct_below_52w_high > 25.0:
-        resistance = max(0.05, resistance - 0.30)
+    elif pct_below_52w > 25.0:
+        resistance = max(0.1, resistance - 0.25)
 
-    # 4. Minervini 8-Point Stage 2 Trend Template Score
+    # 4. Trend Structure: Stacked EMAs + Rising 50 EMA & 200 SMA slopes + Overextension Check
     e20_prev = _safe_float(e20_series.iloc[-6], e20)
-    sma200_rising_1m = e200 > sma200_22d_ago
-    minervini_stage2 = (
-        price > sma50 > sma150 > e200
-        and sma200_rising_1m
-        and pct_above_52w_low >= 30.0
-        and pct_below_52w_high <= 25.0
-    )
+    e50_prev = _safe_float(e50_series.iloc[-11], e50)
     trend = (
-        (0.20 if price > e20 else 0.0)
-        + (0.20 if e20 > e50 else 0.0)
-        + (0.20 if sma50 > sma150 > e200 else (0.10 if e50 > e200 else 0.0))
-        + (0.15 if sma200_rising_1m else 0.0)
-        + (0.15 if (pct_above_52w_low >= 30.0 and pct_below_52w_high <= 25.0) else 0.0)
-        + (0.10 if e20 > e20_prev else 0.0)
+        (0.25 if price > e20 else 0.0)
+        + (0.25 if e20 > e50 else 0.0)
+        + (0.25 if e50 > e200 else 0.0)
+        + (0.15 if e20 > e20_prev else 0.0)
+        + (0.10 if e50 > e50_prev else 0.0)
     )
+    # Overextension check: if price is stretched > 3.5 ATRs above 20 EMA, mean-reversion risk is high
     extension_atr = (price - e20) / atr_v if atr_v > 0 else 0.0
+    is_overextended = extension_atr > 3.5 or distance < -2.5
+
+    # 5. Momentum: Constructive RSI Sweet Spot (54-70) + Expanding MACD Histogram + High CLV
+    momentum = 0.80 if 54 <= rsi_v <= 70 else 0.55 if (50 <= rsi_v < 54 or 70 < rsi_v <= 75) else 0.20
+    if rsi_v > _safe_float(rsi_series.iloc[-3], rsi_v) and rsi_v <= 73:
+        momentum = min(1.0, momentum + 0.10)
+    if macd_v > signal_v and hist_v > hist_prev:
+        momentum = min(1.0, momentum + 0.10)
+    if clv < 0.35:
+        momentum = max(0.10, momentum - 0.25)
+
+    # 6. ADX Trend Strength + Rising ADX Slope
+    adx_prev = _safe_float(adx_series.iloc[-4], adx_v)
+    adx_s = 0.15 if adx_v < 15 else 0.35 if adx_v < 20 else 0.60 if adx_v < 25 else 0.80 if adx_v < 35 else 0.90
+    if plus_v > minus_v:
+        adx_s = min(1.0, adx_s + 0.10)
+    if adx_v > adx_prev and plus_v > minus_v:
+        adx_s = min(1.0, adx_s + 0.05)
+
+    # 7. Volatility Contraction (VCP Squeeze: ATR Compression + Tight 10-Day Price Range)
+    atr50 = _safe_float(atr_series.rolling(50).mean().iloc[-1], atr_v)
+    atr_ratio = atr_v / atr50 if atr50 else 1.0
+    prior_10d_range_pct = (df.High.iloc[-11:-1].max() - df.Low.iloc[-11:-1].min()) / price * 100 if len(df) >= 12 and price > 0 else 10.0
+    squeeze = 1.0 if atr_ratio <= 0.75 else 0.85 if atr_ratio <= 0.85 else 0.65 if atr_ratio <= 0.95 else 0.40 if atr_ratio <= 1.05 else 0.20
+    if prior_10d_range_pct <= 6.0:
+        squeeze = min(1.0, squeeze + 0.15)
+
+    # 8. Multi-Timeframe Relative Strength vs NIFTY (20D, 60D, 120D weighted blend)
+    ret60 = _safe_float(close.iloc[-1] / close.iloc[-61] - 1) * 100 if len(close) > 61 else 0.0
+    rs_20 = relative_strength_vs_index(df, nifty_df, 20)
+    rs_60 = relative_strength_vs_index(df, nifty_df, 60)
+    rs_120 = relative_strength_vs_index(df, nifty_df, 120)
+    blended_rs = (0.40 * rs_20) + (0.35 * rs_60) + (0.25 * rs_120)
+    sector_rs = relative_strength_vs_index(df, sector_df, 60) if sector_df is not None else 0.0
+
+    rs_score = 0.0
+    if blended_rs >= 10 and rs_20 > 0:
+        rs_score = 0.95
+    elif blended_rs >= 5 and rs_20 >= 0:
+        rs_score = 0.78
+    elif blended_rs >= 2:
+        rs_score = 0.60
+    elif blended_rs >= 0:
+        rs_score = 0.35
+    if sector_rs > 5:
+        rs_score = min(1.0, rs_score + 0.15)
+
+    candle = candle_pattern(df)
+    candle_score = {
+        "Bullish Engulfing": 1.0, "Bullish Marubozu": 1.0, "Morning Star": 1.0,
+        "Three White Soldiers": 1.0, "Hammer": 0.8, "Piercing Line": 0.8,
+        "Inside Bar": 0.2, "None": 0.0
+    }.get(candle, 0.0)
+
+    false_breakout, false_breakout_age = false_breakout_info(df, breakout_lvl=breakout)
+    market_score, market_label = _market_regime(nifty_df)
+
+    # Trap flags for penalty deduction in score_from_components
+    overhead_wall_trap = (pct_below_52w > 22.0) or (
+        (high_252 - breakout) / breakout * 100 > 2.0 and (high_252 - breakout) / breakout * 100 <= 6.5 and touches < 3
+    )
+
+    breakout_trigger = breakout * 1.0025
+    recent_low = _safe_float(df.Low.tail(10).min(), price)
+    stop = min(recent_low, price - 1.5 * atr_v)
+    if stop >= price:
+        stop = price - 1.5 * atr_v
+    target1 = breakout_trigger + 1.5 * atr_v
+    target2 = breakout_trigger + 3.0 * atr_v
+    risk = max(price - stop, 0.01)
+    reward = max(target1 - price, 0)
+    rr = reward / risk
+
+    return {
+        "price": price, "breakout_level": float(breakout), "breakout_trigger": float(breakout_trigger), "distance_pct": float(distance),
+        "touches": touches, "recency": recency, "proximity": proximity, "resistance": resistance, "volume": volume_s,
+        "trend": trend, "momentum": momentum, "adx": min(1.0, adx_s), "squeeze": squeeze, "relative_strength": rs_score, "candle": candle_score,
+        "market_regime": market_score, "market_regime_label": market_label, "rsi_value": rsi_v, "macd_value": macd_v, "adx_value": adx_v, "rvol": rvol,
+        "atr": atr_v, "atr_pct": atr_pct, "atr_ratio": atr_ratio,
+        "ema_structure": ("Bullish" if price > e20 > e50 > e200 else "Mixed" if price > e200 else "Bearish"),
+        "candlestick": candle, "relative_strength_60": ret60, "nifty_relative_strength": rs_60, "sector_relative_strength": sector_rs,
+        "false_breakout": bool(false_breakout), "false_breakout_age": int(false_breakout_age), "stop_reference": float(stop),
+        "target1": float(target1), "target2": float(target2), "risk_reward": float(rr),
+        "is_distribution_trap": bool(is_distribution_trap), "is_overextended": bool(is_overextended),
+        "overhead_wall_trap": bool(overhead_wall_trap), "ud_vol_ratio": float(ud_vol_ratio), "clv": float(clv),
+    }
+
+
+def score_from_components(c, weights=None):
+    weights = weights or DEFAULT_WEIGHTS
+    raw = sum(c[k] * weights[k] for k in weights)
+    # Institutional Anti-Trap Penalties
+    if c.get("false_breakout"):
+        raw -= 15.0  # Failed breakout in last 20 sessions
+    if c.get("is_distribution_trap"):
+        raw -= 12.0  # High-volume red rejection / upper-wick distribution bar
+    if c.get("is_overextended"):
+        raw -= 10.0  # Parabolic / stretched > 3.5x ATR above 20 EMA
+    if c.get("overhead_wall_trap"):
+        raw -= 8.0   # Major 52-week overhead supply wall blocking the move
+    if c.get("ema_structure") == "Bearish":
+        raw -= 12.0  # Below 200 DMA macro downtrend
+    return float(np.clip(raw, 0, 100))
+
+
+def _rating(score):
+    return max(1, min(10, int(score // 10) + 1))
+
+
+def score_stock(df, nifty_df=None, sector_df=None, weights=None):
+    c = component_scores(df, nifty_df=nifty_df, sector_df=sector_df)
+    if c is None:
+        return None
+    score = score_from_components(c, weights)
+    rating = _rating(score)
+    d = c["distance_pct"]
+    trigger_confirmed = (float(c["price"]) >= float(c["breakout_trigger"])) and (c.get("clv", 0.5) >= 0.50)
+    status = (
+        "BREAKOUT CONFIRMED" if trigger_confirmed
+        else "TESTING RESISTANCE" if d < 0
+        else "VERY NEAR" if d <= 1
+        else "NEAR BREAKOUT" if d <= 3
+        else "DEVELOPING" if d <= 5
+        else "WATCH" if d <= 10
+        else "WEAK"
+    )
+    reasons = []
+    if d <= 3:
+        reasons.append("close to resistance")
+    if c["touches"] >= 3:
+        reasons.append(f"{c['touches']} resistance touches")
+    if c["rvol"] >= 1.4 and not c.get("is_distribution_trap"):
+        reasons.append("price-confirmed volume expansion")
+    if c.get("ud_vol_ratio", 1.0) >= 1.3:
+        reasons.append(f"20D accumulation ({c['ud_vol_ratio']:.2f}x U/D vol)")
+    if c["ema_structure"] == "Bullish":
+        reasons.append("stacked bullish MAs")
+    if c["adx_value"] >= 20 and c["momentum"] >= 0.6:
+        reasons.append("strong trend & momentum")
+    if c["squeeze"] >= 0.65:
+        reasons.append("VCP volatility contraction")
+    if c["nifty_relative_strength"] > 2:
+        reasons.append("outperforming NIFTY")
+    if c["false_breakout"]:
+        reasons.append("WARNING: recent false-breakout risk")
+    if c.get("is_distribution_trap"):
+        reasons.append("WARNING: high-volume rejection bar")
+
+    explanation = (
+        f"Technical setup score {score:.1f}/100. "
+        + ("; ".join(reasons) if reasons else "limited confirmation")
+        + ". This is a setup-strength ranking, not a guaranteed price prediction."
+    )
+    return {
+        "price": c["price"], "breakout_level": c["breakout_level"], "breakout_trigger": c["breakout_trigger"], "distance_pct": c["distance_pct"],
+        "score": score, "score_components_raw": float(sum(c[k] * (weights or DEFAULT_WEIGHTS)[k] for k in (weights or DEFAULT_WEIGHTS))),
+        "rating": rating, "status": status, "rsi": c["rsi_value"], "macd": c["macd_value"], "adx": c["adx_value"], "rvol": c["rvol"],
+        "atr_pct": c["atr_pct"], "atr_ratio": c["atr_ratio"], "ema_structure": c["ema_structure"], "candlestick": c["candlestick"],
+        "relative_strength": c["relative_strength_60"], "nifty_relative_strength": c["nifty_relative_strength"],
+        "sector_relative_strength": c["sector_relative_strength"], "market_regime": c["market_regime_label"],
+        "false_breakout": c["false_breakout"], "false_breakout_age": c["false_breakout_age"],
+        "resistance_touches": c["touches"], "resistance_recency": c["recency"],
+        "risk_reward": c["risk_reward"], "stop_reference": c["stop_reference"], "target1": c["target1"], "target2": c["target2"],
+        "target3": float(c["target2"] + (c["target2"] - c["target1"])),
+        "squeeze": c["squeeze"], "component_proximity": c["proximity"], "component_resistance": c["resistance"], "component_volume": c["volume"],
+        "component_trend": c["trend"], "component_momentum": c["momentum"], "component_adx": c["adx"], "component_squeeze": c["squeeze"],
+        "component_relative_strength": c["relative_strength"], "component_candle": c["candle"], "component_market_regime": c["market_regime"],
+        "weights": dict(weights or DEFAULT_WEIGHTS), "explanation": explanation,
+    }
+
+
+def _ranking_score(row):
+    """Quality-First Ranking: Prioritizes setup strength (55%) over raw proximity (25%)
+    so weak setups hugging resistance never outrank institutional A+ leaders.
+    """
+    d = float(row["distance_pct"])
+    # Peak proximity score is between -0.5% (just broke out) and +2.0% (approaching trigger)
+    if -0.5 <= d <= 2.0:
+        proximity = 1.0
+    elif d < -0.5:
+        proximity = max(0.0, 1.0 - abs(d + 0.5) / 4.0)
+    else:
+        proximity = max(0.0, 1.0 - (d - 2.0) / 8.0)
+
+    setup = float(row["score"]) / 100.0
+    vol_component = float(row.get("component_volume", 0.5))
+    confirmed_bonus = 1.0 if row["status"] == "BREAKOUT CONFIRMED" else 0.0
+    return 100.0 * (0.55 * setup + 0.25 * proximity + 0.15 * vol_component + 0.05 * confirmed_bonus)
+
+
+def scan_universe(max_distance=10.0, period="2y", top_n=20):
+    universe = load_universe()
+    nifty = fetch_index_history("^NSEI", period=period)
+    histories = fetch_histories_batch(universe.symbol.tolist(), period=period)
+    rows = []
+    for symbol, df in histories.items():
+        row = score_stock(df, nifty_df=nifty)
+        if row is None:
+            continue
+        if row["distance_pct"] < -1.5 or row["distance_pct"] > max_distance:
+            continue
+        row["symbol"] = symbol
+        match = universe.loc[universe.symbol == symbol, "company_name"]
+        cap_match = universe.loc[universe.symbol == symbol, "cap_category"] if "cap_category" in universe.columns else pd.Series(dtype=object)
+        row["company_name"] = match.iloc[0] if not match.empty else symbol
+        row["cap_category"] = cap_match.iloc[0] if not cap_match.empty else ""
+        row["rank_score"] = _ranking_score(row)
+        rows.append(row)
+    if not rows:
+        return pd.DataFrame()
+    result = pd.DataFrame(rows)
+    result = result.sort_values(["rank_score", "score", "distance_pct"], ascending=[False, False, True]).reset_index(drop=True)
+    result.insert(0, "rank", np.arange(1, len(result) + 1))
+    return result.head(top_n)
+
+
+def scan_single(symbol, max_distance=10.0, period="2y"):
+    df = fetch_history(symbol, period)
+    if df is None:
+        return None
+    nifty = fetch_index_history("^NSEI", period=period)
+    row = score_stock(df, nifty_df=nifty)
+    if row is None or row["distance_pct"] < -1.5 or row["distance_pct"] > max_distance:
+        return None
+    row["symbol"] = symbol
+    row["rank_score"] = _ranking_score(row)
+    return row
+
+
+def backtest_symbol(symbol, period="5y", min_rating=7, hold_days=10):
+    """Diagnostic backtest using only data available on each signal date."""
+    df = fetch_history(symbol, period)
+    nifty = fetch_index_history("^NSEI", period=period)
+    if df is None:
+        return {"summary": {}, "trades": pd.DataFrame()}
+    trades = []
+    for i in range(220, len(df) - hold_days):
+        hist = df.iloc[:i + 1]
+        signal_date = hist.index[-1]
+        if nifty is not None and not nifty.empty:
+            nifty_asof = nifty.loc[nifty.index <= signal_date]
+        else:
+            nifty_asof = nifty
+        row = score_stock(hist, nifty_df=nifty_asof)
+        if row is None or row["distance_pct"] < -1.5 or row["distance_pct"] > 10 or row["rating"] < min_rating:
+            continue
+        future = df.iloc[i + 1:i + 1 + hold_days]
+        if future.empty:
+            continue
+        entry = float(future.Open.iloc[0])
+        if not np.isfinite(entry) or entry <= 0:
+            continue
+        final_close = float(future.Close.iloc[-1])
+        max_high = float(future.High.max())
+        min_low = float(future.Low.min())
+        trigger = float(row.get("breakout_trigger", row["breakout_level"]))
+        level = float(row["breakout_level"])
+        trades.append({
+            "date": signal_date,
+            "entry_date": future.index[0],
+            "entry_price": entry,
+            "breakout_hit": bool(max_high >= trigger),
+            "breakout_level": level,
+            "breakout_trigger": trigger,
+            "final_return_pct": (final_close / entry - 1) * 100,
+            "max_return_pct": (max_high / entry - 1) * 100,
+            "min_return_pct": (min_low / entry - 1) * 100,
+            "rating": row["rating"],
+        })
+    t = pd.DataFrame(trades)
+    if t.empty:
+        return {"summary": {}, "trades": t}
+    return {"summary": {
+        "signals": len(t),
+        "breakout_hit_rate_pct": t.breakout_hit.mean() * 100,
+        "avg_final_return_pct": t.final_return_pct.mean(),
+        "median_final_return_pct": t.final_return_pct.median(),
+        "avg_max_return_pct": t.max_return_pct.mean(),
+        "stop_5pct_rate_pct": (t.min_return_pct <= -5).mean() * 100,
+    }, "trades": t}
+
+
+def optimize_weights(*args, **kwargs):
+    return pd.DataFrame(), DEFAULT_WEIGHTS
