@@ -37,6 +37,12 @@ def _num(row, key, default=np.nan):
     except Exception:
         return default
 
+def _clean_opt(val):
+    if val is None or pd.isna(val):
+        return ""
+    s = str(val).strip()
+    return "" if s.lower() in {"nan", "none", "<na>"} else val
+
 def build_scan_snapshot(
     result: pd.DataFrame,
     *,
@@ -48,16 +54,34 @@ def build_scan_snapshot(
     if result is None or result.empty:
         return pd.DataFrame(columns=AUDIT_COLUMNS)
 
+    # Filter out any ghost rows created by outer merges in delivery_loader.py
+    clean_res = result.copy()
+    if "symbol" in clean_res.columns:
+        valid_sym = (
+            clean_res["symbol"].notna()
+            & clean_res["symbol"].astype(str).str.strip().ne("")
+            & ~clean_res["symbol"].astype(str).str.strip().str.lower().isin(["nan", "none", "<na>"])
+        )
+        clean_res = clean_res[valid_sym].copy()
+    if "price" in clean_res.columns:
+        valid_price = pd.to_numeric(clean_res["price"], errors="coerce") > 0
+        clean_res = clean_res[valid_price].copy()
+
+    if clean_res.empty:
+        return pd.DataFrame(columns=AUDIT_COLUMNS)
+
     scan_date = str(scan_timestamp_ist).split(" ")[0]
     rows = []
-    for pos, (_, row) in enumerate(result.reset_index(drop=True).iterrows(), start=1):
+    for pos, (_, row) in enumerate(clean_res.reset_index(drop=True).iterrows(), start=1):
+        symbol = str(row.get("symbol", "")).strip()
+        if not symbol or symbol.lower() in {"nan", "none"}:
+            continue
         t1 = _num(row, "target1")
         t2 = _num(row, "target2")
         t3 = _num(row, "target3")
         if not np.isfinite(t3) and np.isfinite(t1) and np.isfinite(t2):
             t3 = t2 + (t2 - t1)
         weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
-        symbol = str(row.get("symbol", ""))
         signal_id = f"{scan_date}_{symbol}_{run_id}"
         
         rows.append({
@@ -67,9 +91,9 @@ def build_scan_snapshot(
             "Scan_Date": scan_date,
             "Scanner_Period": scanner_period,
             "Max_Distance_Pct": max_distance_pct,
-            "Universe_Result_Count": len(result),
+            "Universe_Result_Count": len(clean_res),
             "Result_Position": pos,
-            "Scanner_Rank": row.get("rank", ""),
+            "Scanner_Rank": row.get("rank", pos),
             "Symbol": symbol,
             "Company": row.get("company_name", symbol),
             "Cap_Category": row.get("cap_category", ""),
@@ -123,8 +147,8 @@ def build_scan_snapshot(
             "Weight_Candle": _num(weights, "candle"),
             "Weight_Market_Regime": _num(weights, "market_regime"),
             "Explanation": row.get("explanation", ""),
-            "Delivery_Pct": row.get("delivery_pct", ""),
-            "Deliverable_Qty": row.get("deliverable_qty", "")
+            "Delivery_Pct": _clean_opt(row.get("delivery_pct", "")),
+            "Deliverable_Qty": _clean_opt(row.get("deliverable_qty", ""))
         })
     return pd.DataFrame(rows, columns=AUDIT_COLUMNS)
 
