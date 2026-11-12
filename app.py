@@ -644,6 +644,128 @@ def get_nifty50_ticker_data(symbols):
 def get_fundamentals_cached(symbol):
     return fetch_single_fundamental(symbol)
 
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_history_cached(symbol, period='2y'):
+    return fetch_history(symbol, period)
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_stock_news_and_sentiment_cached(symbol):
+    news_list = []
+    bullish = 0
+    bearish = 0
+    try:
+        ticker_obj = yf.Ticker(symbol + '.NS')
+        raw_news = ticker_obj.news
+        if isinstance(raw_news, list):
+            for idx, n in enumerate(raw_news):
+                content = n.get('content', n)
+                title = content.get('title', n.get('title', ''))
+                if not title:
+                    continue
+                tag, cls = get_headline_sentiment(title)
+                if idx < 8:
+                    if 'Bullish' in tag or 'Positive' in tag:
+                        bullish += 1
+                    elif 'Bearish' in tag or 'Negative' in tag:
+                        bearish += 1
+                pub = content.get('provider', {}).get('displayName', n.get('publisher', 'Exchange Source'))
+                link_data = content.get('clickThroughUrl', {})
+                link = link_data.get('url', n.get('link', '#')) if isinstance(link_data, dict) else n.get('link', '#')
+                pub_date = content.get('pubDate', n.get('providerPublishTime'))
+                if isinstance(pub_date, str):
+                    try:
+                        pub_time = pd.to_datetime(pub_date).timestamp()
+                    except Exception:
+                        pub_time = None
+                else:
+                    pub_time = pub_date
+                news_list.append({
+                    'title': title,
+                    'publisher': pub,
+                    'link': link,
+                    'providerPublishTime': pub_time,
+                    'sentiment_tag': tag,
+                    'sentiment_cls': cls,
+                })
+    except Exception:
+        pass
+    if bullish > bearish:
+        agg_tag, agg_cls = 'Bullish News 📈', 'badge-green'
+    elif bearish > bullish:
+        agg_tag, agg_cls = 'Bearish News 📉', 'badge-red'
+    elif news_list:
+        agg_tag, agg_cls = 'Neutral News ⚖️', 'badge-grey'
+    else:
+        agg_tag, agg_cls = 'News Sentiment: N/A', 'badge-grey'
+    return agg_tag, agg_cls, news_list
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_watchlist_cached():
+    try:
+        return read_watchlist(st.secrets)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_paper_trades_cached():
+    try:
+        return get_paper_trades(st.secrets)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_portfolio_live_prices_batch(symbols_tuple):
+    if not symbols_tuple:
+        return {}
+    clean_syms = [str(s).strip().upper().replace('.NS', '') for s in symbols_tuple if str(s).strip()]
+    if not clean_syms:
+        return {}
+    tickers = [s.replace('&', '%26') + '.NS' for s in clean_syms]
+    live_prices = {}
+    try:
+        raw = yf.download(
+            tickers,
+            period='5d',
+            interval='1d',
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+            group_by='ticker',
+            multi_level_index=True,
+        )
+        if raw is not None and not raw.empty:
+            for sym, ticker in zip(clean_syms, tickers):
+                try:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        if ticker in raw.columns.get_level_values(0):
+                            df_s = raw[ticker]
+                        elif ticker in raw.columns.get_level_values(1):
+                            df_s = raw.xs(ticker, axis=1, level=1)
+                        else:
+                            continue
+                    else:
+                        df_s = raw
+                    close_s = df_s['Close'].dropna()
+                    if not close_s.empty:
+                        val = float(close_s.iloc[-1])
+                        if np.isfinite(val) and val > 0:
+                            live_prices[sym] = val
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    # Fallback only for any symbol that missed batch download
+    for sym, ticker in zip(clean_syms, tickers):
+        if sym not in live_prices:
+            try:
+                fi = yf.Ticker(ticker).fast_info
+                lp = fi.get('lastPrice') or fi.get('regularMarketPrice') or fi.get('previousClose')
+                if lp and float(lp) > 0:
+                    live_prices[sym] = float(lp)
+            except Exception:
+                pass
+    return live_prices
+
 def market_status(now=None):
     now = now or datetime.now(IST)
     if now.weekday() >= 5:
@@ -743,8 +865,8 @@ def render_ticker():
     markup = f'''<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee 90s linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981}}.down{{color:#ef4444}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
     components.html(markup, height=44, scrolling=False)
 
-def day_change(symbol, period='2y'):
-    hist = fetch_history(symbol, period)
+def day_change(symbol, period='2y', hist=None):
+    hist = hist if hist is not None else fetch_history_cached(symbol, period)
     if hist is None or len(hist) < 2:
         return None, None, None
     last, prev = float(hist.Close.iloc[-1]), float(hist.Close.iloc[-2])
@@ -769,8 +891,8 @@ def detect_pattern(df):
     if all(x['Close'] > x['Open'] for _, x in df.iloc[-3:].iterrows()) and a['Close'] < b['Close'] < c['Close']: return "Three White Soldiers"
     return None
 
-def detail_chart(symbol, row, period='2y'):
-    hist = fetch_history(symbol, period)
+def detail_chart(symbol, row, period='2y', hist=None):
+    hist = hist if hist is not None else fetch_history_cached(symbol, period)
     if hist is None or hist.empty:
         st.warning('Price history is temporarily unavailable for the chart.')
         return
@@ -897,7 +1019,7 @@ def build_single_stock_export(symbol, row, scanned_at, rank=''):
     }])
 
 # --- NEW FUNCTION FOR ENTRY CHECKLIST ---
-def render_entry_zone_checklists(symbol, row, current_price):
+def render_entry_zone_checklists(symbol, row, current_price, hist=None):
     try:
         breakout_level = float(row.get('breakout_level', 0))
         rsi_val = float(row.get('rsi', 0))
@@ -923,9 +1045,9 @@ def render_entry_zone_checklists(symbol, row, current_price):
     
     sustain_passed = False
     try:
-        hist = fetch_history(symbol, '1mo')
-        if hist is not None and len(hist) >= 2:
-            last_2_closes = hist['Close'].dropna().tail(2).tolist()
+        hist_use = hist if hist is not None else fetch_history_cached(symbol, '2y')
+        if hist_use is not None and len(hist_use) >= 2:
+            last_2_closes = hist_use['Close'].dropna().tail(2).tolist()
             sustain_passed = (len(last_2_closes) == 2 and 
                               last_2_closes[0] > breakout_level and 
                               last_2_closes[1] > breakout_level)
@@ -960,24 +1082,8 @@ def render_entry_zone_checklists(symbol, row, current_price):
 
 
 def get_aggregate_sentiment(symbol):
-    try:
-        ticker_obj = yf.Ticker(symbol + '.NS')
-        raw_news = ticker_obj.news
-        bullish = 0
-        bearish = 0
-        if isinstance(raw_news, list):
-            for n in raw_news[:8]:
-                content = n.get('content', n)
-                title = content.get('title', n.get('title', ''))
-                if title:
-                    tag, cls = get_headline_sentiment(title)
-                    if 'Bullish' in tag or 'Positive' in tag: bullish += 1
-                    elif 'Bearish' in tag or 'Negative' in tag: bearish += 1
-        if bullish > bearish: return 'Bullish News 📈', 'badge-green'
-        elif bearish > bullish: return 'Bearish News 📉', 'badge-red'
-        else: return 'Neutral News ⚖️', 'badge-grey'
-    except Exception:
-        return 'News Sentiment: N/A', 'badge-grey'
+    agg_tag, agg_cls, _ = get_stock_news_and_sentiment_cached(symbol)
+    return agg_tag, agg_cls
 
 def render_detail(symbol, row):
     render_fintech_topbar()
@@ -990,7 +1096,8 @@ def render_detail(symbol, row):
             st.rerun()
 
     company = row.get('company_name', symbol)
-    last, change, change_pct = day_change(symbol)
+    hist_2y = fetch_history_cached(symbol, '2y')
+    last, change, change_pct = day_change(symbol, hist=hist_2y)
     price = last if last is not None else row.get('price')
     score = float(row.get('score', 0))
     change_cls = 'up' if (change_pct or 0) >= 0 else 'down'
@@ -1002,22 +1109,21 @@ def render_detail(symbol, row):
     t3 = t2 + (t2 - t1) if np.isfinite(t1) and np.isfinite(t2) else np.nan
     timeframe, tf_cls = get_timeframe_status(row)
     
-    # Calculate Dual Stop Losses
+    # Calculate Dual Stop Losses from already-loaded 2Y history (zero extra network calls)
     price_val = float(price) if price else 0.0
     struct_stop = float(row.get('stop_reference', 0) or 0.0)
     aggr_stop = price_val * 0.98
     try:
-        hist1m = fetch_history(symbol, '1mo')
-        if hist1m is not None and not hist1m.empty:
-            aggr_stop = float(hist1m['Low'].tail(3).min()) # Last 3 days low for Breakout Candle Low
+        if hist_2y is not None and not hist_2y.empty:
+            aggr_stop = float(hist_2y['Low'].tail(3).min()) # Last 3 days low for Breakout Candle Low
     except Exception:
         pass
         
     aggr_stop_pct = ((aggr_stop / price_val) - 1) * 100 if price_val else 0
     struct_stop_pct = ((struct_stop / price_val) - 1) * 100 if price_val else 0
     
-    # Aggregate News Sentiment
-    sent_tag, sent_cls = get_aggregate_sentiment(symbol)
+    # Aggregate News Sentiment & Cached News List (fetched once per stock)
+    sent_tag, sent_cls, cached_news_list = get_stock_news_and_sentiment_cached(symbol)
 
     with col_watch:
         if st.button('⭐ Add to Watchlist', type='primary', use_container_width=True):
@@ -1041,6 +1147,7 @@ def render_detail(symbol, row):
             }
             try:
                 append_watchlist_row(st.secrets, payload)
+                get_watchlist_cached.clear()
                 st.toast(f"✅ {symbol} saved to Manual_Watch_List!")
             except Exception as e:
                 st.error(f"Watchlist save failed: {e}")
@@ -1120,6 +1227,7 @@ def render_detail(symbol, row):
             }
             try:
                 log_paper_trade(st.secrets, trade_payload)
+                get_paper_trades_cached.clear()
                 st.toast(f"✅ Executed Paper Trade for {symbol}!")
             except Exception as e:
                 st.error(f"Paper trade failed to execute. Error: {e}")
@@ -1129,14 +1237,14 @@ def render_detail(symbol, row):
 
     with tab_tech:
         # INSERT THE ENTRY CHECKLIST HERE
-        render_entry_zone_checklists(symbol, row, float(price) if price else 0)
+        render_entry_zone_checklists(symbol, row, float(price) if price else 0, hist=hist_2y)
         
         c_left, c_right = st.columns([3, 1])
         with c_left:
             st.markdown('<div class="section-title" style="margin-top:0;">Price Action & Volume</div>', unsafe_allow_html=True)
             tv_symbol = str(symbol).replace('.NS', '').upper()
             tv_url = f'https://www.tradingview.com/chart/?symbol=NSE:{tv_symbol}'
-            detail_chart(symbol, row)
+            detail_chart(symbol, row, hist=hist_2y)
             st.markdown(f'<div style="text-align:center;margin:8px 0 16px;"><a href="{tv_url}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;font-size:.85rem;text-decoration:none;">Open Full Interactive Chart ↗</a></div>', unsafe_allow_html=True)
 
         with c_right:
@@ -1255,39 +1363,7 @@ def render_detail(symbol, row):
 
     with tab_news:
         st.markdown('<div class="section-title" style="margin-top:0;">Corporate News & Exchange Filings</div>', unsafe_allow_html=True)
-        try:
-            ticker_obj = yf.Ticker(symbol + '.NS')
-            raw_news = ticker_obj.news
-            
-            # Robust parser for Yahoo Finance's changing API structure
-            news_list = []
-            if isinstance(raw_news, list):
-                for n in raw_news:
-                    content = n.get('content', n)
-                    title = content.get('title', n.get('title'))
-                    
-                    if title:
-                        pub = content.get('provider', {}).get('displayName', n.get('publisher', 'Exchange Source'))
-                        link_data = content.get('clickThroughUrl', {})
-                        link = link_data.get('url', n.get('link', '#'))
-                        
-                        pub_date = content.get('pubDate', n.get('providerPublishTime'))
-                        if isinstance(pub_date, str):
-                            try:
-                                pub_time = pd.to_datetime(pub_date).timestamp()
-                            except Exception:
-                                pub_time = None
-                        else:
-                            pub_time = pub_date
-                            
-                        news_list.append({
-                            'title': title,
-                            'publisher': pub,
-                            'link': link,
-                            'providerPublishTime': pub_time
-                        })
-        except Exception:
-            news_list = []
+        news_list = cached_news_list
 
         if news_list:
             for item in news_list[:6]:
@@ -1296,9 +1372,8 @@ def render_detail(symbol, row):
                 link = item.get('link', '#')
                 pub_time = item.get('providerPublishTime')
                 time_str = datetime.fromtimestamp(pub_time).strftime('%d %b %Y • %H:%M IST') if pub_time else 'Recent'
-                
-                # Run the lightweight AI sentiment check
-                sentiment_tag, sentiment_cls = get_headline_sentiment(title)
+                sentiment_tag = item.get('sentiment_tag', 'Neutral')
+                sentiment_cls = item.get('sentiment_cls', 'badge-grey')
                 
                 st.markdown(f'''
                 <div class="news-item">
@@ -1344,15 +1419,12 @@ def render_home():
             st.markdown("<div style='font-size:1.05rem; font-weight:800; color:var(--text); padding-top:8px; margin-bottom:12px;'>👀 Live Tracked Setups</div>", unsafe_allow_html=True)
         with wc2:
             if st.button("🔄 Refresh Live Prices", use_container_width=True):
-                st.cache_data.clear() # Force Yahoo Finance to fetch the latest absolute second of pricing
+                get_watchlist_cached.clear()
+                fetch_portfolio_live_prices_batch.clear()
                 st.rerun()
                 
-        with st.spinner("Fetching live data from Yahoo Finance..."):
-            try:
-                watchlist_df = read_watchlist(st.secrets)
-            except Exception:
-                watchlist_df = pd.DataFrame()
-            render_watchlist_tab(watchlist_df)
+        watchlist_df = get_watchlist_cached()
+        render_watchlist_tab(watchlist_df)
 
     with tab_portfolio:
         pc1, pc2 = st.columns([6, 2])
@@ -1360,14 +1432,11 @@ def render_home():
             st.markdown("<div style='font-size:1.05rem; font-weight:800; color:var(--text); padding-top:8px; margin-bottom:12px;'>🎮 Paper Trading Portfolio</div>", unsafe_allow_html=True)
         with pc2:
             if st.button("🔄 Refresh Live PnL", key="refresh_paper_pnl", use_container_width=True):
-                st.cache_data.clear()
+                get_paper_trades_cached.clear()
+                fetch_portfolio_live_prices_batch.clear()
                 st.rerun()
         
-        with st.spinner("Fetching paper trades from Google Sheets..."):
-            try:
-                paper_df = get_paper_trades(st.secrets)
-            except Exception:
-                paper_df = pd.DataFrame()
+        paper_df = get_paper_trades_cached()
             
         if paper_df.empty:
             st.info("No paper trades found. Go to the Scanner Dashboard, analyze a stock, and execute a trade!")
@@ -1390,39 +1459,9 @@ def render_home():
             else:
                 st.markdown("<div class='small-muted' style='margin-bottom:16px;'>Live prices are pulled securely via Yahoo Finance APIs.</div>", unsafe_allow_html=True)
                 
-                # Fetch live prices reliably for open trades
-                live_prices = {}
-                with st.spinner("Fetching live market prices..."):
-                    symbols_list = [str(s).strip().upper().replace('.NS', '') for s in open_trades['Symbol'].unique() if str(s).strip()]
-                    for sym in symbols_list:
-                        yf_sym = sym.replace('&', '%26') + '.NS'
-                        price_found = None
-                        
-                        # Primary Method: 5-day 1d download
-                        try:
-                            t_df = yf.download(yf_sym, period='5d', interval='1d', progress=False, auto_adjust=True)
-                            if t_df is not None and not t_df.empty:
-                                close_col = t_df['Close']
-                                if isinstance(close_col, pd.DataFrame):
-                                    close_col = close_col.iloc[:, 0]
-                                close_series = close_col.dropna()
-                                if not close_series.empty:
-                                    price_found = float(close_series.iloc[-1])
-                        except Exception:
-                            pass
-                        
-                        # Fallback Method: Yahoo Finance fast_info
-                        if price_found is None or not np.isfinite(price_found) or price_found <= 0:
-                            try:
-                                fi = yf.Ticker(yf_sym).fast_info
-                                lp = fi.get('lastPrice') or fi.get('regularMarketPrice') or fi.get('previousClose')
-                                if lp and float(lp) > 0:
-                                    price_found = float(lp)
-                            except Exception:
-                                pass
-                                
-                        if price_found is not None and np.isfinite(price_found) and price_found > 0:
-                            live_prices[sym] = price_found
+                # Fetch live prices in a single parallel batch call (cached 60s)
+                symbols_tuple = tuple(sorted({str(s).strip().upper().replace('.NS', '') for s in open_trades['Symbol'].unique() if str(s).strip()}))
+                live_prices = fetch_portfolio_live_prices_batch(symbols_tuple)
 
                 # Pre-calculate Open Trades summary metrics & Action Alerts (Total, In Profit, In Loss, Alerts)
                 open_count = len(open_trades)
@@ -1572,6 +1611,7 @@ def render_home():
                         if st.button("Close Trade", key=f"close_{trade['Trade_ID']}_{idx}", use_container_width=True):
                             with st.spinner("Closing trade in Google Sheets..."):
                                 close_paper_trade(st.secrets, trade['Trade_ID'], round(live_price, 2), round(pnl, 2))
+                                get_paper_trades_cached.clear()
                             st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
                             time.sleep(1)
                             st.rerun()
@@ -2251,17 +2291,22 @@ def render_home():
             st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
 
         with col_grid:
-            st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;"><div class="section-title" style="border:none;margin:0;padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({matches_count} Matches)</span></div><div class="small-muted">Ranked by Momentum Setup & EOD Delivery</div></div>', unsafe_allow_html=True)
+            hdr_c1, hdr_c2 = st.columns([4, 1.4])
+            with hdr_c1:
+                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;"><div class="section-title" style="border:none;margin:0;padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({matches_count} Matches)</span></div><div class="small-muted">Ranked by Scanner v2 Quality &amp; EOD Delivery</div></div>', unsafe_allow_html=True)
+            with hdr_c2:
+                show_all_cards = st.toggle(f"Show All ({matches_count})", value=False, key="show_all_grid_cards") if matches_count > 30 else True
 
             if display.empty:
                 st.markdown('<div class="bento-card" style="text-align:center;padding:60px 20px;"><div style="font-size:1.1rem;font-weight:700;">No Setups Found</div><div class="small-muted" style="margin-top:8px">Try changing the filter or scanning the market.</div></div>', unsafe_allow_html=True)
             else:
-                for start in range(0, len(display), 3):
+                grid_df = display if show_all_cards else display.head(30)
+                for start in range(0, len(grid_df), 3):
                     cols = st.columns(3)
                     for j, col in enumerate(cols):
                         idx = start + j
-                        if idx >= len(display): continue
-                        row = display.iloc[idx]
+                        if idx >= len(grid_df): continue
+                        row = grid_df.iloc[idx]
                         
                         timeframe, tf_cls = get_timeframe_status(row)
 
