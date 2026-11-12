@@ -1,549 +1,141 @@
-"""Historical OHLC backfill and 20-trading-session audit reconciliation.
-
-This module is independent from scanner.py. It does not alter any scan,
-score, rank, filter, resistance, target or stop calculation. Daily OHLC is read
-as raw market prices; split actions are handled explicitly so recorded signal
-levels remain comparable to the prices actually traded after a split.
-"""
+"""Free Google Sheets bridge using a Google Apps Script Web App."""
 from __future__ import annotations
-
-from datetime import date, datetime, timedelta
-from bisect import bisect_right
-from typing import Callable
-from zoneinfo import ZoneInfo
-
-import numpy as np
+from datetime import datetime
+import time
+import uuid
+from typing import Any
 import pandas as pd
+import requests
 
-IST = ZoneInfo("Asia/Kolkata")
-OHLC_COLUMNS = ["Open", "High", "Low", "Close"]
-PERFORMANCE_COLUMNS = [
-    "Signal_ID", "Scan_Date", "Tracking_Day", "Tracking_Date",
-    "Open", "High", "Low", "Close", "Breakout_Trigger", "Target_1",
-    "Target_2", "Target_3", "Stop", "Breakout_Hit", "T1_Hit", "T2_Hit",
-    "T3_Hit", "Stop_Hit", "Best_Gain_Pct", "Max_Drawdown_Pct", "Status",
-    "Data_Quality", "Signal_Price", "Close_Return_Pct", "Breakout_First_Day",
-    "T1_First_Day", "T2_First_Day", "T3_First_Day", "Stop_First_Day",
-    "First_Event", "First_Event_Day", "Data_Source", "Updated_At_IST",
-    "Cumulative_Split_Ratio", "Signal_Price_Current_Basis",
-    "Breakout_Trigger_Current_Basis", "Target_1_Current_Basis",
-    "Target_2_Current_Basis", "Target_3_Current_Basis", "Stop_Current_Basis",
+SHEET_ID_DEFAULT = "1Mp1Cper3L7Hiv-JzzNXP_CtlUwJ7PVbHgFPYANlcGNc"
+SIGNALS_TAB = "Audit_Signals"
+RUNS_TAB = "Audit_Runs"
+PERFORMANCE_TAB = "Daily_Performance"
+ANALYSIS_TAB = "Analysis_Results"
+
+EXPECTED_ANALYSIS_HEADERS = [
+    "Analysis_Timestamp_IST", "Outcome_Goal", "Setup_Rules", "Times_Occurred",
+    "Win_Rate_%", "Avg_Profit_%", "Stop_Hit_Rate_%", "Overall_Score_(0-100)"
 ]
 
+def _config(secrets):
+    url = str(secrets.get("AUDIT_APPS_SCRIPT_URL", "")).strip()
+    token = str(secrets.get("AUDIT_TOKEN", "")).strip()
+    sheet_id = str(secrets.get("AUDIT_SHEET_ID", SHEET_ID_DEFAULT)).strip()
+    if not url: raise RuntimeError("AUDIT_APPS_SCRIPT_URL missing.")
+    if not token: raise RuntimeError("AUDIT_TOKEN missing.")
+    return url, token, sheet_id
 
-def latest_completed_market_date(now: datetime | None = None) -> date:
-    """Use today's OHLC only after 16:15 IST; otherwise cap at yesterday."""
-    now = now or datetime.now(IST)
-    local = now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=IST)
-    if local.hour < 16 or (local.hour == 16 and local.minute < 15):
-        return local.date() - timedelta(days=1)
-    return local.date()
-
-
-def _to_date(value) -> date | None:
-    """Parse dates from Google Sheets, including its numeric date serials."""
-    if value is None or isinstance(value, (bool, np.bool_)):
-        return None
-
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        try:
-            serial = float(value)
-            if not np.isfinite(serial) or serial < 20000 or serial > 100000:
-                return None
-            return (pd.Timestamp("1899-12-30") +
-                    pd.to_timedelta(serial, unit="D")).date()
-        except Exception:
-            return None
-
-    if isinstance(value, str):
-        text_value = value.strip()
-        if not text_value:
-            return None
-        numeric_text = text_value.replace(",", "")
-        try:
-            serial = float(numeric_text)
-            if np.isfinite(serial) and 20000 <= serial <= 100000:
-                return (pd.Timestamp("1899-12-30") +
-                        pd.to_timedelta(serial, unit="D")).date()
-        except (TypeError, ValueError, OverflowError):
-            pass
-
+def _post(secrets, payload: dict[str, Any]) -> dict:
+    url, token, _ = _config(secrets)
+    body = dict(payload)
+    body["token"] = token
     try:
-        ts = pd.Timestamp(value)
-        if pd.isna(ts):
-            return None
-        if ts.tzinfo is not None:
-            ts = ts.tz_convert("Asia/Kolkata")
-        return ts.date()
-    except Exception:
-        return None
+        response = requests.post(url, json=body, timeout=180)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not reach Apps Script: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(f"Apps Script HTTP {response.status_code}")
+    result = response.json()
+    if not result.get("ok", False):
+        raise RuntimeError(str(result.get("error", "Unknown error.")))
+    return result
 
-
-def _num(value) -> float:
+def _get(secrets, action: str) -> dict:
+    url, token, _ = _config(secrets)
     try:
-        x = float(value)
-        return x if np.isfinite(x) else np.nan
-    except Exception:
-        return np.nan
+        response = requests.get(url, params={"action": action, "token": token}, timeout=180)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not reach Apps Script: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(f"Apps Script HTTP {response.status_code}")
+    result = response.json()
+    if not result.get("ok", False):
+        raise RuntimeError(str(result.get("error", "Unknown error.")))
+    return result
 
+def new_run_id() -> str:
+    return datetime.now().strftime("AUDIT_%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
 
-def _ticker_for_symbol(symbol: str) -> str:
-    return str(symbol).strip().replace("&", "%26") + ".NS"
-
-
-def _extract_ticker_frame(downloaded: pd.DataFrame, ticker: str) -> pd.DataFrame | None:
-    if downloaded is None or downloaded.empty:
-        return None
-    df = downloaded
-    if isinstance(df.columns, pd.MultiIndex):
-        found = False
-        for level in range(df.columns.nlevels):
-            vals = [str(v) for v in df.columns.get_level_values(level).unique()]
-            if ticker in vals:
-                try:
-                    df = df.xs(ticker, axis=1, level=level, drop_level=True)
-                    found = True
-                    break
-                except Exception:
-                    continue
-        if not found:
-            for level in range(df.columns.nlevels):
-                vals = {str(v).strip().title() for v in df.columns.get_level_values(level).unique()}
-                if set(OHLC_COLUMNS).issubset(vals):
-                    df = df.copy()
-                    df.columns = df.columns.get_level_values(level)
-                    found = True
-                    break
-        if not found:
-            return None
-    normalized = {str(c).strip().title(): c for c in df.columns}
-    if not all(c in normalized for c in OHLC_COLUMNS):
-        return None
-    out = df[[normalized[c] for c in OHLC_COLUMNS]].copy()
-    out.columns = OHLC_COLUMNS
-    split_column = normalized.get("Stock Splits")
-    if split_column is not None:
-        out["Stock Splits"] = pd.to_numeric(df[split_column], errors="coerce").fillna(0.0).to_numpy()
-    else:
-        out["Stock Splits"] = 0.0
-    for col in OHLC_COLUMNS:
-        out[col] = pd.to_numeric(out[col], errors="coerce")
-    out = out.dropna(subset=OHLC_COLUMNS)
-    if out.empty:
-        return None
-    idx = pd.to_datetime(out.index, errors="coerce")
-    if getattr(idx, "tz", None) is not None:
-        idx = idx.tz_convert("Asia/Kolkata").tz_localize(None)
-    out.index = pd.DatetimeIndex(idx).normalize()
-    out = out[~out.index.isna()]
-    out = out[~out.index.duplicated(keep="last")].sort_index()
-    out.index.name = "Date"
-    return out if not out.empty else None
-
-
-def fetch_ohlc_histories(
-    signals: pd.DataFrame,
-    as_of_date: date | None = None,
-    chunk_size: int = 15,
-    progress_callback: Callable[[int, int, str], None] | None = None,
-) -> tuple[dict[str, pd.DataFrame], list[str], list[date], str]:
-    """Fetch OHLC for unique signal symbols and an index-derived trading calendar."""
-    if signals is None or signals.empty or "Symbol" not in signals.columns:
-        return {}, [], [], "no_signals"
+def append_audit_batch(
+    secrets, rows: pd.DataFrame, run_id: str, scan_timestamp_ist: str,
+    scanner_period: str = "2y", max_distance_pct: float = 10.0,
+) -> dict:
+    if rows is None or rows.empty:
+        return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_result"}
     try:
-        import yfinance as yf
-    except ImportError as exc:
-        raise RuntimeError("The yfinance package is missing. Add yfinance to requirements.txt and redeploy.") from exc
+        clean_df = rows.copy()
+        if "Symbol" in clean_df.columns:
+            valid_sym = clean_df["Symbol"].notna() & clean_df["Symbol"].astype(str).str.strip().ne("")
+            clean_df = clean_df[valid_sym].copy()
+        if clean_df.empty: return {"saved": False, "rows": 0, "run_id": run_id, "reason": "empty_after_filter"}
+        
+        # FIX: Directly convert to dict without aggressive 'where' dropping which wiped the new floats/bools
+        clean_df = clean_df.fillna("")
+        records = clean_df.to_dict(orient="records")
+    except Exception as exc:
+        raise RuntimeError(f"Could not prepare rows: {exc}") from exc
 
-    as_of_date = as_of_date or latest_completed_market_date()
-    starts = [_to_date(v) for v in signals.get("Scan_Date", [])]
-    starts = [d for d in starts if d is not None]
-    if not starts:
-        return {}, sorted(set(signals["Symbol"].dropna().astype(str))), [], "invalid_scan_dates"
-    start_date = min(starts) + timedelta(days=1)
-    if start_date > as_of_date:
-        return {}, [], [], "no_post_signal_sessions_yet"
-
-    symbols = sorted({str(s).strip() for s in signals["Symbol"].dropna() if str(s).strip()})
-    ticker_to_symbol = {_ticker_for_symbol(s): s for s in symbols}
-    tickers = list(ticker_to_symbol)
-    histories: dict[str, pd.DataFrame] = {}
-    end_exclusive = as_of_date + timedelta(days=1)
-    chunks = [tickers[i:i + max(1, chunk_size)] for i in range(0, len(tickers), max(1, chunk_size))]
-
-    for chunk_num, chunk in enumerate(chunks, start=1):
-        if progress_callback:
-            progress_callback(chunk_num - 1, len(chunks) + 1, f"Downloading OHLC batch {chunk_num}/{len(chunks)}")
-        kwargs = dict(tickers=chunk, start=start_date.isoformat(), end=end_exclusive.isoformat(),
-                      interval="1d", auto_adjust=False, actions=True, progress=False, threads=False, group_by="ticker")
-        try:
-            try:
-                downloaded = yf.download(**kwargs, multi_level_index=True, timeout=25)
-            except TypeError:
-                downloaded = yf.download(**kwargs)
-        except Exception:
-            downloaded = None
-
-        missing_in_chunk = []
-        for ticker in chunk:
-            frame = _extract_ticker_frame(downloaded, ticker)
-            if frame is not None:
-                histories[ticker_to_symbol[ticker]] = frame
-            else:
-                missing_in_chunk.append(ticker)
-
-        for ticker in missing_in_chunk:
-            one_kwargs = dict(kwargs)
-            one_kwargs["tickers"] = ticker
-            try:
-                try:
-                    single = yf.download(**one_kwargs, multi_level_index=True, timeout=20)
-                except TypeError:
-                    single = yf.download(**one_kwargs)
-                frame = _extract_ticker_frame(single, ticker)
-                if frame is not None:
-                    histories[ticker_to_symbol[ticker]] = frame
-            except Exception:
-                continue
-        if progress_callback:
-            progress_callback(chunk_num, len(chunks) + 1, f"Processed OHLC batch {chunk_num}/{len(chunks)}")
-
-    missing = sorted(set(symbols) - set(histories))
-    calendar: list[date] = []
-    calendar_source = "NIFTY 50 index (^NSEI)"
-    if progress_callback:
-        progress_callback(len(chunks), len(chunks) + 1, "Fetching trading-session calendar from NIFTY 50…")
-    try:
-        index_kwargs = dict(tickers="^NSEI", start=start_date.isoformat(), end=end_exclusive.isoformat(),
-                            interval="1d", auto_adjust=False, actions=True, progress=False, threads=False, group_by="ticker")
-        try:
-            index_data = yf.download(**index_kwargs, multi_level_index=True, timeout=20)
-        except TypeError:
-            index_data = yf.download(**index_kwargs)
-        index_frame = _extract_ticker_frame(index_data, "^NSEI")
-        if index_frame is not None:
-            calendar = sorted({stamp.date() for stamp in index_frame.index if stamp.date() <= as_of_date})
-    except Exception:
-        calendar = []
-    if not calendar:
-        calendar_source = "Fallback: union of stock OHLC dates"
-        calendar = sorted({stamp.date() for frame in histories.values() for stamp in frame.index if stamp.date() <= as_of_date})
-    if progress_callback:
-        progress_callback(len(chunks) + 1, len(chunks) + 1, f"Trading calendar ready: {len(calendar)} sessions ({calendar_source})")
-    return histories, missing, calendar, calendar_source
-
-
-def _yes(value: bool) -> str:
-    return "YES" if value else "NO"
-
-
-def build_performance_rows(
-    signals: pd.DataFrame,
-    histories: dict[str, pd.DataFrame],
-    existing_performance: pd.DataFrame | None = None,
-    as_of_date: date | None = None,
-    market_sessions: list[date] | None = None,
-    calendar_source: str = "provided market session calendar",
-    now: datetime | None = None,
-    progress_callback: Callable[[int, int, str], None] | None = None,
-) -> tuple[pd.DataFrame, dict]:
-    """Build/reconcile up to 20 tracking days per signal, including explicit gaps."""
-    now = now or datetime.now(IST)
-    as_of_date = as_of_date or latest_completed_market_date(now)
-
-    # Read existing keys and dates so invalid historical dates can be repaired.
-    existing_quality: dict[tuple[str, int], str] = {}
-    existing_scan_dates: dict[tuple[str, int], date | None] = {}
-
-    if existing_performance is not None and not existing_performance.empty:
-        required = ["Signal_ID", "Tracking_Day"]
-        if all(name in existing_performance.columns for name in required):
-            for old in existing_performance.to_dict(orient="records"):
-                sid = str(old.get("Signal_ID", "") or "").strip()
-                try:
-                    day_num = int(float(old.get("Tracking_Day")))
-                except (TypeError, ValueError):
-                    continue
-
-                if not sid or day_num <= 0:
-                    continue
-
-                key = (sid, day_num)
-                existing_quality[key] = str(
-                    old.get("Data_Quality", "OK") or "OK"
-                ).strip().upper()
-                existing_scan_dates[key] = _to_date(old.get("Scan_Date"))
-
-    empty_report = {
-        "signals": int(len(signals)) if signals is not None else 0,
-        "signals_with_history": 0, "signals_without_history": 0,
-        "signals_complete_20d": 0, "signals_window_elapsed_20d": 0,
-        "rows_generated": 0, "rows_skipped_existing": 0,
-        "missing_symbols": [], "missing_signals": [], "missing_candles": [],
-        "incomplete_signals": [], "pending_no_future_sessions": [],
-        "expected_keys": [], "as_of_date": as_of_date.isoformat(),
-        "calendar_source": calendar_source,
-    }
-    if signals is None or signals.empty:
-        return pd.DataFrame(columns=PERFORMANCE_COLUMNS), empty_report
-
-    sessions = sorted({_to_date(d) for d in (market_sessions or []) if _to_date(d) is not None and _to_date(d) <= as_of_date})
-    if not sessions:
-        sessions = sorted({stamp.date() for frame in histories.values() for stamp in frame.index if stamp.date() <= as_of_date})
-        calendar_source = "Fallback: union of stock OHLC dates"
-
-    history_lookup_cache: dict[str, dict] = {}
-
-    def get_date_lookup(symbol: str) -> dict:
-        if symbol in history_lookup_cache:
-            return history_lookup_cache[symbol]
-        history = histories.get(symbol)
-        lookup: dict = {}
-        if history is not None and not history.empty:
-            frame = history.copy()
-            idx = pd.to_datetime(frame.index, errors="coerce")
-            if getattr(idx, "tz", None) is not None:
-                idx = idx.tz_convert("Asia/Kolkata").tz_localize(None)
-            frame.index = pd.DatetimeIndex(idx)
-            frame = frame[~frame.index.isna()].sort_index()
-            required_columns = [c for c in OHLC_COLUMNS if c in frame.columns]
-            if len(required_columns) == len(OHLC_COLUMNS):
-                split_values = (frame["Stock Splits"].to_numpy()
-                                if "Stock Splits" in frame.columns
-                                else np.zeros(len(frame)))
-                for stamp, op, high, low, close, split_event in zip(
-                    frame.index, frame["Open"].to_numpy(), frame["High"].to_numpy(),
-                    frame["Low"].to_numpy(), frame["Close"].to_numpy(), split_values
-                ):
-                    lookup[stamp.date()] = (op, high, low, close, split_event)
-        history_lookup_cache[symbol] = lookup
-        return lookup
-
-    signal_records = signals.to_dict(orient="records")
-    total_signals = len(signal_records)
-    progress_every = max(1, (total_signals + 99) // 100)
-    if progress_callback:
-        progress_callback(0, max(1, total_signals),
-                          f"Preparing to build up to 20 tracking days for {total_signals:,} saved signals…")
-
-    rows: list[tuple] = []
-    missing_signals: list[dict] = []
-    pending_no_future: list[dict] = []
-    missing_candles: list[dict] = []
-    incomplete_signals: list[dict] = []
-    with_history_ids: set[str] = set()
-    complete_20d = 0
-    elapsed_20d = 0
-    skipped_existing = 0
-    expected_keys: set[tuple[str, int]] = set()
-    timestamp = (now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=IST)).strftime("%Y-%m-%d %H:%M:%S IST")
-
-    for signal_number, signal in enumerate(signal_records, start=1):
-        if progress_callback and (signal_number == 1 or signal_number % progress_every == 0):
-            progress_callback(
-                signal_number - 1, max(1, total_signals),
-                f"Building Day 1–20 records: {signal_number - 1:,}/{total_signals:,} signals processed; "
-                f"{len(rows):,} new/repair rows prepared…"
-            )
-        sid = str(signal.get("Signal_ID", "")).strip()
-        symbol = str(signal.get("Symbol", "")).strip()
-        scan_date = _to_date(signal.get("Scan_Date"))
-        if not sid or not symbol or scan_date is None:
-            missing_signals.append({"Signal_ID": sid or "(missing ID)", "Symbol": symbol, "Reason": "Missing Signal_ID, Symbol or valid Scan_Date"})
-            continue
-        if as_of_date <= scan_date:
-            pending_no_future.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No completed trading session after this signal date yet"})
-            continue
-
-        first_future = bisect_right(sessions, scan_date)
-        expected_dates = sessions[first_future:first_future + 20]
-        if not expected_dates:
-            pending_no_future.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No market sessions available after this signal date yet"})
-            continue
-
-        date_lookup = get_date_lookup(symbol)
-        price = _num(signal.get("Price"))
-        trigger = _num(signal.get("Breakout_Trigger"))
-        t1, t2, t3, stop = (_num(signal.get(k)) for k in ("Target_1", "Target_2", "Target_3", "Stop"))
-        has_expected_candle = any(d in date_lookup for d in expected_dates)
-        if has_expected_candle:
-            with_history_ids.add(sid)
-        else:
-            missing_signals.append({"Signal_ID": sid, "Symbol": symbol, "Reason": "No OHLC history available for expected post-signal sessions; placeholder rows created"})
-
-        breakout_day = t1_day = t2_day = t3_day = stop_day = None
-        cumulative_split_ratio = 1.0
-        max_high = price if np.isfinite(price) else np.nan
-        prior_peak = price if np.isfinite(price) else np.nan
-        worst_drawdown = 0.0
-        first_event = "NONE"
-        first_event_day = None
-        first_missing_day = None
-        signal_rows: list[dict] = []
-        valid_ohlc_days = 0
-
-        for tracking_day, tracking_date in enumerate(expected_dates, start=1):
-            candle = date_lookup.get(tracking_date)
-            available = candle is not None
-            if available:
-                op, high, low, close, split_event_value = candle
-                op, high, low, close = (_num(v) for v in (op, high, low, close))
-                available = all(np.isfinite(v) for v in (op, high, low, close))
-            else:
-                op = high = low = close = np.nan
-                split_event_value = 0.0
-
-            if not available:
-                if first_missing_day is None:
-                    first_missing_day = tracking_day
-                missing_candles.append({
-                    "Signal_ID": sid, "Symbol": symbol, "Tracking_Day": tracking_day,
-                    "Tracking_Date": tracking_date.isoformat(), "Reason": "OHLC candle missing from provider; will retry on next update",
-                })
-                quality = "MISSING_OHLC_FOR_MARKET_SESSION"
-                status = "MISSING_OHLC_RETRY"
-            else:
-                valid_ohlc_days += 1
-                split_event = _num(split_event_value)
-                if np.isfinite(split_event) and split_event > 0:
-                    cumulative_split_ratio *= split_event
-
-                norm_high = high * cumulative_split_ratio if np.isfinite(high) else np.nan
-                norm_low = low * cumulative_split_ratio if np.isfinite(low) else np.nan
-                if np.isfinite(norm_high):
-                    max_high = max(max_high, norm_high) if np.isfinite(max_high) else norm_high
-                if breakout_day is None and np.isfinite(trigger) and np.isfinite(norm_high) and norm_high >= trigger:
-                    breakout_day = tracking_day
-                if t1_day is None and np.isfinite(t1) and np.isfinite(norm_high) and norm_high >= t1:
-                    t1_day = tracking_day
-                if t2_day is None and np.isfinite(t2) and np.isfinite(norm_high) and norm_high >= t2:
-                    t2_day = tracking_day
-                if t3_day is None and np.isfinite(t3) and np.isfinite(norm_high) and norm_high >= t3:
-                    t3_day = tracking_day
-                stop_today = np.isfinite(stop) and np.isfinite(norm_low) and norm_low <= stop
-                if stop_day is None and stop_today:
-                    stop_day = tracking_day
-                target_today = any(np.isfinite(level) and np.isfinite(norm_high) and norm_high >= level for level in (t1, t2, t3))
-                if first_event == "NONE":
-                    if stop_today and target_today:
-                        first_event, first_event_day = "AMBIGUOUS_SAME_DAY", tracking_day
-                    elif stop_today:
-                        first_event, first_event_day = "STOP_FIRST", tracking_day
-                    elif target_today:
-                        first_event, first_event_day = "TARGET_FIRST", tracking_day
-
-                day_peak = max(prior_peak, norm_high) if np.isfinite(prior_peak) and np.isfinite(norm_high) else (norm_high if np.isfinite(norm_high) else prior_peak)
-                if np.isfinite(norm_low) and np.isfinite(day_peak) and day_peak > 0:
-                    worst_drawdown = min(worst_drawdown, (norm_low / day_peak - 1.0) * 100.0)
-                prior_peak = day_peak
-                quality = "OK"
-                status = first_event if first_event != "NONE" else "OPEN_NO_TARGET_OR_STOP_YET"
-
-            if first_missing_day is not None and tracking_day > first_missing_day and available:
-                quality = "INCOMPLETE_20D_HISTORY"
-                status = "INCOMPLETE_20D_HISTORY"
-            if tracking_day == 20:
-                if quality != "OK":
-                    status = "COMPLETED_20D_BUT_DATA_INCOMPLETE"
-                elif first_event == "TARGET_FIRST":
-                    status = "COMPLETED_20D_TARGET_FIRST"
-                elif first_event == "STOP_FIRST":
-                    status = "COMPLETED_20D_STOP_FIRST"
-                elif first_event == "AMBIGUOUS_SAME_DAY":
-                    status = "COMPLETED_20D_AMBIGUOUS_FIRST_EVENT"
-                else:
-                    status = "COMPLETED_20D_NO_TARGET_OR_STOP"
-
-            record = {
-                "Signal_ID": sid, "Scan_Date": scan_date.isoformat(),
-                "Tracking_Day": tracking_day, "Tracking_Date": tracking_date.isoformat(),
-                "Open": op if available else "", "High": high if available else "",
-                "Low": low if available else "", "Close": close if available else "",
-                "Breakout_Trigger": trigger, "Target_1": t1, "Target_2": t2, "Target_3": t3, "Stop": stop,
-                "Breakout_Hit": _yes(breakout_day is not None), "T1_Hit": _yes(t1_day is not None),
-                "T2_Hit": _yes(t2_day is not None), "T3_Hit": _yes(t3_day is not None),
-                "Stop_Hit": _yes(stop_day is not None),
-                "Best_Gain_Pct": ((max_high / price) - 1.0) * 100.0 if np.isfinite(max_high) and np.isfinite(price) and price > 0 else "",
-                "Max_Drawdown_Pct": worst_drawdown,
-                "Status": status, "Data_Quality": quality,
-                "Signal_Price": price if np.isfinite(price) else "",
-                "Close_Return_Pct": ((close * cumulative_split_ratio / price) - 1.0) * 100.0 if available and np.isfinite(close) and np.isfinite(price) and price > 0 else "",
-                "Breakout_First_Day": breakout_day if breakout_day is not None else "",
-                "T1_First_Day": t1_day if t1_day is not None else "",
-                "T2_First_Day": t2_day if t2_day is not None else "",
-                "T3_First_Day": t3_day if t3_day is not None else "",
-                "Stop_First_Day": stop_day if stop_day is not None else "",
-                "First_Event": first_event, "First_Event_Day": first_event_day if first_event_day is not None else "",
-                "Data_Source": "Yahoo Finance raw daily OHLC; split-normalized comparisons", "Updated_At_IST": timestamp,
-                "Cumulative_Split_Ratio": cumulative_split_ratio,
-                "Signal_Price_Current_Basis": price / cumulative_split_ratio if np.isfinite(price) and cumulative_split_ratio > 0 else "",
-                "Breakout_Trigger_Current_Basis": trigger / cumulative_split_ratio if np.isfinite(trigger) and cumulative_split_ratio > 0 else "",
-                "Target_1_Current_Basis": t1 / cumulative_split_ratio if np.isfinite(t1) and cumulative_split_ratio > 0 else "",
-                "Target_2_Current_Basis": t2 / cumulative_split_ratio if np.isfinite(t2) and cumulative_split_ratio > 0 else "",
-                "Target_3_Current_Basis": t3 / cumulative_split_ratio if np.isfinite(t3) and cumulative_split_ratio > 0 else "",
-                "Stop_Current_Basis": stop / cumulative_split_ratio if np.isfinite(stop) and cumulative_split_ratio > 0 else "",
-            }
-            signal_rows.append(record)
-            expected_keys.add((sid, tracking_day))
-
-        missing_day_nums = [r["Tracking_Day"] for r in signal_rows if r["Data_Quality"] == "MISSING_OHLC_FOR_MARKET_SESSION"]
-        if missing_day_nums:
-            first_gap = min(missing_day_nums)
-            for record in signal_rows:
-                if int(record["Tracking_Day"]) > first_gap and record["Data_Quality"] == "OK":
-                    record["Data_Quality"] = "INCOMPLETE_20D_HISTORY"
-                    record["Status"] = "INCOMPLETE_20D_HISTORY"
-            incomplete_signals.append({
-                "Signal_ID": sid, "Symbol": symbol, "Available_Days": valid_ohlc_days,
-                "Missing_Tracking_Days": ",".join(str(d) for d in missing_day_nums),
-                "Reason": "One or more expected market-session candles are missing; outcome excluded until repaired",
-            })
-
-        if len(expected_dates) >= 20:
-            elapsed_20d += 1
-            day20 = next((r for r in signal_rows if int(r["Tracking_Day"]) == 20), None)
-            if day20 and day20["Data_Quality"] == "OK":
-                complete_20d += 1
-
-        for record in signal_rows:
-            key = (sid, int(record["Tracking_Day"]))
-            old_quality = existing_quality.get(key)
-            old_scan_date = existing_scan_dates.get(key)
-            invalid_old_date = old_scan_date is not None and old_scan_date.year < 2000
-
-            # Repair missing, incomplete, and incorrectly dated records.
-            if old_quality and old_quality not in {
-                "MISSING_OHLC_FOR_MARKET_SESSION",
-                "INCOMPLETE_20D_HISTORY"
-            } and not invalid_old_date:
-                skipped_existing += 1
-                continue
-
-            rows.append(tuple(record.get(column, "") for column in PERFORMANCE_COLUMNS))
-
-    result = pd.DataFrame(rows, columns=PERFORMANCE_COLUMNS)
-    if progress_callback:
-        progress_callback(
-            total_signals, max(1, total_signals),
-            f"Record building complete: {total_signals:,} signals checked; "
-            f"{len(result):,} new/repair rows prepared; "
-            f"{skipped_existing:,} existing records skipped."
-        )
-    empty_report.update({
-        "signals_with_history": len(with_history_ids),
-        "signals_without_history": len({r.get("Signal_ID") for r in missing_signals if r.get("Signal_ID") and "No OHLC history" in r.get("Reason", "")}),
-        "signals_waiting_for_first_session": len(pending_no_future),
-        "signals_complete_20d": complete_20d,
-        "signals_window_elapsed_20d": elapsed_20d,
-        "rows_generated": int(len(result)),
-        "rows_skipped_existing": int(skipped_existing),
-        "missing_signals": missing_signals,
-        "missing_symbols": sorted({str(r.get("Symbol")) for r in missing_signals if r.get("Symbol") and "No OHLC history" in r.get("Reason", "")}),
-        "pending_no_future_sessions": pending_no_future,
-        "missing_candles": missing_candles,
-        "incomplete_signals": incomplete_signals,
-        "expected_keys": [(sid, day) for sid, day in sorted(expected_keys)],
-        "calendar_source": calendar_source,
-        "latest_market_session": max(sessions).isoformat() if sessions else "",
+    return _post(secrets, {
+        "action": "append_audit_batch", "run_id": run_id, "scan_timestamp_ist": scan_timestamp_ist,
+        "scanner_period": scanner_period, "max_distance_pct": max_distance_pct, "rows": records,
     })
-    return result, empty_report
+
+def read_audit_signals(secrets) -> pd.DataFrame:
+    return pd.DataFrame(_get(secrets, "read_signals").get("data", []))
+
+def read_daily_performance(secrets) -> pd.DataFrame:
+    return pd.DataFrame(_get(secrets, "read_performance").get("data", []))
+
+def read_final_performance(secrets) -> pd.DataFrame:
+    return pd.DataFrame(_get(secrets, "read_final_performance").get("data", []))
+
+def append_performance_rows(secrets, rows: pd.DataFrame, batch_size: int = 400, progress_callback=None) -> dict:
+    if rows is None or rows.empty: return {"saved": False, "rows": 0, "expected": 0, "reason": "empty_result", "batches": 0}
+    records = rows.fillna("").to_dict(orient="records")
+    written = updated = skipped = 0
+    results = []
+    size = min(400, max(1, int(batch_size)))
+    for batch_index, start in enumerate(range(0, len(records), size), start=1):
+        batch = records[start:start + size]
+        if progress_callback: progress_callback(start, len(records), f"Writing batch {batch_index}...")
+        result = _post(secrets, {"action": "append_performance", "rows": batch})
+        written += int(result.get("rows", 0))
+        updated += int(result.get("updated", 0))
+        skipped += int(result.get("skipped_duplicates", 0))
+        results.append(result)
+        time.sleep(1.5)
+    return {"saved": written > 0 or updated > 0, "rows": written, "updated": updated, "expected": len(records), "skipped_duplicates": skipped, "batches": len(results), "reason": "appended_or_repaired"}
+
+def read_performance_keys(secrets) -> pd.DataFrame:
+    return pd.DataFrame(_get(secrets, "read_performance_keys").get("data", []), columns=["Signal_ID", "Tracking_Day", "Data_Quality", "Scan_Date"])
+
+def read_watchlist(secrets) -> pd.DataFrame:
+    return pd.DataFrame(_get(secrets, "read_watchlist").get("data", []))
+
+def append_analysis_rows(secrets, analysis_df: pd.DataFrame) -> int:
+    if analysis_df is None or analysis_df.empty: return 0
+    return int(_post(secrets, {"action": "append_analysis", "rows": analysis_df.fillna("").to_dict(orient="records")}).get("rows", 0))
+
+def test_connection(secrets) -> dict:
+    return _get(secrets, "ping")
+
+def append_watchlist_row(secrets, row_dict: dict) -> dict:
+    if not row_dict: return {"saved": False, "reason": "empty"}
+    return _post(secrets, {"action": "append_watchlist", "row": row_dict})
+
+def delete_watchlist_row(secrets, symbol: str) -> dict:
+    clean_sym = str(symbol).strip().upper()
+    if not clean_sym: return {"ok": False, "reason": "empty_symbol"}
+    return _post(secrets, {"action": "delete_watchlist", "symbol": clean_sym, "Symbol": clean_sym, "payload": {"Symbol": clean_sym}})
+
+def log_paper_trade(secrets, trade_data):
+    return _post(secrets, {"action": "log_paper_trade", "row": trade_data})
+
+def get_paper_trades(secrets):
+    try: return pd.DataFrame(_get(secrets, "get_paper_trades").get("data", []))
+    except Exception as e: return pd.DataFrame()
+
+def close_paper_trade(secrets, trade_id, exit_price, pnl, target_hit=None):
+    from zoneinfo import ZoneInfo
+    return _post(secrets, {"action": "close_paper_trade", "trade_id": str(trade_id), "exit_price": float(exit_price), "pnl": float(pnl), "target_hit": str(target_hit) if target_hit else "", "exit_date": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")})
