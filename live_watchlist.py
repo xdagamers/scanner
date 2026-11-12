@@ -29,40 +29,58 @@ def _money(x):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_live_watchlist_prices(symbols_tuple):
-    """Fetch live prices for watchlist symbols with MultiIndex handling and fast_info fallback."""
+    """Fetch live prices for all watchlist symbols in a single parallel batch download."""
+    if not symbols_tuple:
+        return {}
+    clean_syms = [str(s).strip().upper().replace(".NS", "") for s in symbols_tuple if str(s).strip()]
+    if not clean_syms:
+        return {}
+    tickers = [s.replace("&", "%26") + ".NS" for s in clean_syms]
     live_prices = {}
-    for sym in symbols_tuple:
-        clean_sym = str(sym).strip().upper().replace(".NS", "")
-        if not clean_sym:
-            continue
-        yf_sym = clean_sym.replace("&", "%26") + ".NS"
-        price_found = None
 
-        # Primary Method: 5-day 1d download
-        try:
-            t_df = yf.download(yf_sym, period="5d", interval="1d", progress=False, auto_adjust=True)
-            if t_df is not None and not t_df.empty:
-                close_col = t_df["Close"]
-                if isinstance(close_col, pd.DataFrame):
-                    close_col = close_col.iloc[:, 0]
-                close_series = close_col.dropna()
-                if not close_series.empty:
-                    price_found = float(close_series.iloc[-1])
-        except Exception:
-            pass
+    try:
+        raw = yf.download(
+            tickers,
+            period="5d",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+            group_by="ticker",
+            multi_level_index=True,
+        )
+        if raw is not None and not raw.empty:
+            for sym, ticker in zip(clean_syms, tickers):
+                try:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        if ticker in raw.columns.get_level_values(0):
+                            df_s = raw[ticker]
+                        elif ticker in raw.columns.get_level_values(1):
+                            df_s = raw.xs(ticker, axis=1, level=1)
+                        else:
+                            continue
+                    else:
+                        df_s = raw
+                    close_s = df_s["Close"].dropna()
+                    if not close_s.empty:
+                        val = float(close_s.iloc[-1])
+                        if np.isfinite(val) and val > 0:
+                            live_prices[sym] = val
+                except Exception:
+                    continue
+    except Exception:
+        pass
 
-        # Fallback Method: Yahoo Finance fast_info
-        if price_found is None or not np.isfinite(price_found) or price_found <= 0:
+    # Fallback only for any symbol that missed batch download
+    for sym, ticker in zip(clean_syms, tickers):
+        if sym not in live_prices:
             try:
-                fi = yf.Ticker(yf_sym).fast_info
+                fi = yf.Ticker(ticker).fast_info
                 lp = fi.get("lastPrice") or fi.get("regularMarketPrice") or fi.get("previousClose")
                 if lp and float(lp) > 0:
-                    price_found = float(lp)
+                    live_prices[sym] = float(lp)
             except Exception:
                 pass
-
-        if price_found is not None and np.isfinite(price_found) and price_found > 0:
-            live_prices[clean_sym] = price_found
 
     return live_prices
 
@@ -260,6 +278,7 @@ def render_watchlist_tab(watchlist_df):
                     try:
                         with st.spinner(f"Logging paper trade for {item['sym']}..."):
                             log_paper_trade(st.secrets, trade_payload)
+                        st.cache_data.clear()
                         st.toast(f"✅ Executed Paper Trade: {item['sim_qty']} shares of {item['sym']} @ ₹{ep:,.2f}!")
                         time.sleep(0.8)
                         st.rerun()
@@ -274,6 +293,7 @@ def render_watchlist_tab(watchlist_df):
                 try:
                     with st.spinner(f"Removing {item['sym']} from Watchlist..."):
                         delete_watchlist_row(st.secrets, item["sym"])
+                    st.cache_data.clear()
                     st.toast(f"🗑️ Removed {item['sym']} from Manual_Watch_List!")
                     time.sleep(0.8)
                     st.rerun()
