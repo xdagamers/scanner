@@ -26,7 +26,8 @@ AUDIT_COLUMNS = [
     "Weight_Proximity", "Weight_Resistance", "Weight_Volume", "Weight_Trend",
     "Weight_Momentum", "Weight_ADX", "Weight_Squeeze", "Weight_Relative_Strength",
     "Weight_Candle", "Weight_Market_Regime", "Explanation",
-    "Delivery_Pct", "Deliverable_Qty"
+    "Delivery_Pct", "Deliverable_Qty",
+    "UD_Vol_Ratio_20D", "Candle_CLV", "Pct_Below_52W_High", "Distribution_Trap", "Overhead_Wall_Trap", "Overextended_Trap"
 ]
 
 def _num(row, key, default=np.nan):
@@ -148,7 +149,13 @@ def build_scan_snapshot(
             "Weight_Market_Regime": _num(weights, "market_regime"),
             "Explanation": row.get("explanation", ""),
             "Delivery_Pct": _clean_opt(row.get("delivery_pct", "")),
-            "Deliverable_Qty": _clean_opt(row.get("deliverable_qty", ""))
+            "Deliverable_Qty": _clean_opt(row.get("deliverable_qty", "")),
+            "UD_Vol_Ratio_20D": _num(row, "ud_vol_ratio"),
+            "Candle_CLV": _num(row, "clv"),
+            "Pct_Below_52W_High": _num(row, "pct_below_52w"),
+            "Distribution_Trap": bool(row.get("is_distribution_trap", False)),
+            "Overhead_Wall_Trap": bool(row.get("overhead_wall_trap", False)),
+            "Overextended_Trap": bool(row.get("is_overextended", False))
         })
     return pd.DataFrame(rows, columns=AUDIT_COLUMNS)
 
