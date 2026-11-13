@@ -1,15 +1,25 @@
-"""Matured-signal reconciliation and bounded combination analysis (Scanner v2 Institutional Edition).
+"""Matured-signal reconciliation and bounded combination analysis (Phase 3 Upgraded).
 
 The live scanner never imports this module. This is research-only code that
 compares saved signal-day features with observed 20-trading-day outcomes.
-Upgraded to evaluate high-conviction multi-factor combinations across:
-  - RSI (Momentum sweet spots, prime acceleration zones, and exhaustion filters)
-  - MACD (Raw MACD, Price-Normalized MACD %, and Histogram Expansion synergy)
-  - ADX (Trend strength sweet spots, directional dominance, and chop filters)
-  - Institutional Delivery (Delivery %, Deliverable Share Quantity, Deliverable Turnover in Cr,
-    and Delivery + Volume Accumulation conviction)
-  - Scanner v2 Native Anti-Trap Metrics (20D U/D Volume Ratio, Candle CLV, Proximity to 52W High,
-    Distribution/Overhead/Overextended Trap flags)
+
+Upgrades implemented in Phase 3:
+  1. Strict Triggered-Trade Outcome Filtering & Legacy Self-Healing:
+     In build_completed_outcomes(), all trade execution outcomes (T1/T2/T3_Hit,
+     T1/T2/T3_Before_Stop, Stop_Hit, Stop_Before_Target) are restricted strictly to
+     signals that actually crossed Breakout_Trigger (Breakout_Hit == 1). Untriggered
+     signals are masked as NaN on post-entry trade outcomes so they never corrupt
+     win-rate or stop-rate calculations, while remaining available when evaluating
+     "Breakout_Hit" (trigger conversion rate).
+     Also self-heals legacy Daily_Performance rows where a pre-trigger dip below Stop
+     was recorded before Breakout_First_Day.
+  2. Trigger-Anchored Return Reconciliation:
+     Reconciles Return_20D_Pct against Breakout_Trigger_Current_Basis (or Breakout_Trigger)
+     for triggered trades so historical rows reflect true post-trigger trade returns.
+  3. Phase 1 & 3 Feature Integration:
+     Integrates Sector_Relative_Strength_Pct (now computed in Phase 1 scanner.py),
+     Scale-Invariant MACD (% of price), Deliverable Turnover in ₹ Cr, and 4-Pillar
+     Institutional Synergy rules (RSI + MACD + ADX + Delivery/Volume).
 """
 from __future__ import annotations
 
@@ -35,7 +45,7 @@ ANALYSIS_OUTPUT_COLUMNS = [
 ]
 
 # Distinct feature families so combinations mix complementary dimensions
-# (e.g., RSI + MACD + ADX + Delivery + Proximity) without pairing collinear duplicates.
+# (e.g., RSI + MACD + ADX + Delivery + Sector RS + Proximity) without pairing collinear duplicates.
 FAMILY_MAP = {
     "Rating": "OVERALL_QUALITY",
     "Score": "OVERALL_QUALITY",
@@ -68,6 +78,7 @@ FAMILY_MAP = {
     "NIFTY_Relative_Strength_Pct": "RELATIVE_STRENGTH",
     "Relative_Strength_60D_Pct": "RELATIVE_STRENGTH",
     "Component_Relative_Strength": "RELATIVE_STRENGTH",
+    "Sector_Relative_Strength_Pct": "SECTOR_RELATIVE_STRENGTH",
     "Resistance_Touches": "RESISTANCE_QUALITY",
     "Component_Resistance": "RESISTANCE_QUALITY",
     "Risk_Reward": "RISK_REWARD",
@@ -81,7 +92,7 @@ FAMILY_MAP = {
     "Institutional_Synergy": "COMPOSITE_ARCHETYPE",
 }
 
-# Crisp, non-overlapping institutional tiers aligned with Scanner v2
+# Crisp, non-overlapping institutional tiers aligned with Scanner v3
 DEFAULT_THRESHOLDS = {
     "Rating": [7, 8],
     "Score": [65, 75, 82],
@@ -101,6 +112,7 @@ DEFAULT_THRESHOLDS = {
     "Resistance_Touches": [3, 4],
     "Risk_Reward": [1.5, 2.0, 2.5],
     "NIFTY_Relative_Strength_Pct": [2.0, 5.0, 10.0],
+    "Sector_Relative_Strength_Pct": [2.0, 5.0, 8.0],
     "Relative_Strength_60D_Pct": [5.0, 12.0],
     "Component_Volume": [0.70, 0.85],
     "Component_Trend": [0.75, 0.90],
@@ -110,7 +122,7 @@ DEFAULT_THRESHOLDS = {
     "Component_Relative_Strength": [0.60, 0.78, 0.95],
 }
 
-# Bounded range conditions capture Scanner v2 "sweet spot" zones without parabolic exhaustion
+# Bounded range conditions capture "sweet spot" zones without parabolic exhaustion
 RANGE_CONDITIONS = [
     ("RSI", "RSI_55_68_PrimeZone", 55.0, 68.0),
     ("RSI", "RSI_54_70_SweetSpot", 54.0, 70.0),
@@ -178,7 +190,7 @@ def _engineer_institutional_features(joined: pd.DataFrame) -> pd.DataFrame:
     ema_struct = joined.get("EMA_Structure", pd.Series("", index=idx)).astype(str).str.strip()
     expl_series = joined.get("Explanation", pd.Series("", index=idx)).astype(str)
 
-    # 1. Native Scanner v2 Columns with Fallback to Explanation Regex for Legacy Rows
+    # 1. Native Scanner Columns with Fallback to Explanation Regex for Legacy Rows
     ud_native = pd.to_numeric(joined.get("UD_Vol_Ratio_20D", pd.Series(np.nan, index=idx)), errors="coerce")
     ud_extracted = pd.to_numeric(
         expl_series.str.extract(r"20D accumulation \(([0-9.]+)x U/D vol\)", expand=False),
@@ -201,7 +213,6 @@ def _engineer_institutional_features(joined: pd.DataFrame) -> pd.DataFrame:
 
     macd_regime = pd.Series("MACD_NEUTRAL_OR_BEARISH", index=idx, dtype=object)
     macd_pos = macd_val > 0
-    # In scanner.py, Component_Momentum >= 0.85 requires RSI in sweet spot + MACD > Signal + expanding Histogram
     macd_expanding = macd_pos & ((comp_mom >= 0.85) | (macd_pct >= 0.25))
     macd_regime.loc[macd_pos] = "MACD_POSITIVE"
     macd_regime.loc[macd_expanding] = "MACD_BULLISH_EXPANSION"
@@ -298,11 +309,18 @@ def build_completed_outcomes(
     performance: pd.DataFrame,
     target_day: int = 20,
 ) -> tuple[pd.DataFrame, dict]:
-    """Join immutable signal snapshots to fully valid Day-N results (default Day 20)."""
+    """Join immutable signal snapshots to valid Day-N results and enforce Triggered-Trade Outcome rules."""
+    empty_summary = {
+        "signals_total": int(len(signals)) if signals is not None else 0,
+        "signals_matured_20d": 0,
+        "signals_triggered_20d": 0,
+        "signals_untriggered_20d": 0,
+        "signals_pending": int(len(signals)) if signals is not None else 0,
+    }
     if signals is None or signals.empty:
-        return pd.DataFrame(), {"signals_total": 0, "signals_matured_20d": 0, "signals_pending": 0}
+        return pd.DataFrame(), empty_summary
     if performance is None or performance.empty:
-        return pd.DataFrame(), {"signals_total": int(len(signals)), "signals_matured_20d": 0, "signals_pending": int(len(signals))}
+        return pd.DataFrame(), empty_summary
 
     perf = performance.copy()
     perf["Tracking_Day"] = pd.to_numeric(perf.get("Tracking_Day"), errors="coerce")
@@ -314,11 +332,7 @@ def build_completed_outcomes(
         day_n = day_n.iloc[0:0]
 
     if day_n.empty or "Signal_ID" not in signals.columns:
-        return pd.DataFrame(), {
-            "signals_total": int(len(signals)),
-            "signals_matured_20d": 0,
-            "signals_pending": int(len(signals)),
-        }
+        return pd.DataFrame(), empty_summary
 
     if "Tracking_Date" in day_n.columns:
         day_n = day_n.sort_values("Tracking_Date")
@@ -326,14 +340,16 @@ def build_completed_outcomes(
     joined = signals.merge(day_n, on="Signal_ID", how="inner", suffixes=("_Signal", "_Performance"))
 
     if joined.empty:
-        return joined, {"signals_total": int(len(signals)), "signals_matured_20d": 0, "signals_pending": int(len(signals))}
+        return joined, empty_summary
 
     signal_cols = [
-        "Scan_Date", "Price", "Rating", "Distance_Pct", "RVOL", "ADX", "RSI", "MACD",
+        "Scan_Date", "Price", "Breakout_Level", "Breakout_Trigger",
+        "Rating", "Distance_Pct", "RVOL", "ADX", "RSI", "MACD",
         "Score", "Rank_Score", "EMA_Structure", "Market_Regime", "Candlestick",
         "False_Breakout", "Cap_Category", "Scanner_Status", "Delivery_Pct", "Deliverable_Qty",
         "Resistance_Touches", "Resistance_Recency", "Risk_Reward",
-        "NIFTY_Relative_Strength_Pct", "Relative_Strength_60D_Pct", "ATR_Pct", "ATR_Ratio",
+        "NIFTY_Relative_Strength_Pct", "Sector_Relative_Strength_Pct", "Relative_Strength_60D_Pct",
+        "ATR_Pct", "ATR_Ratio",
         "Component_Proximity", "Component_Resistance", "Component_Volume", "Component_Trend",
         "Component_Momentum", "Component_ADX", "Component_Squeeze", "Component_Relative_Strength",
         "Component_Candle", "Component_Market_Regime", "Explanation",
@@ -347,38 +363,84 @@ def build_completed_outcomes(
     joined["Trade_Setup"] = _derive_trade_setup(joined)
     joined = _engineer_institutional_features(joined)
 
-    joined["Return_20D_Pct"] = pd.to_numeric(joined.get("Close_Return_Pct"), errors="coerce")
-
+    # --- Phase 3 Fix: Triggered-Trade Outcome Rules & Legacy Self-Healing ---
     for outcome in ["Breakout_Hit", "T1_Hit", "T2_Hit", "T3_Hit", "Stop_Hit"]:
         if outcome in joined:
             joined[outcome] = _to_binary(joined[outcome])
 
-    for col in ["Best_Gain_Pct", "Max_Drawdown_Pct", "Return_20D_Pct"]:
-        if col in joined:
-            joined[col] = pd.to_numeric(joined[col], errors="coerce")
+    b_day = pd.to_numeric(joined.get("Breakout_First_Day", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    b_hit = joined.get("Breakout_Hit", pd.Series(0.0, index=joined.index)).fillna(0.0)
+    triggered_mask = (b_hit > 0.0) | b_day.notna()
+    joined["Breakout_Hit"] = np.where(triggered_mask, 1.0, 0.0)
 
-    stop_day = pd.to_numeric(joined.get("Stop_First_Day", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    stop_day_raw = pd.to_numeric(joined.get("Stop_First_Day", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    # Self-heal legacy rows where a stop was logged on a day strictly prior to Breakout_First_Day
+    pre_trigger_stop_mask = stop_day_raw.notna() & b_day.notna() & (stop_day_raw < b_day)
+    stop_day = stop_day_raw.where(~pre_trigger_stop_mask, np.nan)
+    joined["Stop_First_Day"] = stop_day
+
+    if "Stop_Hit" in joined.columns:
+        stop_hit_clean = joined["Stop_Hit"].where(~pre_trigger_stop_mask, 0.0)
+        joined["Stop_Hit"] = stop_hit_clean.where(triggered_mask, np.nan)
+
+    for hit_col, day_col in [("T1_Hit", "T1_First_Day"), ("T2_Hit", "T2_First_Day"), ("T3_Hit", "T3_First_Day")]:
+        t_day = pd.to_numeric(joined.get(day_col, pd.Series(np.nan, index=joined.index)), errors="coerce")
+        if hit_col in joined.columns:
+            joined[hit_col] = joined[hit_col].where(triggered_mask, np.nan)
+
     for label, day_col in [
         ("T1_Before_Stop", "T1_First_Day"),
         ("T2_Before_Stop", "T2_First_Day"),
         ("T3_Before_Stop", "T3_First_Day"),
     ]:
         t_day = pd.to_numeric(joined.get(day_col, pd.Series(np.nan, index=joined.index)), errors="coerce")
-        outcome = pd.Series(0.0, index=joined.index)
-        outcome.loc[t_day.notna() & (stop_day.isna() | (t_day < stop_day))] = 1.0
-        outcome.loc[t_day.notna() & stop_day.notna() & (t_day == stop_day)] = np.nan
+        outcome = pd.Series(np.nan, index=joined.index, dtype=float)
+        outcome.loc[triggered_mask] = 0.0
+        win_cond = triggered_mask & t_day.notna() & (stop_day.isna() | (t_day < stop_day))
+        ambig_cond = triggered_mask & t_day.notna() & stop_day.notna() & (t_day == stop_day)
+        outcome.loc[win_cond] = 1.0
+        outcome.loc[ambig_cond] = np.nan
         joined[label] = outcome
 
-    first_event = joined.get("First_Event", pd.Series("NONE", index=joined.index)).astype(str).str.upper()
-    stop_first = pd.Series(0.0, index=joined.index)
-    stop_first.loc[first_event.eq("STOP_FIRST")] = 1.0
-    stop_first.loc[first_event.eq("AMBIGUOUS_SAME_DAY")] = np.nan
+    # Recompute Stop_Before_Target strictly for triggered trades using sanitized stop_day vs earliest target day
+    t1_d = pd.to_numeric(joined.get("T1_First_Day", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    t2_d = pd.to_numeric(joined.get("T2_First_Day", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    t3_d = pd.to_numeric(joined.get("T3_First_Day", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    earliest_target_day = pd.concat([t1_d, t2_d, t3_d], axis=1).min(axis=1)
+
+    stop_first = pd.Series(np.nan, index=joined.index, dtype=float)
+    stop_first.loc[triggered_mask] = 0.0
+    stop_win_cond = triggered_mask & stop_day.notna() & (earliest_target_day.isna() | (stop_day < earliest_target_day))
+    stop_ambig_cond = triggered_mask & stop_day.notna() & earliest_target_day.notna() & (stop_day == earliest_target_day)
+    stop_first.loc[stop_win_cond] = 1.0
+    stop_first.loc[stop_ambig_cond] = np.nan
     joined["Stop_Before_Target"] = stop_first
+
+    # Reconcile Trigger-Anchored Return_20D_Pct for triggered trades
+    raw_close_ret = pd.to_numeric(joined.get("Close_Return_Pct", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    close_20d = pd.to_numeric(joined.get("Close", pd.Series(np.nan, index=joined.index)), errors="coerce")
+    split_rat = pd.to_numeric(joined.get("Cumulative_Split_Ratio", pd.Series(1.0, index=joined.index)), errors="coerce").fillna(1.0)
+    split_rat = split_rat.where(split_rat > 0, 1.0)
+    trig_price = pd.to_numeric(joined.get("Breakout_Trigger", pd.Series(np.nan, index=joined.index)), errors="coerce")
+
+    recalc_trig_ret = (((close_20d * split_rat) / trig_price.where(trig_price > 0, np.nan)) - 1.0) * 100.0
+    ret_20d = recalc_trig_ret.where(recalc_trig_ret.notna(), raw_close_ret)
+    joined["Return_20D_Pct"] = ret_20d.where(triggered_mask, np.nan)
+
+    for col in ["Best_Gain_Pct", "Max_Drawdown_Pct"]:
+        if col in joined:
+            joined[col] = pd.to_numeric(joined[col], errors="coerce").where(triggered_mask, np.nan)
+
+    matured_cnt = int(joined["Signal_ID"].nunique())
+    triggered_cnt = int(joined.loc[triggered_mask, "Signal_ID"].nunique())
+    untriggered_cnt = max(0, matured_cnt - triggered_cnt)
 
     return joined, {
         "signals_total": int(len(signals)),
-        "signals_matured_20d": int(joined["Signal_ID"].nunique()),
-        "signals_pending": max(0, int(len(signals)) - int(joined["Signal_ID"].nunique())),
+        "signals_matured_20d": matured_cnt,
+        "signals_triggered_20d": triggered_cnt,
+        "signals_untriggered_20d": untriggered_cnt,
+        "signals_pending": max(0, int(len(signals)) - matured_cnt),
     }
 
 
@@ -430,13 +492,14 @@ def analyze_outcome_combinations(
     min_signals: int = 25,
     max_order: int = 3,
 ) -> pd.DataFrame:
-    """Vectorized evaluation of 1-to-N factor combinations on matured outcome data."""
+    """Vectorized evaluation of 1-to-N factor combinations on matured triggered outcome data."""
     if outcomes is None or outcomes.empty or outcome_col not in outcomes.columns:
         return pd.DataFrame(columns=ANALYSIS_OUTPUT_COLUMNS)
 
     thresholds = thresholds or DEFAULT_THRESHOLDS
     work = outcomes.copy()
     work[outcome_col] = _to_binary(work[outcome_col])
+    # Automatically filters to triggered trades for T1/T2/T3/Stop goals (where untriggered rows are NaN)
     work = work.loc[work[outcome_col].notna()].copy()
 
     if work.empty:
@@ -453,6 +516,7 @@ def analyze_outcome_combinations(
         return pd.DataFrame(columns=ANALYSIS_OUTPUT_COLUMNS)
 
     is_stop_goal = str(outcome_col).strip() == "Stop_Before_Target"
+    is_breakout_goal = str(outcome_col).strip() == "Breakout_Hit"
 
     condition_list: list[tuple[str, str, np.ndarray]] = []
 
@@ -584,6 +648,7 @@ def analyze_outcome_combinations(
         "INSTITUTIONAL_DELIVERY_SYNERGY",
         "VOLUME_ACCUMULATION",
         "VOLUME_DEMAND",
+        "SECTOR_RELATIVE_STRENGTH",
         "COMPOSITE_ARCHETYPE",
     }
 
@@ -611,16 +676,16 @@ def analyze_outcome_combinations(
 
         sel_ret = ret_arr[mask]
         valid_ret = sel_ret[np.isfinite(sel_ret)]
-        avg_ret = float(valid_ret.mean()) if len(valid_ret) else np.nan
+        avg_ret = float(valid_ret.mean()) if len(valid_ret) else (0.0 if is_breakout_goal else np.nan)
 
         if np.isnan(win_rate) or win_rate < 50.0:
             return
-        if not is_stop_goal and (np.isnan(avg_ret) or avg_ret <= 0.0):
+        if not is_stop_goal and not is_breakout_goal and (np.isnan(avg_ret) or avg_ret <= 0.0):
             return
 
         sel_stop = stop_arr[mask]
         valid_stop = sel_stop[np.isfinite(sel_stop)]
-        stop_rate = float(valid_stop.mean() * 100.0) if len(valid_stop) else np.nan
+        stop_rate = float(valid_stop.mean() * 100.0) if len(valid_stop) else 0.0
 
         tr_mask = mask & train_mask
         te_mask = mask & test_mask
