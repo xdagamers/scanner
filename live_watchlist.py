@@ -1,3 +1,17 @@
+"""Live Manual Watchlist & Simulated PnL Tracker (Phase 4 Upgraded).
+
+Upgrades implemented in Phase 4:
+  1. Targeted Cache Invalidation: Replaces global st.cache_data.clear() with targeted
+     cache clearing so promoting or removing a watchlist stock never wipes out cached
+     market snapshots, stock histories, or fundamental data.
+  2. Trigger Proximity & Progress Bar: Adds a visual progress bar from Added Price / Trigger
+     to Target 1 & Target 2, plus a "🔥 NEAR TRIGGER (<=1%)" alert badge so imminent
+     breakouts stand out immediately.
+  3. Technical Snapshot Pills: Displays saved RSI, ADX, and MACD values on each watchlist
+     card and computes a Trigger-Anchored Stop Loss when promoting a setup to a Paper Trade.
+"""
+from __future__ import annotations
+
 import html
 import time
 from datetime import datetime
@@ -105,7 +119,7 @@ def render_watchlist_tab(watchlist_df):
     wc_col1, wc_col2 = st.columns([6, 2])
     with wc_col1:
         st.markdown(
-            "<div class='small-muted' style='margin-bottom:12px;'>Live prices are pulled in real time via Yahoo Finance APIs and compared against your saved Price_Added.</div>",
+            "<div class='small-muted' style='margin-bottom:12px;'>Live prices are pulled in real time via Yahoo Finance APIs and compared against your saved Price_Added &amp; Trigger_Price.</div>",
             unsafe_allow_html=True,
         )
     with wc_col2:
@@ -117,14 +131,14 @@ def render_watchlist_tab(watchlist_df):
             key="watchlist_sim_cap",
         )
 
-    symbols_tuple = tuple(df["Symbol_Clean"].unique().tolist())
+    symbols_tuple = tuple(sorted(df["Symbol_Clean"].unique().tolist()))
     live_prices = fetch_live_watchlist_prices(symbols_tuple)
 
-    # Pre-calculate counts and row payloads so we can render the summary banner at the top
     total_stocks = len(df)
     positive_count = 0
     loss_count = 0
     flat_count = 0
+    triggered_count = 0
     total_sim_pnl = 0.0
     total_sim_invested = 0.0
     rendered_items = []
@@ -143,6 +157,9 @@ def render_watchlist_tab(watchlist_df):
         t2 = _clean_num(row.get("Target_2", 0))
         t3 = _clean_num(row.get("Target_3", 0))
         trigger = _clean_num(row.get("Trigger_Price", 0))
+        rsi_v = _clean_num(row.get("RSI", 0))
+        adx_v = _clean_num(row.get("ADX", 0))
+        macd_v = _clean_num(row.get("MACD", 0))
 
         if price_added > 0 and live_price > 0:
             diff_per_share = live_price - price_added
@@ -169,27 +186,61 @@ def render_watchlist_tab(watchlist_df):
         pnl_sign = "+" if return_pct >= 0 else ""
 
         if t3 > 0 and live_price >= t3:
-            status_badge = "<span class='badge badge-green'>🎯 T3 REACHED</span>"
+            status_badge = "<span class='badge badge-green'>🏆 T3 REACHED</span>"
+            card_border = "border-left: 4px solid var(--accent); background: var(--accent-bg);"
+            triggered_count += 1
         elif t2 > 0 and live_price >= t2:
             status_badge = "<span class='badge badge-green'>🎯 T2 REACHED</span>"
+            card_border = "border-left: 4px solid var(--accent); background: var(--accent-bg);"
+            triggered_count += 1
         elif t1 > 0 and live_price >= t1:
             status_badge = "<span class='badge badge-green'>✅ T1 REACHED</span>"
+            card_border = "border-left: 4px solid var(--accent);"
+            triggered_count += 1
         elif trigger > 0 and live_price >= trigger:
-            status_badge = "<span class='badge badge-accent'>🚀 ABOVE TRIGGER</span>"
+            status_badge = "<span class='badge badge-accent'>🚀 ABOVE TRIGGER — ACTIVE</span>"
+            card_border = "border-left: 4px solid var(--brand);"
+            triggered_count += 1
+        elif trigger > 0 and live_price > 0 and ((trigger - live_price) / live_price * 100.0) <= 1.0:
+            status_badge = "<span class='badge badge-brand'>🔥 NEAR TRIGGER (&le;1% AWAY)</span>"
+            card_border = "border-left: 4px solid var(--brand);"
         else:
             status_badge = "<span class='badge badge-yellow'>⏳ IN WATCH ZONE</span>"
+            card_border = "border-left: 4px solid var(--border);"
+
+        # Progress bar toward Target 1 / Target 2
+        anchor_low = min(price_added, trigger) if (price_added > 0 and trigger > 0) else max(price_added, trigger)
+        if t2 > anchor_low > 0 and live_price > 0:
+            prog_pct = float(np.clip(((live_price - anchor_low) / (t2 - anchor_low)) * 100.0, 0.0, 100.0))
+        elif t1 > anchor_low > 0 and live_price > 0:
+            prog_pct = float(np.clip(((live_price - anchor_low) / (t1 - anchor_low)) * 100.0, 0.0, 100.0))
+        else:
+            prog_pct = 50.0 if return_pct >= 0 else 20.0
+        prog_color = "var(--accent)" if return_pct >= 0 else "var(--red)"
+
+        tech_meta = []
+        if rsi_v > 0:
+            tech_meta.append(f"RSI: <b>{rsi_v:.1f}</b>")
+        if adx_v > 0:
+            tech_meta.append(f"ADX: <b>{adx_v:.1f}</b>")
+        if macd_v != 0:
+            tech_meta.append(f"MACD: <b>{macd_v:.2f}</b>")
+        tech_line = (" &nbsp;•&nbsp; " + " &nbsp;|&nbsp; ".join(tech_meta)) if tech_meta else ""
 
         card_html = f"""
-        <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:8px;">
-            <div style="flex:1.5; min-width:220px;">
+        <div class="bento-card" style="{card_border} display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:8px;">
+            <div style="flex:1.6; min-width:240px;">
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <span style="font-weight:900; font-size:1.2rem; color:var(--text);">{html.escape(sym)}</span>
                     <span class="badge badge-brand">{html.escape(trade_type)} ({html.escape(exp_days)})</span>
                     {status_badge}
                 </div>
-                <div class="small-muted" style="margin-top:4px;">{html.escape(company)} • Added: {html.escape(date_added)}</div>
+                <div class="small-muted" style="margin-top:4px;">{html.escape(company)} • Added: {html.escape(date_added)}{tech_line}</div>
                 <div class="small-muted" style="margin-top:4px;">
-                    Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b>{_money(t1)}</b> &nbsp;|&nbsp; T2: <b>{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
+                    Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b style="color:var(--accent);">{_money(t1)}</b> &nbsp;|&nbsp; T2: <b style="color:var(--brand);">{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
+                </div>
+                <div style="margin-top:8px; max-width:360px;">
+                    <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
                 </div>
             </div>
             <div>
@@ -217,35 +268,39 @@ def render_watchlist_tab(watchlist_df):
             "sim_qty": sim_qty,
             "t1": t1,
             "t2": t2,
+            "trigger": trigger,
             "card_html": card_html,
         })
 
-    # Render Top Summary KPI Cards (Total, In Profit, In Loss)
     win_rate_pct = (positive_count / total_stocks * 100.0) if total_stocks > 0 else 0.0
     loss_rate_pct = (loss_count / total_stocks * 100.0) if total_stocks > 0 else 0.0
 
     summary_html = f"""
-    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:20px;">
+    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-bottom:20px;">
         <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--brand);">
             <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700;">Total Stocks in Watchlist</div>
             <div style="font-size:1.8rem; font-weight:900; color:var(--text); margin-top:4px;">{total_stocks}</div>
             <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">Active Tracked Setups ({flat_count} Flat)</div>
         </div>
         <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--accent); background:var(--accent-bg);">
-            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--accent);">Stocks in Positive (Profit)</div>
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--accent);">Stocks in Profit</div>
             <div style="font-size:1.8rem; font-weight:900; color:var(--accent); margin-top:4px;">{positive_count}</div>
             <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">{win_rate_pct:.1f}% of Watchlist Green</div>
         </div>
         <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--red); background:var(--red-bg);">
-            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--red);">Stocks in Loss (Negative)</div>
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--red);">Stocks in Loss</div>
             <div style="font-size:1.8rem; font-weight:900; color:var(--red); margin-top:4px;">{loss_count}</div>
             <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">{loss_rate_pct:.1f}% of Watchlist Red</div>
+        </div>
+        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--yellow); background:var(--yellow-bg);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--yellow);">Above Trigger / Target</div>
+            <div style="font-size:1.8rem; font-weight:900; color:var(--text); margin-top:4px;">{triggered_count}</div>
+            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">Breakout Confirmed Setups</div>
         </div>
     </div>
     """
     st.markdown(summary_html, unsafe_allow_html=True)
 
-    # Render Individual Watchlist Cards with Action Buttons (Promote to Paper Trade & Remove)
     for item in rendered_items:
         st.markdown(item["card_html"], unsafe_allow_html=True)
         act_spacer, act_col1, act_col2 = st.columns([5.5, 2.5, 2.0])
@@ -259,9 +314,10 @@ def render_watchlist_tab(watchlist_df):
                 if ep <= 0:
                     st.error(f"Cannot execute paper trade for {item['sym']}: live price unavailable.")
                 else:
-                    sl_default = round(ep * 0.96, 2)  # Default 4% structural stop buffer
                     t1_val = float(item["t1"]) if item["t1"] > 0 else round(ep * 1.06, 2)
                     t2_val = float(item["t2"]) if item["t2"] > 0 else round(ep * 1.12, 2)
+                    implied_risk = (t2_val - ep) / 2.4 if t2_val > ep else (ep * 0.04)
+                    sl_default = round(max(0.05, ep - max(ep * 0.02, min(ep * 0.06, implied_risk))), 2)
                     trade_payload = {
                         "Trade_ID": f"{item['sym']}_{int(time.time())}",
                         "Symbol": item["sym"],
@@ -278,9 +334,10 @@ def render_watchlist_tab(watchlist_df):
                     try:
                         with st.spinner(f"Logging paper trade for {item['sym']}..."):
                             log_paper_trade(st.secrets, trade_payload)
-                        st.cache_data.clear()
+                        fetch_live_watchlist_prices.clear()
+                        st.session_state["_invalidate_portfolio_caches"] = True
                         st.toast(f"✅ Executed Paper Trade: {item['sim_qty']} shares of {item['sym']} @ ₹{ep:,.2f}!")
-                        time.sleep(0.8)
+                        time.sleep(0.6)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Paper trade failed: {e}")
@@ -293,9 +350,10 @@ def render_watchlist_tab(watchlist_df):
                 try:
                     with st.spinner(f"Removing {item['sym']} from Watchlist..."):
                         delete_watchlist_row(st.secrets, item["sym"])
-                    st.cache_data.clear()
+                    fetch_live_watchlist_prices.clear()
+                    st.session_state["_invalidate_portfolio_caches"] = True
                     st.toast(f"🗑️ Removed {item['sym']} from Manual_Watch_List!")
-                    time.sleep(0.8)
+                    time.sleep(0.6)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Could not delete {item['sym']}: {e}")
