@@ -1,15 +1,25 @@
-"""Persistent audit logging for the NIFTY breakout scanner."""
+"""Persistent audit logging for the NIFTY breakout scanner (Phase 2 Upgraded).
+
+Upgrades implemented in Phase 2:
+  - Actionable Audit Funnel & Sheet Protection: Filters build_scan_snapshot() to log
+    only actionable setups near resistance (-3.5% <= distance_pct <= 4.0% and score >= 60.0,
+    capped at Top 75 setups per scan) instead of dumping all ~460 stocks up to 10% away.
+    This prevents Google Sheets 10M-cell exhaustion and speeds up webhook writes & 20D tracking by ~6x.
+  - Preserves the exact 70-column AUDIT_COLUMNS schema required by Google Sheets and audit_analysis.py.
+"""
 from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 import uuid
+
 import numpy as np
 import pandas as pd
 
 AUDIT_DIR = Path(__file__).resolve().parent / "audit_data"
 SIGNAL_LOG = AUDIT_DIR / "scanner_audit_signals.csv"
 
-# Updated to match your exact Google Sheet header order
+# Exact Google Sheet header order
 AUDIT_COLUMNS = [
     "Signal_ID", "Audit_Run_ID", "Scan_Timestamp_IST", "Scan_Date",
     "Scanner_Period", "Max_Distance_Pct", "Universe_Result_Count", "Result_Position",
@@ -30,6 +40,7 @@ AUDIT_COLUMNS = [
     "UD_Vol_Ratio_20D", "Candle_CLV", "Pct_Below_52W_High", "Distribution_Trap", "Overhead_Wall_Trap", "Overextended_Trap"
 ]
 
+
 def _num(row, key, default=np.nan):
     value = row.get(key, default)
     try:
@@ -38,11 +49,50 @@ def _num(row, key, default=np.nan):
     except Exception:
         return default
 
+
 def _clean_opt(val):
     if val is None or pd.isna(val):
         return ""
     s = str(val).strip()
     return "" if s.lower() in {"nan", "none", "<na>"} else val
+
+
+def filter_actionable_audit_candidates(
+    df: pd.DataFrame,
+    *,
+    max_audit_distance_pct: float = 4.0,
+    min_audit_score: float = 60.0,
+    max_audit_rows: int = 75,
+) -> pd.DataFrame:
+    """Filters the universe scan result down to actionable near-breakout candidates to protect Google Sheets."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    work = df.copy()
+    sort_cols = [c for c in ["rank_score", "score", "rating", "distance_pct"] if c in work.columns]
+    if sort_cols:
+        asc = [False if c != "distance_pct" else True for c in sort_cols]
+        work = work.sort_values(sort_cols, ascending=asc, kind="stable").reset_index(drop=True)
+
+    dist_s = pd.to_numeric(work.get("distance_pct", pd.Series(0.0, index=work.index)), errors="coerce").fillna(99.0)
+    score_s = pd.to_numeric(work.get("score", pd.Series(0.0, index=work.index)), errors="coerce").fillna(0.0)
+
+    # Primary actionable gate: within [-3.5%, max_audit_distance_pct] of breakout level and score >= min_audit_score
+    strict_mask = (dist_s >= -3.5) & (dist_s <= float(max_audit_distance_pct)) & (score_s >= float(min_audit_score))
+    filtered = work[strict_mask].copy()
+
+    # Fallback for extreme bear/choppy markets so an explicit audit run still logs the best available setups
+    if len(filtered) < 10:
+        relaxed_mask = (dist_s >= -3.5) & (dist_s <= max(5.5, float(max_audit_distance_pct))) & (score_s >= 50.0)
+        filtered = work[relaxed_mask].head(25).copy()
+        if filtered.empty:
+            filtered = work.head(min(25, len(work))).copy()
+
+    if max_audit_rows and int(max_audit_rows) > 0:
+        filtered = filtered.head(int(max_audit_rows)).copy()
+
+    return filtered.reset_index(drop=True)
+
 
 def build_scan_snapshot(
     result: pd.DataFrame,
@@ -51,11 +101,14 @@ def build_scan_snapshot(
     scan_timestamp_ist: str,
     scanner_period: str = "2y",
     max_distance_pct: float = 10.0,
+    max_audit_distance_pct: float = 4.0,
+    min_audit_score: float = 60.0,
+    max_audit_rows: int = 75,
 ) -> pd.DataFrame:
     if result is None or result.empty:
         return pd.DataFrame(columns=AUDIT_COLUMNS)
 
-    # Filter out any ghost rows created by outer merges in delivery_loader.py
+    # Filter out any ghost rows created by outer merges
     clean_res = result.copy()
     if "symbol" in clean_res.columns:
         valid_sym = (
@@ -71,9 +124,21 @@ def build_scan_snapshot(
     if clean_res.empty:
         return pd.DataFrame(columns=AUDIT_COLUMNS)
 
+    universe_total_count = len(clean_res)
+
+    # Phase 2 Fix: Restrict audit batch to actionable candidates near resistance (<= 4.0% distance, Top 75)
+    actionable_res = filter_actionable_audit_candidates(
+        clean_res,
+        max_audit_distance_pct=max_audit_distance_pct,
+        min_audit_score=min_audit_score,
+        max_audit_rows=max_audit_rows,
+    )
+    if actionable_res.empty:
+        return pd.DataFrame(columns=AUDIT_COLUMNS)
+
     scan_date = str(scan_timestamp_ist).split(" ")[0]
     rows = []
-    for pos, (_, row) in enumerate(clean_res.reset_index(drop=True).iterrows(), start=1):
+    for pos, (_, row) in enumerate(actionable_res.reset_index(drop=True).iterrows(), start=1):
         symbol = str(row.get("symbol", "")).strip()
         if not symbol or symbol.lower() in {"nan", "none"}:
             continue
@@ -84,15 +149,15 @@ def build_scan_snapshot(
             t3 = t2 + (t2 - t1)
         weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
         signal_id = f"{scan_date}_{symbol}_{run_id}"
-        
+
         rows.append({
             "Signal_ID": signal_id,
             "Audit_Run_ID": run_id,
             "Scan_Timestamp_IST": scan_timestamp_ist,
             "Scan_Date": scan_date,
             "Scanner_Period": scanner_period,
-            "Max_Distance_Pct": max_distance_pct,
-            "Universe_Result_Count": len(clean_res),
+            "Max_Distance_Pct": min(float(max_distance_pct), float(max_audit_distance_pct)),
+            "Universe_Result_Count": universe_total_count,
             "Result_Position": pos,
             "Scanner_Rank": row.get("rank", pos),
             "Symbol": symbol,
@@ -155,9 +220,10 @@ def build_scan_snapshot(
             "Pct_Below_52W_High": _num(row, "pct_below_52w"),
             "Distribution_Trap": bool(row.get("is_distribution_trap", False)),
             "Overhead_Wall_Trap": bool(row.get("overhead_wall_trap", False)),
-            "Overextended_Trap": bool(row.get("is_overextended", False))
+            "Overextended_Trap": bool(row.get("is_overextended", False)),
         })
     return pd.DataFrame(rows, columns=AUDIT_COLUMNS)
+
 
 def append_scan_snapshot(
     result: pd.DataFrame,
@@ -181,9 +247,12 @@ def append_scan_snapshot(
         scanner_period=scanner_period,
         max_distance_pct=max_distance_pct,
     )
+    if out.empty:
+        return {"saved": False, "rows": 0, "run_id": run_id, "path": str(path), "reason": "no_actionable_rows"}
     write_header = not path.exists() or path.stat().st_size == 0
     out.to_csv(path, mode="a", header=write_header, index=False, encoding="utf-8-sig")
     return {"saved": True, "rows": len(out), "run_id": run_id, "path": str(path), "reason": "appended"}
+
 
 def read_signal_audit(signal_log_path: str | Path = SIGNAL_LOG) -> pd.DataFrame:
     path = Path(signal_log_path)
