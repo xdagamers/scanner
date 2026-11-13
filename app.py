@@ -922,7 +922,7 @@ def _parse_float_safe(val, default=0.0):
 def render_ticker():
     items = []
     use_portfolio_crawl = st.session_state.get('portfolio_ticker_mode', True)
-    anim_duration = '45s'
+    anim_duration = '98s'
 
     if use_portfolio_crawl:
         w_df = get_watchlist_cached()
