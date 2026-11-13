@@ -15,7 +15,7 @@ import streamlit.components.v1 as components
 import yfinance as yf
 
 # Core backend engine imports
-from scanner import load_universe, scan_universe, scan_single, score_stock, fetch_history
+from scanner import load_universe, scan_universe, scan_single, score_stock, fetch_history, fetch_index_history
 from audit_logger import build_scan_snapshot
 from google_sheets_audit import (
     append_audit_batch,
@@ -37,7 +37,7 @@ from performance_tracker import (
     fetch_ohlc_histories,
     latest_completed_market_date,
 )
-from fundamental_data import fetch_single_fundamental
+from fundamental_data import fetch_single_fundamental, apply_fundamental_gate
 from live_watchlist import render_watchlist_tab
 from sentiment_engine import get_headline_sentiment
 
@@ -124,6 +124,8 @@ if 'trade_filter' not in st.session_state:
     st.session_state.trade_filter = 'All'
 if 'cap_filter' not in st.session_state:
     st.session_state.cap_filter = 'All Caps'
+if 'portfolio_ticker_mode' not in st.session_state:
+    st.session_state.portfolio_ticker_mode = True
 
 # -----------------------------------------------------------------------------
 # FINTECH ANALYTICS CSS
@@ -492,8 +494,7 @@ inject_theme_css()
 def render_reload_guard(active=True):
     if not active:
         return
-    components.html(
-        '''
+    components.html('''
         <div id="reload-confirm" style="display:none;position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center;font-family:'Inter',sans-serif">
           <div style="width:min(400px,90vw);background:var(--card, #ffffff);color:var(--text, #111827);border:1px solid var(--border, #D1D5DB);border-radius:14px;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,.5);text-align:center">
             <div style="font-size:18px;font-weight:700;margin-bottom:8px">Reload Application?</div>
@@ -517,12 +518,7 @@ def render_reload_guard(active=True):
             const hide = () => { if (modal) modal.style.display='none'; };
             if (yes) yes.onclick = () => { w.location.href = w.location.origin + w.location.pathname + '?__reload_home=1'; };
             if (no) no.onclick = hide;
-            
-            w.addEventListener('beforeunload', (event) => {
-              event.preventDefault();
-              event.returnValue = '';
-            });
-            
+            w.addEventListener('beforeunload', (event) => { event.preventDefault(); event.returnValue = ''; });
             w.addEventListener('keydown', (event) => {
               const key = String(event.key || '').toLowerCase();
               const refresh = key === 'f5' || ((event.ctrlKey || event.metaKey) && key === 'r');
@@ -531,10 +527,7 @@ def render_reload_guard(active=True):
           } catch (e) {}
         })();
         </script>
-        ''',
-        height=0,
-    )
-
+    ''', height=0)
 def get_timeframe_status(row):
     adx = float(row.get('adx', 0) or 0)
     rsi = float(row.get('rsi', 0) or 0)
@@ -552,10 +545,10 @@ def get_timeframe_status(row):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_market_snapshot():
-    result = {'nifty': None, 'sensex': None, 'updated': datetime.now(IST)}
+    result = {'nifty': None, 'sensex': None, 'vix': None, 'updated': datetime.now(IST)}
     try:
         raw = yf.download(
-            ['^NSEI', '^BSESN'],
+            ['^NSEI', '^BSESN', '^INDIAVIX'],
             period='5d',
             interval='1d',
             auto_adjust=True,
@@ -564,7 +557,7 @@ def get_market_snapshot():
             group_by='ticker',
             multi_level_index=True,
         )
-        for symbol, key in [('^NSEI', 'nifty'), ('^BSESN', 'sensex')]:
+        for symbol, key in [('^NSEI', 'nifty'), ('^BSESN', 'sensex'), ('^INDIAVIX', 'vix')]:
             try:
                 df = (
                     raw[symbol]
@@ -699,6 +692,62 @@ def get_stock_news_and_sentiment_cached(symbol):
         agg_tag, agg_cls = 'News Sentiment: N/A', 'badge-grey'
     return agg_tag, agg_cls, news_list
 
+@st.cache_data(ttl=600, show_spinner=False)
+def get_live_market_news_cached():
+    news_items = []
+    for tk_sym, default_tag in [('^NSEI', 'MARKET PULSE'), ('RELIANCE.NS', 'CORPORATE & MACRO'), ('HDFCBANK.NS', 'BANKING & FLOWS')]:
+        try:
+            raw_n = yf.Ticker(tk_sym).news
+            if isinstance(raw_n, list):
+                for n in raw_n[:3]:
+                    content = n.get('content', n)
+                    title = content.get('title', n.get('title', ''))
+                    if not title or any(x['title'] == title for x in news_items):
+                        continue
+                    pub = content.get('provider', {}).get('displayName', n.get('publisher', 'Exchange Feed'))
+                    link_data = content.get('clickThroughUrl', {})
+                    link = link_data.get('url', n.get('link', '#')) if isinstance(link_data, dict) else n.get('link', '#')
+                    pub_date = content.get('pubDate', n.get('providerPublishTime'))
+                    if isinstance(pub_date, str):
+                        try:
+                            p_ts = pd.to_datetime(pub_date).timestamp()
+                        except Exception:
+                            p_ts = None
+                    else:
+                        p_ts = pub_date
+                    sent_tag, _ = get_headline_sentiment(title)
+                    news_items.append({
+                        'title': title,
+                        'publisher': pub,
+                        'link': link,
+                        'pub_time': p_ts,
+                        'tag': sent_tag if sent_tag and sent_tag != 'Neutral' else default_tag,
+                    })
+                    if len(news_items) >= 3:
+                        return news_items
+        except Exception:
+            continue
+    return news_items
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_live_backtest_win_rate_cached():
+    try:
+        sig_df = read_audit_signals(st.secrets)
+        fin_df = read_final_performance(st.secrets)
+        if not sig_df.empty and not fin_df.empty:
+            outcomes, rep = build_completed_outcomes(sig_df, fin_df, target_day=20)
+            if not outcomes.empty and 'T1_Before_Stop' in outcomes.columns:
+                valid = pd.to_numeric(outcomes['T1_Before_Stop'], errors='coerce').dropna()
+                if len(valid) >= 5:
+                    return round(float(valid.mean() * 100.0), 1), int(len(valid)), True
+            if not outcomes.empty and 'T1_Hit' in outcomes.columns:
+                valid_hit = pd.to_numeric(outcomes['T1_Hit'], errors='coerce').dropna()
+                if len(valid_hit) >= 5:
+                    return round(float(valid_hit.mean() * 100.0), 1), int(len(valid_hit)), True
+    except Exception:
+        pass
+    return 68.0, 0, False
+
 @st.cache_data(ttl=120, show_spinner=False)
 def get_watchlist_cached():
     try:
@@ -784,12 +833,18 @@ def pct(x):
     return f'{x:+.2f}%' if x is not None and np.isfinite(x) else '—'
 
 def render_fintech_topbar():
+    if st.session_state.pop('_invalidate_portfolio_caches', False):
+        get_watchlist_cached.clear()
+        get_paper_trades_cached.clear()
+        fetch_portfolio_live_prices_batch.clear()
+
     snap = get_market_snapshot()
     status, color = market_status()
     dot = f'<span class="dot {color}"></span>'
 
     nifty_item = snap.get('nifty')
     sensex_item = snap.get('sensex')
+    vix_item = snap.get('vix')
 
     if nifty_item:
         nifty_cls = 'up' if nifty_item['pct'] >= 0 else 'down'
@@ -803,7 +858,13 @@ def render_fintech_topbar():
     else:
         sensex_str = '—'
 
-    col_brand, col_indices, col_controls = st.columns([3, 4, 3])
+    if vix_item:
+        vix_cls = 'down' if vix_item['value'] >= 20.0 else 'up'
+        vix_pill = f'<div class="fintech-pill"><b>INDIA VIX</b> <span class="{vix_cls}">{vix_item["value"]:.2f}</span> ({vix_item["pct"]:+.1f}%)</div>'
+    else:
+        vix_pill = ''
+
+    col_brand, col_indices, col_controls = st.columns([2.7, 4.3, 3.0])
     with col_brand:
         st.markdown(
             f'''
@@ -821,48 +882,134 @@ def render_fintech_topbar():
     with col_indices:
         st.markdown(
             f'''
-            <div style="display:flex; gap:10px; justify-content:center; align-items:center;">
+            <div style="display:flex; gap:10px; justify-content:center; align-items:center; flex-wrap:wrap;">
                 <div class="fintech-pill"><b>NIFTY 50</b> {nifty_str}</div>
                 <div class="fintech-pill"><b>SENSEX</b> {sensex_str}</div>
+                {vix_pill}
             </div>
             ''',
             unsafe_allow_html=True,
         )
 
     with col_controls:
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
+            port_crawl = st.toggle('🎯 My Crawl', value=st.session_state.get('portfolio_ticker_mode', True), key='portfolio_ticker_toggle', help='Crawl only your Watchlist & Open Paper Portfolio in the live ticker')
+            if port_crawl != st.session_state.get('portfolio_ticker_mode', True):
+                st.session_state.portfolio_ticker_mode = port_crawl
+                st.rerun()
+        with c2:
             is_light = st.toggle('☀️ Light', value=(st.session_state.theme_mode == 'light'), key='theme_toggle')
             new_mode = 'light' if is_light else 'dark'
             if new_mode != st.session_state.theme_mode:
                 st.session_state.theme_mode = new_mode
                 st.rerun()
-        with c2:
+        with c3:
             sandbox = st.toggle('🧪 Sandbox', value=st.session_state.ui_sandbox_mode, key='sandbox_toggle')
             if sandbox != st.session_state.ui_sandbox_mode:
                 st.session_state.ui_sandbox_mode = sandbox
                 st.rerun()
 
+def _parse_float_safe(val, default=0.0):
+    try:
+        if pd.isna(val):
+            return default
+        s = str(val).replace('₹', '').replace(',', '').replace('%', '').strip()
+        return float(s) if s else default
+    except Exception:
+        return default
+
 def render_ticker():
-    symbols = get_nifty50_symbols()
-    df = get_nifty50_ticker_data(tuple(symbols))
-    if df.empty:
-        st.markdown('<div class="ticker-note">NIFTY 50 ticker stream temporarily unavailable.</div>', unsafe_allow_html=True)
-        return
     items = []
-    
-    for _, r in df.iterrows():
-        cls = 'up' if r.pct >= 0 else 'down'
-        arrow = '▲' if r.pct >= 0 else '▼'
-        items.append(f'<span class="tick" style="margin-right:28px;"><b>{html.escape(r.symbol)}</b> {money(r.price)} <span class="{cls}">{arrow} {r.pct:+.2f}%</span></span>')
-    content = ''.join(items)
+    use_portfolio_crawl = st.session_state.get('portfolio_ticker_mode', True)
+    anim_duration = '45s'
+
+    if use_portfolio_crawl:
+        w_df = get_watchlist_cached()
+        p_df = get_paper_trades_cached()
+
+        open_p = pd.DataFrame()
+        if not p_df.empty and 'Symbol' in p_df.columns:
+            if 'Status' in p_df.columns:
+                open_p = p_df[p_df['Status'].astype(str).str.strip().str.upper() == 'OPEN'].copy()
+            else:
+                open_p = p_df.copy()
+
+        w_syms = []
+        if not w_df.empty and 'Symbol' in w_df.columns:
+            w_syms = [str(s).strip().upper().replace('.NS', '') for s in w_df['Symbol'].dropna().tolist() if str(s).strip()]
+
+        p_syms = []
+        if not open_p.empty and 'Symbol' in open_p.columns:
+            p_syms = [str(s).strip().upper().replace('.NS', '') for s in open_p['Symbol'].dropna().tolist() if str(s).strip()]
+
+        all_port_syms = tuple(sorted(set(w_syms + p_syms)))
+        live_map = fetch_portfolio_live_prices_batch(all_port_syms) if all_port_syms else {}
+
+        # 1. Open Paper Portfolio items first
+        if not open_p.empty:
+            for _, row in open_p.iterrows():
+                sym = str(row.get('Symbol', '')).strip().upper().replace('.NS', '')
+                if not sym or sym == 'NAN':
+                    continue
+                entry_p = _parse_float_safe(row.get('Entry_Price', 0.0))
+                qty = int(round(_parse_float_safe(row.get('Quantity', 0.0))))
+                live_p = live_map.get(sym, entry_p)
+                pnl_pct = ((live_p / entry_p) - 1.0) * 100.0 if entry_p > 0 and live_p > 0 else 0.0
+                pnl_rs = (live_p - entry_p) * qty if entry_p > 0 and live_p > 0 else 0.0
+                cls = 'up' if pnl_pct >= 0 else 'down'
+                arrow = '▲' if pnl_pct >= 0 else '▼'
+                items.append(
+                    f'<span class="tick" style="margin-right:32px;">'
+                    f'<span style="color:#6366f1;font-weight:800;margin-right:5px;">📄 PAPER</span>'
+                    f'<b>{html.escape(sym)}</b> {money(live_p)} '
+                    f'<span class="{cls}">{arrow} {pnl_pct:+.2f}% ({pnl_rs:+,.0f}₹)</span>'
+                    f'</span>'
+                )
+
+        # 2. Live Watchlist items
+        if not w_df.empty and 'Symbol' in w_df.columns:
+            seen_w = set()
+            for _, row in w_df.iterrows():
+                sym = str(row.get('Symbol', '')).strip().upper().replace('.NS', '')
+                if not sym or sym == 'NAN' or sym in seen_w:
+                    continue
+                seen_w.add(sym)
+                added_p = _parse_float_safe(row.get('Price_Added', 0.0))
+                live_p = live_map.get(sym, added_p)
+                ret_pct = ((live_p / added_p) - 1.0) * 100.0 if added_p > 0 and live_p > 0 else 0.0
+                cls = 'up' if ret_pct >= 0 else 'down'
+                arrow = '▲' if ret_pct >= 0 else '▼'
+                items.append(
+                    f'<span class="tick" style="margin-right:32px;">'
+                    f'<span style="color:#10b981;font-weight:800;margin-right:5px;">👀 WATCH</span>'
+                    f'<b>{html.escape(sym)}</b> {money(live_p)} '
+                    f'<span class="{cls}">{arrow} {ret_pct:+.2f}%</span>'
+                    f'</span>'
+                )
+
+    # Fallback to NIFTY 50 if user toggled off 'My Crawl' or if both Watchlist & Paper Portfolio are empty
+    if not items:
+        anim_duration = '90s'
+        symbols = get_nifty50_symbols()
+        df = get_nifty50_ticker_data(tuple(symbols))
+        if df.empty:
+            st.markdown('<div class="ticker-note">Live ticker stream temporarily unavailable.</div>', unsafe_allow_html=True)
+            return
+        for _, r in df.iterrows():
+            cls = 'up' if r.pct >= 0 else 'down'
+            arrow = '▲' if r.pct >= 0 else '▼'
+            items.append(f'<span class="tick" style="margin-right:28px;"><b>{html.escape(r.symbol)}</b> {money(r.price)} <span class="{cls}">{arrow} {r.pct:+.2f}%</span></span>')
+
+    repeat_factor = max(2, (12 // max(1, len(items))) + 1)
+    content = ''.join(items * repeat_factor)
     
     light = st.session_state.theme_mode == 'light'
     bg = '#ffffff' if light else '#0d1017'
     textc = '#0f172a' if light else '#f8fafc'
     muted = '#64748b' if light else '#8c9bae'
     border = '#e2e8f0' if light else '#1e2535'
-    markup = f'''<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee 90s linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981}}.down{{color:#ef4444}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
+    markup = f'''<html><head><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap'); *{{box-sizing:border-box}}body{{margin:0;background:{bg};color:{textc};font-family:'Inter',sans-serif;overflow:hidden}}.viewport{{width:100%;overflow:hidden;border:1px solid {border};border-radius:12px;background:{bg};padding:10px 0}}.track{{display:flex;width:max-content;animation:marquee {anim_duration} linear infinite}}.track:hover{{animation-play-state:paused}}.tick{{white-space:nowrap;font-size:12px;color:{muted};font-weight:500}}.tick b{{color:{textc};margin-right:6px;font-weight:700}}.up{{color:#10b981;font-weight:700}}.down{{color:#ef4444;font-weight:700}}@keyframes marquee{{from{{transform:translateX(0)}}to{{transform:translateX(-50%)}}}}</style></head><body><div class="viewport"><div class="track">{content}{content}</div></div></body></html>'''
     components.html(markup, height=44, scrolling=False)
 
 def day_change(symbol, period='2y', hist=None):
@@ -1065,14 +1212,14 @@ def render_entry_zone_checklists(symbol, row, current_price, hist=None):
     <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:24px;">
         <div class="bento-stock-card" style="flex:1; min-width:300px; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--card);">
             <div style="font-size:1.05rem; font-weight:900; color:var(--text); margin-bottom:16px; border-bottom:1px solid rgba(139,162,181,0.15); padding-bottom:10px;">🎯 PRE-BREAKOUT SETUP</div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Price Proximity <span style="color:var(--muted); font-size:0.75rem;">(-3% to +1%)</span></span> {badge(prox_passed)}</div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Bullish Momentum <span style="color:var(--muted); font-size:0.75rem;">(RSI > 60)</span></span> {badge(rsi_passed)}</div>
-            <div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:0.85rem; font-weight:500;">Volume Accumulation <span style="color:var(--muted); font-size:0.75rem;">(RVOL > 1.0)</span></span> {badge(vol_trend_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Price Proximity <span style="color:var(--muted); font-size:0.75rem;">(-3% to +1.5%)</span></span> {badge(prox_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Bullish Momentum <span style="color:var(--muted); font-size:0.75rem;">(RSI 54–73)</span></span> {badge(rsi_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:0.85rem; font-weight:500;">Volume Accumulation <span style="color:var(--muted); font-size:0.75rem;">(RVOL ≥ 1.0 / 20D Acc.)</span></span> {badge(vol_trend_passed)}</div>
         </div>
         <div class="bento-stock-card" style="flex:1; min-width:300px; padding:18px; border:1px solid var(--border); border-radius:12px; background:var(--card);">
             <div style="font-size:1.05rem; font-weight:900; color:var(--text); margin-bottom:16px; border-bottom:1px solid rgba(139,162,181,0.15); padding-bottom:10px;">🚀 POST-BREAKOUT CONFIRMATION</div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Daily Close <span style="color:var(--muted); font-size:0.75rem;">(> BO Level)</span></span> {badge(close_passed, pending=not close_passed)}</div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Breakout Volume <span style="color:var(--muted); font-size:0.75rem;">(RVOL > 1.5)</span></span> {badge(brk_vol_passed, pending=not close_passed)}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:0.85rem; font-weight:500;">Breakout Volume <span style="color:var(--muted); font-size:0.75rem;">(RVOL ≥ 1.4 &amp; Vol ≥ 70%)</span></span> {badge(brk_vol_passed, pending=not close_passed)}</div>
             <div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:0.85rem; font-weight:500;">Price Sustain <span style="color:var(--muted); font-size:0.75rem;">(Holds > 2 Days)</span></span> {badge(sustain_passed, pending=not sustain_passed)}</div>
         </div>
     </div>
@@ -1285,9 +1432,10 @@ def render_detail(symbol, row):
             st.markdown(f'<div class="bento-card" style="text-align:center;"><span class="badge {cls}">{title}</span><div style="font-size:1rem;font-weight:700;margin-top:14px;color:var(--text);">{msg}</div><div class="small-muted" style="margin-top:8px">Distance: <span style="font-weight:600;">{distance:.2f}%</span> &nbsp; • &nbsp; Trigger: <span style="font-weight:600;">{money(row.get("breakout_trigger"))}</span></div></div>', unsafe_allow_html=True)
 
             if row.get('delivery_pct'):
-                st.markdown(f'<div class="bento-card" style="text-align:center;"><span class="badge badge-green">EOD Delivery Confirmed</span><div style="font-size:1.6rem;font-weight:900;margin-top:8px;color:var(--accent);">{row.get("delivery_pct")}%</div><div class="small-muted">Deliverable Quantity Exchange Archive</div></div>', unsafe_allow_html=True)
+                d_exp = float(row.get('deliv_expansion_ratio', 1.0) or 1.0)
+                st.markdown(f'<div class="bento-card" style="text-align:center;"><span class="badge badge-green">EOD Delivery Confirmed</span><div style="font-size:1.6rem;font-weight:900;margin-top:8px;color:var(--accent);">{row.get("delivery_pct")}%</div><div class="small-muted">Relative Expansion: <b>{d_exp:.2f}x</b> vs Base</div></div>', unsafe_allow_html=True)
 
-        # Institutional Diagnostic Summary from Scanner v2
+        # Institutional Diagnostic Summary from Scanner v3
         expl_text = str(row.get('explanation', '') or '')
         has_warning = ('WARNING' in expl_text) or bool(row.get('false_breakout', False)) or (float(row.get('component_volume', 0.5) or 0.5) <= 0.10)
         diag_border = 'var(--red)' if has_warning else 'var(--accent)'
@@ -1296,7 +1444,7 @@ def render_detail(symbol, row):
             st.markdown(
                 f'<div class="bento-card" style="border-left: 4px solid {diag_border}; padding: 14px 18px; margin-bottom: 16px;">'
                 f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
-                f'<span class="small-muted" style="text-transform:uppercase; font-weight:700; font-size:0.72rem;">Scanner v2 Diagnostic Thesis</span>'
+                f'<span class="small-muted" style="text-transform:uppercase; font-weight:700; font-size:0.72rem;">Scanner v3 Regime-Adaptive Thesis</span>'
                 f'{diag_badge}'
                 f'</div>'
                 f'<div style="font-size:0.92rem; font-weight:600; color:var(--text);">{html.escape(expl_text)}</div>'
@@ -1311,12 +1459,17 @@ def render_detail(symbol, row):
             ('Score', f"{row.get('score',0):.1f}/100", 'score'), ('RVOL', f"{row.get('rvol',0):.2f}x", 'rvol'),
             ('RSI', f"{row.get('rsi',0):.1f}", 'rsi'), ('ADX', f"{row.get('adx',0):.1f}", 'adx'),
             ('EMA structure', row.get('ema_structure', '—'), None), ('MACD', f"{row.get('macd',0):.3f}", None),
-            ('ATR %', f"{row.get('atr_pct',0):.2f}%", None), ('VCP Squeeze', f"{row.get('squeeze',0):.2f}", None),
-            ('NIFTY rel strength', pct(row.get('nifty_relative_strength')), None), ('60D rel strength', pct(row.get('relative_strength')), None),
-            ('Candlestick', row.get('candlestick', '—'), None), ('Resistance touches', row.get('resistance_touches', '—'), None),
-            ('Risk / reward', f"{row.get('risk_reward',0):.2f}", 'rr'), ('Market regime', row.get('market_regime', '—'), None),
-            ('Stop reference', money(row.get('stop_reference')), None), ('EOD Delivery %', f"{row.get('delivery_pct','—')}%" if pd.notna(row.get('delivery_pct')) else '—', 'rvol'),
-            ('Rank Score (v2)', f"{float(row.get('rank_score', row.get('score', 0))):.1f}/100", 'score'),
+            ('ATR %', f"{row.get('atr_pct',0):.2f}%", None), ('VCP / VDU Squeeze', f"{row.get('squeeze',0):.2f}", None),
+            ('NIFTY rel strength', pct(row.get('nifty_relative_strength')), None), ('Sector rel strength', pct(row.get('sector_relative_strength')), None),
+            ('60D rel strength', pct(row.get('relative_strength')), None), ('Candlestick', row.get('candlestick', '—'), None),
+            ('Resistance touches', row.get('resistance_touches', '—'), None), ('Risk / reward (T2)', f"{row.get('risk_reward',0):.2f}x", 'rr'),
+            ('Market regime', row.get('market_regime', '—'), None), ('Stop reference', money(row.get('stop_reference')), None),
+            ('EOD Delivery %', f"{row.get('delivery_pct','—')}%" if pd.notna(row.get('delivery_pct')) else '—', 'rvol'),
+            ('Deliv Expansion', f"{float(row.get('deliv_expansion_ratio', 1.0) or 1.0):.2f}x", 'rvol'),
+            ('20D U/D Vol Ratio', f"{float(row.get('ud_vol_ratio', 1.0) or 1.0):.2f}x", 'rvol'),
+            ('Candle CLV', f"{float(row.get('clv', 0.5) or 0.5):.2f}", None),
+            ('Below 52W High', f"{float(row.get('pct_below_52w', 0.0) or 0.0):.1f}%", 'distance'),
+            ('Rank Score (v3)', f"{float(row.get('rank_score', row.get('score', 0))):.1f}/100", 'score'),
             ('Vol Quality Score', f"{float(row.get('component_volume', 0))*100:.0f}%", 'score'),
             ('Multi-TF RS Score', f"{float(row.get('component_relative_strength', 0))*100:.0f}%", 'score'),
             ('False BO Risk', 'Yes ⚠️' if row.get('false_breakout') else 'Clean ✅', None),
@@ -1335,28 +1488,64 @@ def render_detail(symbol, row):
             fund_data = get_fundamentals_cached(symbol)
 
         if fund_data.get('fundamental_quality') == 'OK':
-            rev = fund_data.get('q_rev_growth_yoy_pct')
-            prof = fund_data.get('q_profit_growth_yoy_pct')
+            rev_yoy = fund_data.get('q_rev_growth_yoy_pct')
+            prof_yoy = fund_data.get('q_profit_growth_yoy_pct')
+            rev_qoq = fund_data.get('q_rev_growth_qoq_pct')
+            prof_qoq = fund_data.get('q_profit_growth_qoq_pct')
             margin = fund_data.get('operating_margin_pct')
             dte = fund_data.get('debt_to_equity')
+            roe = fund_data.get('roe_pct')
+            pe = fund_data.get('pe_ratio')
+            earn_dt = fund_data.get('earnings_date')
+            days_earn = fund_data.get('days_to_earnings')
+            f_score = fund_data.get('fundamental_score', 55.0)
+            f_grade = fund_data.get('fundamental_grade', 'B')
+            f_flag = fund_data.get('fundamental_flag', 'ACCEPTABLE')
 
-            rev_str = f'{rev:+.2f}%' if pd.notna(rev) else 'N/A'
-            prof_str = f'{prof:+.2f}%' if pd.notna(prof) else 'N/A'
+            rev_str = f'{rev_yoy:+.2f}%' if pd.notna(rev_yoy) else 'N/A'
+            prof_str = f'{prof_yoy:+.2f}%' if pd.notna(prof_yoy) else 'N/A'
+            rev_qoq_sub = f'Sequential QoQ: {rev_qoq:+.2f}%' if pd.notna(rev_qoq) else 'Sequential QoQ: —'
+            prof_qoq_sub = f'Sequential QoQ: {prof_qoq:+.2f}%' if pd.notna(prof_qoq) else 'Sequential QoQ: —'
             margin_str = f'{margin:.2f}%' if pd.notna(margin) else 'N/A'
             dte_str = f'{dte:.2f}' if pd.notna(dte) else 'N/A'
+            roe_str = f'{roe:.2f}%' if pd.notna(roe) else 'N/A'
+            pe_str = f'{pe:.1f}x' if pd.notna(pe) else 'N/A'
 
-            rev_c = 'var(--accent)' if pd.notna(rev) and rev > 0 else 'var(--red)' if pd.notna(rev) else 'var(--text)'
-            prof_c = 'var(--accent)' if pd.notna(prof) and prof > 0 else 'var(--red)' if pd.notna(prof) else 'var(--text)'
-            dte_c = 'var(--red)' if pd.notna(dte) and dte > 1.5 else 'var(--accent)' if pd.notna(dte) else 'var(--text)'
+            rev_c = 'var(--accent)' if pd.notna(rev_yoy) and rev_yoy > 0 else 'var(--red)' if pd.notna(rev_yoy) else 'var(--text)'
+            prof_c = 'var(--accent)' if pd.notna(prof_yoy) and prof_yoy > 0 else 'var(--red)' if pd.notna(prof_yoy) else 'var(--text)'
+            dte_c = 'var(--red)' if pd.notna(dte) and dte > 1.8 else 'var(--accent)' if pd.notna(dte) else 'var(--text)'
+            roe_c = 'var(--accent)' if pd.notna(roe) and roe >= 12.0 else ('var(--red)' if pd.notna(roe) and roe < 0 else 'var(--text)')
 
+            earn_banner = ""
+            if earn_dt and days_earn is not None and 0 <= int(days_earn) <= 7:
+                earn_banner = f'''
+                <div class="bento-card" style="border-left: 4px solid var(--yellow); background: var(--yellow-bg); padding: 14px 18px; margin-bottom: 16px;">
+                    <span class="badge badge-yellow">⚠️ UPCOMING EARNINGS EVENT RISK</span>
+                    <div style="font-weight:700; margin-top:6px; font-size:0.95rem; color:var(--text);">
+                        Corporate earnings scheduled for <b>{html.escape(str(earn_dt))}</b> ({int(days_earn)} days away). Avoid holding full swing size into binary overnight earnings gaps!
+                    </div>
+                </div>
+                '''
+
+            grade_cls = 'badge-green' if f_grade in {'A+', 'A'} else ('badge-yellow' if f_grade in {'B', 'C'} else 'badge-red')
             st.markdown(f'''
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
-                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Revenue Growth</b><br><span style="font-size:1.6rem;font-weight:800;color:{rev_c}">{rev_str}</span></div>
-                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">QoQ Net Profit</b><br><span style="font-size:1.6rem;font-weight:800;color:{prof_c}">{prof_str}</span></div>
-                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem;font-weight:800;">{margin_str}</span></div>
-                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Debt to Equity</b><br><span style="font-size:1.6rem;font-weight:800;color:{dte_c}">{dte_str}</span></div>
+            {earn_banner}
+            <div class="bento-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:16px 20px; margin-bottom:16px; border-left:4px solid var(--brand);">
+                <div>
+                    <div class="small-muted" style="text-transform:uppercase; font-weight:700; font-size:0.72rem;">Institutional Fundamental Rating</div>
+                    <div style="font-size:1.6rem; font-weight:900; color:var(--text); margin-top:4px;">{f_score:.1f} / 100 &nbsp;<span class="badge {grade_cls}">GRADE {html.escape(str(f_grade))} • {html.escape(str(f_flag))}</span></div>
+                </div>
+                <div class="small-muted" style="text-align:right;"> Next Earnings Date: <b>{html.escape(str(earn_dt or 'Not Scheduled'))}</b></div>
             </div>
-            <div class="small-muted" style="margin-top:12px;text-align:right;">Data sourced securely via Yahoo Finance APIs.</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">YoY Revenue Growth</b><br><span style="font-size:1.6rem;font-weight:800;color:{rev_c}">{rev_str}</span><div class="small-muted" style="margin-top:4px;">{rev_qoq_sub}</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">YoY Net Profit Growth</b><br><span style="font-size:1.6rem;font-weight:800;color:{prof_c}">{prof_str}</span><div class="small-muted" style="margin-top:4px;">{prof_qoq_sub}</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem;font-weight:800;">{margin_str}</span><div class="small-muted" style="margin-top:4px;">Core EBIT / Operating</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Debt to Equity</b><br><span style="font-size:1.6rem;font-weight:800;color:{dte_c}">{dte_str}</span><div class="small-muted" style="margin-top:4px;">Balance Sheet Leverage</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Return on Equity (ROE)</b><br><span style="font-size:1.6rem;font-weight:800;color:{roe_c}">{roe_str}</span><div class="small-muted" style="margin-top:4px;">Capital Efficiency</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Valuation (P/E Ratio)</b><br><span style="font-size:1.6rem;font-weight:800;">{pe_str}</span><div class="small-muted" style="margin-top:4px;">Trailing / Forward P/E</div></div>
+            </div>
+            <div class="small-muted" style="margin-top:12px;text-align:right;">Data sourced securely via Yahoo Finance APIs &amp; corporate filings (6h TTL cache).</div>
             ''', unsafe_allow_html=True)
         else:
             st.warning(f"Fundamental data is currently unavailable for {symbol}. Status: {fund_data.get('fundamental_quality')}")
@@ -2087,10 +2276,10 @@ def render_home():
         # SANDBOX / SCAN TRIGGER
         if st.session_state.ui_sandbox_mode and st.session_state.scan_result is None:
             st.session_state.scan_result = pd.DataFrame([
-                {'symbol': 'BOSCHLTD', 'company_name': 'Bosch Ltd.', 'cap_category': 'Large Cap', 'score': 92.5, 'rating': 9, 'price': 35850.0, 'breakout_level': 35000.0, 'distance_pct': 0.42, 'rvol': 2.1, 'rsi': 62, 'adx': 28, 'macd': 124.5, 'delivery_pct': 64.2},
-                {'symbol': 'MANKIND', 'company_name': 'Mankind Pharma Ltd.', 'cap_category': 'Large+Mid Cap', 'score': 88.0, 'rating': 9, 'price': 2740.0, 'breakout_level': 2700.0, 'distance_pct': 1.25, 'rvol': 1.8, 'rsi': 58, 'adx': 24, 'macd': 15.2, 'delivery_pct': 58.4},
-                {'symbol': 'MARICO', 'company_name': 'Marico Ltd.', 'cap_category': 'Large Cap', 'score': 81.2, 'rating': 8, 'price': 685.0, 'breakout_level': 670.0, 'distance_pct': 2.30, 'rvol': 1.5, 'rsi': 65, 'adx': 30, 'macd': 8.4, 'delivery_pct': 72.1},
-                {'symbol': 'TRENT', 'company_name': 'Trent Ltd.', 'cap_category': 'Large Cap', 'score': 79.5, 'rating': 8, 'price': 7450.0, 'breakout_level': 7300.0, 'distance_pct': 0.85, 'rvol': 2.4, 'rsi': 60, 'adx': 32, 'macd': 45.1, 'delivery_pct': 61.9},
+                {'symbol': 'BOSCHLTD', 'company_name': 'Bosch Ltd.', 'cap_category': 'Large Cap', 'score': 92.5, 'rank_score': 95.0, 'rating': 9, 'price': 35850.0, 'breakout_level': 35000.0, 'distance_pct': 0.42, 'rvol': 2.1, 'rsi': 62, 'adx': 28, 'macd': 124.5, 'delivery_pct': 64.2, 'deliv_expansion_ratio': 1.65, 'sector_relative_strength': 6.4, 'squeeze': 0.84, 'market_regime': 'Bullish', 'fundamental_grade': 'A+'},
+                {'symbol': 'MANKIND', 'company_name': 'Mankind Pharma Ltd.', 'cap_category': 'Large+Mid Cap', 'score': 88.0, 'rank_score': 90.5, 'rating': 9, 'price': 2740.0, 'breakout_level': 2700.0, 'distance_pct': 1.25, 'rvol': 1.8, 'rsi': 58, 'adx': 24, 'macd': 15.2, 'delivery_pct': 58.4, 'deliv_expansion_ratio': 1.40, 'sector_relative_strength': 4.8, 'squeeze': 0.78, 'market_regime': 'Bullish', 'fundamental_grade': 'A'},
+                {'symbol': 'MARICO', 'company_name': 'Marico Ltd.', 'cap_category': 'Large Cap', 'score': 81.2, 'rank_score': 84.0, 'rating': 8, 'price': 685.0, 'breakout_level': 670.0, 'distance_pct': 2.30, 'rvol': 1.5, 'rsi': 65, 'adx': 30, 'macd': 8.4, 'delivery_pct': 72.1, 'deliv_expansion_ratio': 1.85, 'sector_relative_strength': 5.1, 'squeeze': 0.72, 'market_regime': 'Bullish', 'fundamental_grade': 'A'},
+                {'symbol': 'TRENT', 'company_name': 'Trent Ltd.', 'cap_category': 'Large Cap', 'score': 79.5, 'rank_score': 82.5, 'rating': 8, 'price': 7450.0, 'breakout_level': 7300.0, 'distance_pct': 0.85, 'rvol': 2.4, 'rsi': 60, 'adx': 32, 'macd': 45.1, 'delivery_pct': 61.9, 'deliv_expansion_ratio': 1.50, 'sector_relative_strength': 8.2, 'squeeze': 0.81, 'market_regime': 'Bullish', 'fundamental_grade': 'A+'},
             ])
 
         scan_mode = 'audit' if audit_clicked else 'normal' if normal_clicked else None
@@ -2100,10 +2289,11 @@ def render_home():
             st.session_state.scan_result = None
             scan_placeholder = st.empty()
             try:
-                scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating NIFTY 500 Universe & Anti-Trap Filters</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
-                with st.spinner('Executing models & fetching EOD data…'):
+                scan_placeholder.markdown('<div class="scan-shell"><div style="font-weight:700;font-size:1.1rem;color:var(--text)">🔎 Processing Market Scan</div><div class="scan-copy"><span>Evaluating NIFTY 500 Universe, Sector RS, Delivery Baseline &amp; Fundamental Gate</span><span>Executing</span></div><div class="scan-chart"><div class="candle-track">' + ''.join([f'<span class="candle {"g" if i % 3 else "r"}"></span>' for i in range(42)]) + '</div></div><div class="progress"><div></div></div></div>', unsafe_allow_html=True)
+                with st.spinner('Executing Scanner v3 models, EOD delivery baseline & fundamental gate…'):
                     result = scan_universe(max_distance=10.0, period='2y', top_n=500)
                     result = enrich_shortlist_with_delivery(result)
+                    result = apply_fundamental_gate(result, top_k=30, max_workers=10)
 
                 st.session_state.scan_result = result
                 st.session_state.scan_timestamp = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
@@ -2291,9 +2481,31 @@ def render_home():
             st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
 
         with col_grid:
+            if not display.empty and 'market_regime' in display.columns:
+                active_reg = str(display['market_regime'].iloc[0] or 'Neutral')
+                if active_reg == 'Bearish':
+                    reg_border, reg_bg, reg_badge = 'var(--red)', 'var(--red-bg)', '<span class="badge badge-red">🚨 BEARISH REGIME • CAPITAL PRESERVATION GATE</span>'
+                    reg_msg = 'NIFTY trend or internal breadth is weak. Scanner v3 has automatically capped non-leader scores and boosted relative-strength weights. Use 50% smaller position sizes.'
+                elif active_reg == 'Overheated':
+                    reg_border, reg_bg, reg_badge = 'var(--yellow)', 'var(--yellow-bg)', '<span class="badge badge-yellow">⚠️ OVERHEATED CLIMAX • ANTI-CHASE MODE</span>'
+                    reg_msg = 'Market momentum is stretched. Scanner v3 is prioritizing fresh VCP squeezes and tight proximity (-0.5% to +2%) while penalizing extended breakouts.'
+                elif active_reg == 'Bullish':
+                    reg_border, reg_bg, reg_badge = 'var(--accent)', 'var(--accent-bg)', '<span class="badge badge-green">🟢 CONFIRMED BULLISH REGIME • RISK-ON</span>'
+                    reg_msg = 'Broad market trend and internal NIFTY 500 breadth are aligned. Prioritize high RVOL, strong 20D Up/Down accumulation, and expanding EOD delivery.'
+                else:
+                    reg_border, reg_bg, reg_badge = 'var(--brand)', 'var(--brand-bg)', '<span class="badge badge-brand">🎯 ROTATIONAL / NEUTRAL • SNIPER MODE</span>'
+                    reg_msg = 'Selective rotational market. Scanner v3 has increased weights on VCP/VDU contraction, multi-touch resistance quality, and institutional delivery.'
+                st.markdown(
+                    f'<div class="bento-card" style="border-left: 4px solid {reg_border}; background: {reg_bg}; padding: 12px 16px; margin-bottom: 14px;">'
+                    f'<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">{reg_badge}<span class="small-muted" style="font-weight:700;">Regime-Adaptive Weights Active</span></div>'
+                    f'<div style="font-size:0.84rem; font-weight:600; color:var(--text); margin-top:6px;">{reg_msg}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
             hdr_c1, hdr_c2 = st.columns([4, 1.4])
             with hdr_c1:
-                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;"><div class="section-title" style="border:none;margin:0;padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({matches_count} Matches)</span></div><div class="small-muted">Ranked by Scanner v2 Quality &amp; EOD Delivery</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;"><div class="section-title" style="border:none;margin:0;padding:0;">Screening Results <span style="color:var(--muted);font-weight:600;font-size:1rem;">({matches_count} Matches)</span></div><div class="small-muted">Ranked by Scanner v3 Quality, Sector RS &amp; Relative Delivery</div></div>', unsafe_allow_html=True)
             with hdr_c2:
                 show_all_cards = st.toggle(f"Show All ({matches_count})", value=False, key="show_all_grid_cards") if matches_count > 30 else True
 
@@ -2318,12 +2530,27 @@ def render_home():
                             adx = float(row.get('adx', 0) or 0)
                             macd = float(row.get('macd', 0) or 0)
                             dly = row.get('delivery_pct')
+                            d_exp = float(row.get('deliv_expansion_ratio', 1.0) or 1.0)
+                            sec_rs = float(row.get('sector_relative_strength', 0.0) or 0.0)
+                            sqz_v = float(row.get('squeeze', 0.0) or 0.0)
+                            f_grade = str(row.get('fundamental_grade', '') or '').strip()
+                            f_flag = str(row.get('fundamental_flag', '') or '').strip()
                             
                             score_cls = 'badge-green' if score >= 80 else 'badge-brand' if score >= 65 else 'badge-yellow'
                             badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:8px;margin-right:6px;">{timeframe}</span>'
                             badges_html += f'<span class="badge {score_cls}" style="margin-bottom:8px;margin-right:6px;">SCORE: {score:.0f} ({rating}/10)</span>'
                             if pd.notna(dly):
-                                badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;margin-right:6px;">EOD DEL: {dly}%</span>'
+                                badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;margin-right:6px;">DEL: {dly}% ({d_exp:.1f}x)</span>'
+                            if sec_rs != 0:
+                                sec_c = 'badge-green' if sec_rs >= 0 else 'badge-red'
+                                badges_html += f'<span class="badge {sec_c}" style="margin-bottom:8px;margin-right:6px;">SEC RS: {sec_rs:+.1f}%</span>'
+                            if sqz_v >= 0.75:
+                                badges_html += '<span class="badge badge-brand" style="margin-bottom:8px;margin-right:6px;">💎 VCP / VDU</span>'
+                            if f_grade and f_grade not in {'nan', 'None'}:
+                                fg_cls = 'badge-green' if f_grade in {'A+', 'A'} else ('badge-red' if f_grade == 'D' else 'badge-grey')
+                                badges_html += f'<span class="badge {fg_cls}" style="margin-bottom:8px;margin-right:6px;">FUND: {html.escape(f_grade)}</span>'
+                            if f_flag == 'EARNINGS_EVENT_RISK':
+                                badges_html += '<span class="badge badge-yellow" style="margin-bottom:8px;margin-right:6px;">⚠️ EARNINGS SOON</span>'
                             if row.get('false_breakout') or float(row.get('component_volume', 0.5) or 0.5) <= 0.10:
                                 badges_html += '<span class="badge badge-red" style="margin-bottom:8px;">⚠️ TRAP RISK</span>'
 
@@ -2353,31 +2580,35 @@ def render_home():
                                 st.rerun()
 
         # -------------------------------------------------------------------------
-        # MARKET NEWS & CORPORATE ANNOUNCEMENTS FEED
+        # MARKET NEWS & CORPORATE ANNOUNCEMENTS FEED (LIVE YAHOO FINANCE)
         # -------------------------------------------------------------------------
         st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
         st.markdown('<div class="section-title">Market News & Exchange Filings Feed</div>', unsafe_allow_html=True)
 
-        time_1 = (datetime.now(IST) - pd.Timedelta(minutes=15)).strftime('%d %b %Y • %H:%M IST')
-        time_2 = (datetime.now(IST) - pd.Timedelta(hours=1)).strftime('%d %b %Y • %H:%M IST')
-        time_3 = (datetime.now(IST) - pd.Timedelta(hours=4)).strftime('%d %b %Y • %H:%M IST')
+        live_news = get_live_market_news_cached()
+        if not live_news:
+            t_fallback = datetime.now(IST).strftime('%d %b %Y • %H:%M IST')
+            live_news = [
+                {'pub_time': None, 'time_str': t_fallback, 'title': 'NIFTY 50 & BSE Sensex live market feed active; click any stock card for company-specific filings.', 'tag': 'MARKET PULSE', 'link': 'https://www.nseindia.com/'},
+                {'pub_time': None, 'time_str': t_fallback, 'title': 'Scanner v3 Regime-Adaptive Engine & Pre-Scan Fundamental Gate active for top candidates.', 'tag': 'SYSTEM STATUS', 'link': 'https://www.nseindia.com/'},
+                {'pub_time': None, 'time_str': t_fallback, 'title': 'NSE EOD Deliverable Quantity & multi-session baseline comparison synced.', 'tag': 'EXCHANGE ARCHIVE', 'link': 'https://www.nseindia.com/'},
+            ]
 
-        news_cols = st.columns(3)
-        news_data = [
-            {'time': time_1, 'headline': 'Sensex and Nifty open higher; Asian markets trade green as crude steadies.', 'tag': 'MARKET PULSE'},
-            {'time': time_2, 'headline': 'Q2 Results in focus: Top NIFTY 50 banks and pharma report earnings today.', 'tag': 'EARNINGS'},
-            {'time': time_3, 'headline': 'NSE regulatory circular indicates updates to EOD delivery reporting guidelines.', 'tag': 'EXCHANGE REGULATORY'},
-        ]
-
-        for col, news in zip(news_cols, news_data):
+        news_cols = st.columns(min(3, len(live_news)))
+        for col, item in zip(news_cols, live_news[:3]):
+            p_ts = item.get('pub_time')
+            time_str = datetime.fromtimestamp(p_ts, tz=IST).strftime('%d %b %Y • %H:%M IST') if p_ts else item.get('time_str', 'Recent')
+            link_url = item.get('link', '#')
+            headline_txt = html.escape(str(item.get('title', '')))
+            tag_txt = html.escape(str(item.get('tag', 'MARKET PULSE')))
             with col:
                 st.markdown(f'''
                 <div class="news-item">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <span class="news-time">{news['time']}</span>
-                        <span class="badge badge-brand">{news['tag']}</span>
+                        <span class="news-time">{time_str}</span>
+                        <span class="badge badge-brand">{tag_txt}</span>
                     </div>
-                    <div class="news-headline">{news['headline']}</div>
+                    <div class="news-headline"><a href="{link_url}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">{headline_txt} ↗</a></div>
                 </div>
                 ''', unsafe_allow_html=True)
 
