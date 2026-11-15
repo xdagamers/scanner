@@ -486,19 +486,19 @@ def inject_theme_css():
         .target-box {{ min-width: 110px; padding: 10px; }}
     }}
 
-    details.bento-card {
+    details.bento-card {{
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: 12px;
         margin-bottom: 12px;
         box-shadow: var(--shadow);
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-    details.bento-card[open] {
+    }}
+    details.bento-card[open] {{
         border-color: var(--brand);
         box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
-    }
-    details.bento-card > summary {
+    }}
+    details.bento-card > summary {{
         list-style: none;
         cursor: pointer;
         padding: 16px 20px;
@@ -507,19 +507,19 @@ def inject_theme_css():
         align-items: center;
         flex-wrap: wrap;
         gap: 16px;
-    }
-    details.bento-card > summary::-webkit-details-marker {
+    }}
+    details.bento-card > summary::-webkit-details-marker {{
         display: none;
-    }
-    .expanded-content {
+    }}
+    .expanded-content {{
         padding: 0 20px 20px 20px;
         border-top: 1px solid var(--border);
         margin-top: 12px;
         padding-top: 16px;
-    }
-    .pnl-breakdown {
+    }}
+    .pnl-breakdown {{
         display: flex; gap: 20px; justify-content: flex-end; align-items: baseline; font-size: 0.9rem;
-    }
+    }}
         </style>
     '''
     st.markdown(css, unsafe_allow_html=True)
