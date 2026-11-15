@@ -1025,7 +1025,7 @@ def render_ticker():
 
     # Fallback to NIFTY 50 if user toggled off 'My Crawl' or if both Watchlist & Paper Portfolio are empty
     if not items:
-        anim_duration = '90s'
+        anim_duration = '200s'
         symbols = get_nifty50_symbols()
         df = get_nifty50_ticker_data(tuple(symbols))
         if df.empty:
@@ -1814,7 +1814,6 @@ def render_home():
                                 <div class="small-muted" style="font-size:0.75rem;">{money(live_price)} Live</div>
                             </div>
                         </summary>
-                        
                         <div class="expanded-content">
                             <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
                                 <div style="flex:1.6; min-width:250px;">
@@ -1822,10 +1821,7 @@ def render_home():
                                         Entry: <b>{money(entry_price)}</b> ({html.escape(entry_date_str)}) &nbsp;|&nbsp; Qty: <b>{qty}</b> &nbsp;|&nbsp; Invested: <b>{money(entry_price * qty)}</b>
                                     </div>
                                     <div class="small-muted" style="margin-bottom:8px;">
-                                        🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b> &nbsp;|&nbsp;
-                                        🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b> &nbsp;|&nbsp;
-                                        🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b> &nbsp;|&nbsp;
-                                        🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b>
+                                        🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b> &nbsp;|&nbsp; 🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b> &nbsp;|&nbsp; 🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b> &nbsp;|&nbsp; 🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b>
                                     </div>
                                     <div style="max-width:380px;">
                                         <div style="display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); font-weight:700; margin-bottom:3px;">
@@ -1835,7 +1831,6 @@ def render_home():
                                         <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
                                     </div>
                                 </div>
-                                
                                 <div style="text-align:right; min-width:165px;">
                                     <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL</div>
                                     <div style="font-weight:900; font-size:1.3rem; color:{pnl_color};">{pnl_sign}{money(abs(pnl))}</div>
