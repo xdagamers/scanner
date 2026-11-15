@@ -250,7 +250,6 @@ def render_watchlist_tab(watchlist_df):
                     <div class="small-muted" style="font-size:0.75rem;">{_money(live_price)} Live</div>
                 </div>
             </summary>
-            
             <div class="expanded-content">
                 <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
                     <div style="flex:1.6; min-width:240px;">
@@ -262,17 +261,13 @@ def render_watchlist_tab(watchlist_df):
                             <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
                         </div>
                     </div>
-                    
                     <div>
                         <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
                         <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
                     </div>
-                    
                     <div style="text-align:right;">
                         <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
-                        <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">
-                            {pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})
-                        </div>
+                        <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">{pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})</div>
                         <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
                     </div>
                 </div>
