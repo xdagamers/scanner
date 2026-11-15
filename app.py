@@ -485,7 +485,42 @@ def inject_theme_css():
         .fintech-title {{ font-size: 1.1rem; }}
         .target-box {{ min-width: 110px; padding: 10px; }}
     }}
-    </style>
+
+    details.bento-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 12px;
+        box-shadow: var(--shadow);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    details.bento-card[open] {
+        border-color: var(--brand);
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
+    }
+    details.bento-card > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 16px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    details.bento-card > summary::-webkit-details-marker {
+        display: none;
+    }
+    .expanded-content {
+        padding: 0 20px 20px 20px;
+        border-top: 1px solid var(--border);
+        margin-top: 12px;
+        padding-top: 16px;
+    }
+    .pnl-breakdown {
+        display: flex; gap: 20px; justify-content: flex-end; align-items: baseline; font-size: 0.9rem;
+    }
+        </style>
     '''
     st.markdown(css, unsafe_allow_html=True)
 
@@ -922,7 +957,7 @@ def _parse_float_safe(val, default=0.0):
 def render_ticker():
     items = []
     use_portfolio_crawl = st.session_state.get('portfolio_ticker_mode', True)
-    anim_duration = '120s'
+    anim_duration = '45s'
 
     if use_portfolio_crawl:
         w_df = get_watchlist_cached()
@@ -1701,6 +1736,8 @@ def render_home():
 
                 # Display Open Trades
                 total_pnl = 0.0
+                total_gross_profit = 0.0
+                total_gross_loss = 0.0
                 total_invested = 0.0
                 for idx, trade in open_trades.iterrows():
                     sym = str(trade['Symbol']).strip().upper().replace('.NS', '')
@@ -1714,6 +1751,10 @@ def render_home():
                     entry_date_str = str(trade.get('Entry_Date', '—') or '—').split(' ')[0]
                     
                     pnl = (live_price - entry_price) * qty
+                    if pnl >= 0:
+                        total_gross_profit += pnl
+                    else:
+                        total_gross_loss += abs(pnl)
                     total_pnl += pnl
                     total_invested += (entry_price * qty)
                     pnl_pct = ((live_price / entry_price) - 1) * 100 if entry_price > 0 else 0.0
@@ -1759,40 +1800,50 @@ def render_home():
                     dist_to_sl_pct = ((live_price - stop_loss) / entry_price * 100.0) if (stop_loss > 0 and entry_price > 0) else 0.0
                     dist_to_t1_pct = ((target_1 - live_price) / live_price * 100.0) if (target_1 > 0 and live_price > 0) else 0.0
                     
+                    arrow_port = '▲' if pnl >= 0 else '▼'
                     st.markdown(f'''
-                    <div class="bento-card" style="{card_border} display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
-                        <div style="flex:1.6; min-width:250px;">
-                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                <span style="font-weight:900; font-size:1.25rem; color:var(--text);">{html.escape(sym)}</span>
+                    <details class="bento-card" style="{card_border}">
+                        <summary>
+                            <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
+                                <span style="font-weight:900; font-size:1.3rem; color:var(--text);">{html.escape(sym)}</span>
+                                <span style="color:{pnl_color}; font-size:1.1rem;">{arrow_port}</span>
                                 {alert_badge}
                             </div>
-                            <div class="small-muted" style="margin-top:6px;">
-                                Entry: <b>{money(entry_price)}</b> ({html.escape(entry_date_str)}) &nbsp;|&nbsp; Qty: <b>{qty}</b> &nbsp;|&nbsp; Invested: <b>{money(entry_price * qty)}</b>
+                            <div style="text-align:right; min-width:140px;">
+                                <div style="font-weight:900; font-size:1.2rem; color:{pnl_color};">{pnl_sign}{pnl_pct:.2f}%</div>
+                                <div class="small-muted" style="font-size:0.75rem;">{money(live_price)} Live</div>
                             </div>
-                            <div class="small-muted" style="margin-top:4px;">
-                                🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b> &nbsp;|&nbsp;
-                                🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b> &nbsp;|&nbsp;
-                                🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b> &nbsp;|&nbsp;
-                                🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b>
-                            </div>
-                            <div style="margin-top:8px; max-width:380px;">
-                                <div style="display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); font-weight:700; margin-bottom:3px;">
-                                    <span>SL Buffer: {dist_to_sl_pct:+.2f}%</span>
-                                    <span>{('T1 HIT ✅' if (target_1 > 0 and live_price >= target_1) else f'To T1: {dist_to_t1_pct:+.2f}%') if target_1 > 0 else ''}</span>
+                        </summary>
+                        
+                        <div class="expanded-content">
+                            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+                                <div style="flex:1.6; min-width:250px;">
+                                    <div class="small-muted" style="margin-bottom:8px;">
+                                        Entry: <b>{money(entry_price)}</b> ({html.escape(entry_date_str)}) &nbsp;|&nbsp; Qty: <b>{qty}</b> &nbsp;|&nbsp; Invested: <b>{money(entry_price * qty)}</b>
+                                    </div>
+                                    <div class="small-muted" style="margin-bottom:8px;">
+                                        🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b> &nbsp;|&nbsp;
+                                        🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b> &nbsp;|&nbsp;
+                                        🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b> &nbsp;|&nbsp;
+                                        🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b>
+                                    </div>
+                                    <div style="max-width:380px;">
+                                        <div style="display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); font-weight:700; margin-bottom:3px;">
+                                            <span>SL Buffer: {dist_to_sl_pct:+.2f}%</span>
+                                            <span>{('T1 HIT ✅' if (target_1 > 0 and live_price >= target_1) else f'To T1: {dist_to_t1_pct:+.2f}%') if target_1 > 0 else ''}</span>
+                                        </div>
+                                        <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+                                    </div>
                                 </div>
-                                <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+                                
+                                <div style="text-align:right; min-width:165px;">
+                                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL</div>
+                                    <div style="font-weight:900; font-size:1.3rem; color:{pnl_color};">{pnl_sign}{money(abs(pnl))}</div>
+                                    <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}{money(abs(live_price - entry_price))}</div>
+                                </div>
                             </div>
                         </div>
-                        <div>
-                            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
-                            <div style="font-weight:800; font-size:1.15rem; color:var(--text);">{money(live_price)}</div>
-                        </div>
-                        <div style="text-align:right; min-width:165px;">
-                            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL</div>
-                            <div style="font-weight:900; font-size:1.25rem; color:{pnl_color};">{pnl_sign}{money(pnl)} ({pnl_sign}{pnl_pct:.2f}%)</div>
-                            <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}{money(live_price - entry_price)}</div>
-                        </div>
-                    </div>
+                    </details>
                     ''', unsafe_allow_html=True)
                     
                     close_col1, close_col2 = st.columns([8, 2])
@@ -1810,9 +1861,27 @@ def render_home():
                 total_sign = "+" if total_pnl >= 0 else ""
                 total_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
                 st.markdown(f'''
-                <div style="text-align:right; margin-top:8px; padding-right:16px;">
-                    <span class="small-muted" style="font-size:0.8rem; text-transform:uppercase; font-weight:700;">Total Open PnL:</span> 
-                    <span style="font-size:1.3rem; font-weight:900; color:{total_color}; margin-left:8px;">{total_sign}{money(total_pnl)} ({total_sign}{total_pct:.2f}%)</span>
+                <div class="bento-card" style="margin-top:16px; padding:16px 24px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                        <div>
+                            <div class="small-muted" style="text-transform:uppercase; font-size:0.75rem; font-weight:700;">Active Portfolio Overview</div>
+                            <div style="font-size:0.85rem; color:var(--text); margin-top:4px;">Total Invested: <b>{money(total_invested)}</b></div>
+                        </div>
+                        <div class="pnl-breakdown">
+                            <div style="text-align:right;">
+                                <div class="small-muted" style="text-transform:uppercase; font-size:0.65rem; font-weight:700;">Gross Profit</div>
+                                <div style="color:var(--accent); font-weight:800; font-size:1.1rem;">+{money(total_gross_profit)}</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div class="small-muted" style="text-transform:uppercase; font-size:0.65rem; font-weight:700;">Gross Loss</div>
+                                <div style="color:var(--red); font-weight:800; font-size:1.1rem;">-{money(total_gross_loss)}</div>
+                            </div>
+                            <div style="text-align:right; border-left:1px solid var(--border); padding-left:20px; margin-left:8px;">
+                                <div class="small-muted" style="text-transform:uppercase; font-size:0.75rem; font-weight:800;">Net Open PnL</div>
+                                <div style="font-size:1.4rem; font-weight:900; color:{total_color};">{total_sign}{money(abs(total_pnl))} <span style="font-size:0.95rem;">({total_sign}{total_pct:.2f}%)</span></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 ''', unsafe_allow_html=True)
             
