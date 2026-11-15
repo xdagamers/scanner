@@ -140,6 +140,8 @@ def render_watchlist_tab(watchlist_df):
     flat_count = 0
     triggered_count = 0
     total_sim_pnl = 0.0
+    total_sim_profit = 0.0
+    total_sim_loss = 0.0
     total_sim_invested = 0.0
     rendered_items = []
 
@@ -166,6 +168,10 @@ def render_watchlist_tab(watchlist_df):
             return_pct = ((live_price / price_added) - 1.0) * 100.0
             sim_qty = max(1, int(sim_capital // live_price))
             sim_pnl = diff_per_share * sim_qty
+            if sim_pnl >= 0:
+                total_sim_profit += sim_pnl
+            else:
+                total_sim_loss += abs(sim_pnl)
             total_sim_pnl += sim_pnl
             total_sim_invested += (price_added * sim_qty)
 
@@ -227,38 +233,51 @@ def render_watchlist_tab(watchlist_df):
             tech_meta.append(f"MACD: <b>{macd_v:.2f}</b>")
         tech_line = (" &nbsp;•&nbsp; " + " &nbsp;|&nbsp; ".join(tech_meta)) if tech_meta else ""
 
+        arrow = '▲' if return_pct >= 0 else '▼'
+        arrow_color = 'var(--accent)' if return_pct >= 0 else 'var(--red)'
+        
         card_html = f"""
-        <div class="bento-card" style="{card_border} display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:8px;">
-            <div style="flex:1.6; min-width:240px;">
-                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <span style="font-weight:900; font-size:1.2rem; color:var(--text);">{html.escape(sym)}</span>
-                    <span class="badge badge-brand">{html.escape(trade_type)} ({html.escape(exp_days)})</span>
+        <details class="bento-card" style="{card_border}">
+            <summary>
+                <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
+                    <span style="font-weight:900; font-size:1.25rem; color:var(--text);">{html.escape(sym)}</span>
+                    <span style="color:{arrow_color}; font-size:1.1rem;">{arrow}</span>
+                    <span class="badge badge-brand">{html.escape(trade_type)}</span>
                     {status_badge}
                 </div>
-                <div class="small-muted" style="margin-top:4px;">{html.escape(company)} • Added: {html.escape(date_added)}{tech_line}</div>
-                <div class="small-muted" style="margin-top:4px;">
-                    Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b style="color:var(--accent);">{_money(t1)}</b> &nbsp;|&nbsp; T2: <b style="color:var(--brand);">{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
+                <div style="text-align:right; min-width:140px;">
+                    <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">{pnl_sign}{return_pct:.2f}%</div>
+                    <div class="small-muted" style="font-size:0.75rem;">{_money(live_price)} Live</div>
                 </div>
-                <div style="margin-top:8px; max-width:360px;">
-                    <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+            </summary>
+            
+            <div class="expanded-content">
+                <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+                    <div style="flex:1.6; min-width:240px;">
+                        <div class="small-muted" style="margin-bottom:8px;">{html.escape(company)} • Added: {html.escape(date_added)}{tech_line}</div>
+                        <div class="small-muted" style="margin-bottom:8px;">
+                            Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b style="color:var(--accent);">{_money(t1)}</b> &nbsp;|&nbsp; T2: <b style="color:var(--brand);">{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
+                        </div>
+                        <div style="max-width:360px;">
+                            <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
+                        <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
+                    </div>
+                    
+                    <div style="text-align:right;">
+                        <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
+                        <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">
+                            {pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})
+                        </div>
+                        <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
+                    </div>
                 </div>
             </div>
-            <div>
-                <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
-                <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
-            </div>
-            <div>
-                <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Live Price</div>
-                <div style="font-weight:800; font-size:1.1rem; color:var(--text);">{_money(live_price)}</div>
-            </div>
-            <div style="text-align:right; min-width:170px;">
-                <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
-                <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">
-                    {pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})
-                </div>
-                <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
-            </div>
-        </div>
+        </details>
         """
 
         rendered_items.append({
@@ -316,6 +335,7 @@ def render_watchlist_tab(watchlist_df):
                 else:
                     t1_val = float(item["t1"]) if item["t1"] > 0 else round(ep * 1.06, 2)
                     t2_val = float(item["t2"]) if item["t2"] > 0 else round(ep * 1.12, 2)
+                    # Derive structural stop from reward distance (approx 1:2 R/R to T2) or 4% buffer
                     implied_risk = (t2_val - ep) / 2.4 if t2_val > ep else (ep * 0.04)
                     sl_default = round(max(0.05, ep - max(ep * 0.02, min(ep * 0.06, implied_risk))), 2)
                     trade_payload = {
@@ -362,13 +382,30 @@ def render_watchlist_tab(watchlist_df):
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
         tot_sign = "+" if total_sim_pnl >= 0 else ""
         tot_pct = (total_sim_pnl / total_sim_invested) * 100.0
+        
         st.markdown(
             f"""
-            <div style="text-align:right; margin-top:8px; padding-right:16px;">
-                <span class="small-muted" style="font-size:0.8rem; text-transform:uppercase; font-weight:700;">Total Watchlist Simulated PnL:</span>
-                <span style="font-size:1.3rem; font-weight:900; color:{tot_color}; margin-left:8px;">
-                    {tot_sign}₹{total_sim_pnl:,.2f} ({tot_sign}{tot_pct:.2f}%)
-                </span>
+            <div class="bento-card" style="margin-top:16px; padding:16px 24px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                    <div>
+                        <div class="small-muted" style="text-transform:uppercase; font-size:0.75rem; font-weight:700;">Simulated Portfolio Overview</div>
+                        <div style="font-size:0.85rem; color:var(--text); margin-top:4px;">Total Invested: <b>{_money(total_sim_invested)}</b></div>
+                    </div>
+                    <div class="pnl-breakdown">
+                        <div style="text-align:right;">
+                            <div class="small-muted" style="text-transform:uppercase; font-size:0.65rem; font-weight:700;">Gross Profit</div>
+                            <div style="color:var(--accent); font-weight:800; font-size:1.1rem;">+{_money(total_sim_profit)}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="small-muted" style="text-transform:uppercase; font-size:0.65rem; font-weight:700;">Gross Loss</div>
+                            <div style="color:var(--red); font-weight:800; font-size:1.1rem;">-{_money(total_sim_loss)}</div>
+                        </div>
+                        <div style="text-align:right; border-left:1px solid var(--border); padding-left:20px; margin-left:8px;">
+                            <div class="small-muted" style="text-transform:uppercase; font-size:0.75rem; font-weight:800;">Net Simulated PnL</div>
+                            <div style="font-size:1.4rem; font-weight:900; color:{tot_color};">{tot_sign}{_money(abs(total_sim_pnl))} <span style="font-size:0.95rem;">({tot_sign}{tot_pct:.2f}%)</span></div>
+                        </div>
+                    </div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
