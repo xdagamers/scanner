@@ -244,8 +244,18 @@ def render_watchlist_tab(watchlist_df):
         arrow_cls = 'triangle-up' if return_pct >= 0 else 'triangle-down'
         pct_cls = 'pct-up' if return_pct >= 0 else 'pct-down'
         
+        if live_price > price_added and price_added > 0:
+            outline_cls = "card-outline-up"
+            outline_style = "border: 1.5px solid #10b981; border-left: 5px solid #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);"
+        elif live_price < price_added and price_added > 0:
+            outline_cls = "card-outline-down"
+            outline_style = "border: 1.5px solid #ef4444; border-left: 5px solid #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);"
+        else:
+            outline_cls = "card-outline-flat"
+            outline_style = card_border
+
         card_html = f"""
-        <details class="bento-card" style="{card_border} padding:0; overflow:hidden;">
+        <details class="bento-card {outline_cls}" style="{outline_style} padding:0; overflow:hidden; margin-bottom:4px;">
             <summary style="border-bottom: none;">
                 <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
                     <div style="display:flex; flex-direction:column; gap:4px;">
@@ -266,7 +276,7 @@ def render_watchlist_tab(watchlist_df):
                     <span class="badge badge-brand">{html.escape(trade_type)}</span> {status_badge}
                 </div>
                 <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-                    <div style="flex:1.6; min-width:240px;">
+                    <div style="flex:1.6; min-width:220px;">
                         <div class="small-muted" style="margin-bottom:8px;">{html.escape(company)} • Added: {html.escape(date_added)}{tech_line}</div>
                         <div class="small-muted" style="margin-bottom:8px;">
                             Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b style="color:var(--accent);">{_money(t1)}</b> &nbsp;|&nbsp; T2: <b style="color:var(--brand);">{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
@@ -285,7 +295,8 @@ def render_watchlist_tab(watchlist_df):
                         <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
                     </div>
                 </div>
-                <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px; display:flex; justify-content:flex-end; gap:12px;">
+            </div>
+        </details>
         """
 
         rendered_items.append({
@@ -328,64 +339,70 @@ def render_watchlist_tab(watchlist_df):
     """
     st.markdown(summary_html, unsafe_allow_html=True)
 
-    for item in rendered_items:
-        st.markdown(item["card_html"], unsafe_allow_html=True)
-        act_spacer, act_col1, act_col2 = st.columns([5.5, 2.5, 2.0])
-        with act_col1:
-            if st.button(
-                f"🚀 Paper Trade ({item['sim_qty']} sh)",
-                key=f"wl_promote_{item['sym']}_{item['idx']}",
-                use_container_width=True,
-            ):
-                ep = float(item["live_price"]) if item["live_price"] > 0 else 0.0
-                if ep <= 0:
-                    st.error(f"Cannot execute paper trade for {item['sym']}: live price unavailable.")
-                else:
-                    t1_val = float(item["t1"]) if item["t1"] > 0 else round(ep * 1.06, 2)
-                    t2_val = float(item["t2"]) if item["t2"] > 0 else round(ep * 1.12, 2)
-                    # Derive structural stop from reward distance (approx 1:2 R/R to T2) or 4% buffer
-                    implied_risk = (t2_val - ep) / 2.4 if t2_val > ep else (ep * 0.04)
-                    sl_default = round(max(0.05, ep - max(ep * 0.02, min(ep * 0.06, implied_risk))), 2)
-                    trade_payload = {
-                        "Trade_ID": f"{item['sym']}_{int(time.time())}",
-                        "Symbol": item["sym"],
-                        "Entry_Date": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
-                        "Entry_Price": round(ep, 2),
-                        "Quantity": int(item["sim_qty"]),
-                        "Invested_Capital": round(ep * int(item["sim_qty"]), 2),
-                        "Stop_Loss": sl_default,
-                        "Target_1": t1_val,
-                        "Target_2": t2_val,
-                        "Status": "OPEN",
-                        "PnL": 0.0,
-                    }
-                    try:
-                        with st.spinner(f"Logging paper trade for {item['sym']}..."):
-                            log_paper_trade(st.secrets, trade_payload)
-                        fetch_live_watchlist_prices.clear()
-                        st.session_state["_invalidate_portfolio_caches"] = True
-                        st.toast(f"✅ Executed Paper Trade: {item['sim_qty']} shares of {item['sym']} @ ₹{ep:,.2f}!")
-                        time.sleep(0.6)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Paper trade failed: {e}")
-        with act_col2:
-            if st.button(
-                "🗑️ Remove",
-                key=f"wl_del_{item['sym']}_{item['idx']}",
-                use_container_width=True,
-            ):
-                try:
-                    with st.spinner(f"Removing {item['sym']} from Watchlist..."):
-                        delete_watchlist_row(st.secrets, item["sym"])
-                    fetch_live_watchlist_prices.clear()
-                    st.session_state["_invalidate_portfolio_caches"] = True
-                    st.toast(f"🗑️ Removed {item['sym']} from Manual_Watch_List!")
-                    time.sleep(0.6)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Could not delete {item['sym']}: {e}")
-        st.markdown("</div></details>", unsafe_allow_html=True)
+    # Render Watchlist Cards in a 3-Column Horizontal Side-by-Side Grid
+    for start in range(0, len(rendered_items), 3):
+        cols = st.columns(3)
+        for j, col in enumerate(cols):
+            item_idx = start + j
+            if item_idx >= len(rendered_items):
+                continue
+            item = rendered_items[item_idx]
+            with col:
+                st.markdown(item["card_html"], unsafe_allow_html=True)
+                act_col1, act_col2 = st.columns([1.3, 1.0])
+                with act_col1:
+                    if st.button(
+                        f"🚀 Paper Trade ({item['sim_qty']} sh)",
+                        key=f"wl_promote_{item['sym']}_{item['idx']}",
+                        use_container_width=True,
+                    ):
+                        ep = float(item["live_price"]) if item["live_price"] > 0 else 0.0
+                        if ep <= 0:
+                            st.error(f"Cannot execute paper trade for {item['sym']}: live price unavailable.")
+                        else:
+                            t1_val = float(item["t1"]) if item["t1"] > 0 else round(ep * 1.06, 2)
+                            t2_val = float(item["t2"]) if item["t2"] > 0 else round(ep * 1.12, 2)
+                            implied_risk = (t2_val - ep) / 2.4 if t2_val > ep else (ep * 0.04)
+                            sl_default = round(max(0.05, ep - max(ep * 0.02, min(ep * 0.06, implied_risk))), 2)
+                            trade_payload = {
+                                "Trade_ID": f"{item['sym']}_{int(time.time())}",
+                                "Symbol": item["sym"],
+                                "Entry_Date": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+                                "Entry_Price": round(ep, 2),
+                                "Quantity": int(item["sim_qty"]),
+                                "Invested_Capital": round(ep * int(item["sim_qty"]), 2),
+                                "Stop_Loss": sl_default,
+                                "Target_1": t1_val,
+                                "Target_2": t2_val,
+                                "Status": "OPEN",
+                                "PnL": 0.0,
+                            }
+                            try:
+                                with st.spinner(f"Logging paper trade for {item['sym']}..."):
+                                    log_paper_trade(st.secrets, trade_payload)
+                                fetch_live_watchlist_prices.clear()
+                                st.session_state["_invalidate_portfolio_caches"] = True
+                                st.toast(f"✅ Executed Paper Trade: {item['sim_qty']} shares of {item['sym']} @ ₹{ep:,.2f}!")
+                                time.sleep(0.6)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Paper trade failed: {e}")
+                with act_col2:
+                    if st.button(
+                        "🗑️ Remove",
+                        key=f"wl_del_{item['sym']}_{item['idx']}",
+                        use_container_width=True,
+                    ):
+                        try:
+                            with st.spinner(f"Removing {item['sym']} from Watchlist..."):
+                                delete_watchlist_row(st.secrets, item["sym"])
+                            fetch_live_watchlist_prices.clear()
+                            st.session_state["_invalidate_portfolio_caches"] = True
+                            st.toast(f"🗑️ Removed {item['sym']} from Manual_Watch_List!")
+                            time.sleep(0.6)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Could not delete {item['sym']}: {e}")
 
     if total_sim_invested > 0:
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
