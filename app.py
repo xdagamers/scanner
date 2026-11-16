@@ -489,15 +489,57 @@ def inject_theme_css():
 
     details.bento-card {{
         background: #0B0E14;
-        border: 1px solid #1E2535;
-        border-radius: 8px;
-        margin-bottom: 12px;
+        border: 1.5px solid #1E2535;
+        border-radius: 10px;
+        margin-bottom: 6px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }}
+    details.bento-card.card-outline-up {{
+        border: 1.5px solid #10b981 !important;
+        border-left: 5px solid #10b981 !important;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);
+    }}
+    details.bento-card.card-outline-down {{
+        border: 1.5px solid #ef4444 !important;
+        border-left: 5px solid #ef4444 !important;
+        box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);
+    }}
     details.bento-card[open] {{
-        border-color: #3b82f6;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        margin-bottom: 0px !important;
+        border-bottom-left-radius: 0px !important;
+        border-bottom-right-radius: 0px !important;
+    }}
+    /* Hide action buttons when the stock card (<details>) is collapsed (small form) */
+    div[data-testid="stElementContainer"]:has(details.bento-card:not([open])) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card:not([open])) + div[data-testid="stHorizontalBlock"],
+    div.element-container:has(details.bento-card:not([open])) + div.element-container,
+    div.element-container:has(details.bento-card:not([open])) + div[data-testid="stHorizontalBlock"] {{
+        display: none !important;
+    }}
+    /* Style the revealed button container when the card is expanded so it looks integrated inside the expanded card */
+    div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"],
+    div.element-container:has(details.bento-card[open]) + div.element-container,
+    div.element-container:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"] {{
+        background: #0B0E14;
+        border: 1.5px solid #1E2535;
+        border-top: none;
+        border-bottom-left-radius: 10px;
+        border-bottom-right-radius: 10px;
+        padding: 8px 14px 12px 14px;
+        margin-top: -6px !important;
+        margin-bottom: 12px !important;
+    }}
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stHorizontalBlock"] {{
+        border-color: #10b981 !important;
+        border-left: 5px solid #10b981 !important;
+    }}
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stHorizontalBlock"] {{
+        border-color: #ef4444 !important;
+        border-left: 5px solid #ef4444 !important;
     }}
     details.bento-card > summary {{
         list-style: none;
@@ -1782,137 +1824,139 @@ def render_home():
                 </div>
                 ''', unsafe_allow_html=True)
 
-                # Display Open Trades
+                # Display Open Trades in a 3-Column Horizontal Side-by-Side Grid
                 total_pnl = 0.0
                 total_gross_profit = 0.0
                 total_gross_loss = 0.0
                 total_invested = 0.0
-                for idx, trade in open_trades.iterrows():
-                    sym = str(trade['Symbol']).strip().upper().replace('.NS', '')
-                    entry_price = clean_num(trade.get('Entry_Price', 0))
-                    qty = int(round(clean_num(trade.get('Quantity', 0))))
-                    live_price = live_prices.get(sym, entry_price)
-                    stop_loss = clean_num(trade.get('Stop_Loss', 0))
-                    target_1 = clean_num(trade.get('Target_1', 0))
-                    target_2 = clean_num(trade.get('Target_2', 0))
-                    target_3 = (target_2 + (target_2 - target_1)) if (target_1 > 0 and target_2 > target_1) else 0.0
-                    entry_date_str = str(trade.get('Entry_Date', '—') or '—').split(' ')[0]
-                    
-                    pnl = (live_price - entry_price) * qty
-                    if pnl >= 0:
-                        total_gross_profit += pnl
-                    else:
-                        total_gross_loss += abs(pnl)
-                    total_pnl += pnl
-                    total_invested += (entry_price * qty)
-                    pnl_pct = ((live_price / entry_price) - 1) * 100 if entry_price > 0 else 0.0
-                    
-                    pnl_color = "var(--accent)" if pnl >= 0 else "var(--red)"
-                    pnl_sign = "+" if pnl >= 0 else ""
+                open_records = list(open_trades.iterrows())
 
-                    # Evaluate Target & Stop-Loss Alert Badges + Card Border Accent
-                    if stop_loss > 0 and live_price <= stop_loss:
-                        alert_badge = "<span class='badge badge-red'>🚨 STOP LOSS BREACHED — EXIT NOW</span>"
-                        card_border = "border-left: 4px solid var(--red); background: var(--red-bg);"
-                    elif stop_loss > 0 and live_price > stop_loss and ((live_price - stop_loss) / live_price * 100) <= 1.0:
-                        alert_badge = "<span class='badge badge-yellow'>⚠️ NEAR STOP LOSS (&le;1% BUFFER)</span>"
-                        card_border = "border-left: 4px solid var(--yellow);"
-                    elif target_3 > 0 and live_price >= target_3:
-                        alert_badge = "<span class='badge badge-accent'>🏆 TARGET 3 HIT — BOOK FULL / TRAIL</span>"
-                        card_border = "border-left: 4px solid var(--accent); background: var(--accent-bg);"
-                    elif target_2 > 0 and live_price >= target_2:
-                        alert_badge = "<span class='badge badge-accent'>🎯 TARGET 2 HIT — TRAIL SL TO T1</span>"
-                        card_border = "border-left: 4px solid var(--accent); background: var(--accent-bg);"
-                    elif target_1 > 0 and live_price >= target_1:
-                        alert_badge = "<span class='badge badge-green'>✅ TARGET 1 HIT — BOOK 50% &amp; MOVE SL TO COST</span>"
-                        card_border = "border-left: 4px solid var(--accent);"
-                    elif target_1 > 0 and live_price < target_1 and ((target_1 - live_price) / live_price * 100) <= 1.0:
-                        alert_badge = "<span class='badge badge-brand'>🔥 APPROACHING T1 (&le;1% AWAY)</span>"
-                        card_border = "border-left: 4px solid var(--brand);"
-                    elif pnl >= 0:
-                        alert_badge = "<span class='badge badge-green'>🟢 IN PROFIT ZONE — HOLD</span>"
-                        card_border = "border-left: 4px solid var(--accent);"
-                    else:
-                        alert_badge = "<span class='badge badge-yellow'>⏳ ACTIVE — ABOVE STOP LOSS</span>"
-                        card_border = "border-left: 4px solid var(--border);"
+                for start in range(0, len(open_records), 3):
+                    p_cols = st.columns(3)
+                    for j, p_col in enumerate(p_cols):
+                        rec_idx = start + j
+                        if rec_idx >= len(open_records):
+                            continue
+                        idx, trade = open_records[rec_idx]
+                        sym = str(trade['Symbol']).strip().upper().replace('.NS', '')
+                        entry_price = clean_num(trade.get('Entry_Price', 0))
+                        qty = int(round(clean_num(trade.get('Quantity', 0))))
+                        live_price = live_prices.get(sym, entry_price)
+                        stop_loss = clean_num(trade.get('Stop_Loss', 0))
+                        target_1 = clean_num(trade.get('Target_1', 0))
+                        target_2 = clean_num(trade.get('Target_2', 0))
+                        target_3 = (target_2 + (target_2 - target_1)) if (target_1 > 0 and target_2 > target_1) else 0.0
+                        entry_date_str = str(trade.get('Entry_Date', '—') or '—').split(' ')[0]
 
-                    # Calculate progress bar from Stop Loss (0%) to Target 2 (100%)
-                    if target_2 > stop_loss and stop_loss > 0:
-                        prog_pct = float(np.clip(((live_price - stop_loss) / (target_2 - stop_loss)) * 100.0, 0.0, 100.0))
-                    elif target_1 > entry_price and entry_price > 0:
-                        prog_pct = float(np.clip(((live_price - entry_price) / (target_1 - entry_price)) * 100.0, 0.0, 100.0))
-                    else:
-                        prog_pct = 50.0 if pnl >= 0 else 20.0
-                    prog_color = "var(--red)" if (stop_loss > 0 and live_price <= stop_loss) else ("var(--accent)" if pnl >= 0 else "var(--yellow)")
+                        pnl = (live_price - entry_price) * qty
+                        if pnl >= 0:
+                            total_gross_profit += pnl
+                        else:
+                            total_gross_loss += abs(pnl)
+                        total_pnl += pnl
+                        total_invested += (entry_price * qty)
+                        pnl_pct = ((live_price / entry_price) - 1) * 100 if entry_price > 0 else 0.0
 
-                    dist_to_sl_pct = ((live_price - stop_loss) / entry_price * 100.0) if (stop_loss > 0 and entry_price > 0) else 0.0
-                    dist_to_t1_pct = ((target_1 - live_price) / live_price * 100.0) if (target_1 > 0 and live_price > 0) else 0.0
-                    
-                    try:
-                        days_active = (datetime.now(IST).date() - datetime.strptime(entry_date_str, '%Y-%m-%d').date()).days
-                    except Exception:
-                        days_active = 0
-                    
-                    arrow_cls = 'triangle-up' if pnl >= 0 else 'triangle-down'
-                    pct_cls = 'pct-up' if pnl >= 0 else 'pct-down'
-                    arrow_char = '▲' if pnl >= 0 else '▼'
+                        pnl_color = "var(--accent)" if pnl >= 0 else "var(--red)"
+                        pnl_sign = "+" if pnl >= 0 else ""
 
-                    st.markdown(f'''
-                    <details class="bento-card" style="{card_border} padding:0; overflow:hidden;">
-                        <summary style="border-bottom: none;">
-                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                                <div style="display:flex; flex-direction:column; gap:4px;">
-                                    <span class="ticker-name">{html.escape(sym)}</span>
-                                    <div>
-                                        <span class="{arrow_cls}">{arrow_char}</span>
-                                        <span class="{pct_cls}">{abs(pnl_pct):.2f}%</span>
+                        # Evaluate Target & Stop-Loss Alert Badges
+                        if stop_loss > 0 and live_price <= stop_loss:
+                            alert_badge = "<span class='badge badge-red'>🚨 STOP LOSS BREACHED — EXIT NOW</span>"
+                        elif stop_loss > 0 and live_price > stop_loss and ((live_price - stop_loss) / live_price * 100) <= 1.0:
+                            alert_badge = "<span class='badge badge-yellow'>⚠️ NEAR STOP LOSS (&le;1% BUFFER)</span>"
+                        elif target_3 > 0 and live_price >= target_3:
+                            alert_badge = "<span class='badge badge-accent'>🏆 TARGET 3 HIT — BOOK FULL / TRAIL</span>"
+                        elif target_2 > 0 and live_price >= target_2:
+                            alert_badge = "<span class='badge badge-accent'>🎯 TARGET 2 HIT — TRAIL SL TO T1</span>"
+                        elif target_1 > 0 and live_price >= target_1:
+                            alert_badge = "<span class='badge badge-green'>✅ TARGET 1 HIT — BOOK 50% &amp; MOVE SL TO COST</span>"
+                        elif target_1 > 0 and live_price < target_1 and ((target_1 - live_price) / live_price * 100) <= 1.0:
+                            alert_badge = "<span class='badge badge-brand'>🔥 APPROACHING T1 (&le;1% AWAY)</span>"
+                        elif pnl >= 0:
+                            alert_badge = "<span class='badge badge-green'>🟢 IN PROFIT ZONE — HOLD</span>"
+                        else:
+                            alert_badge = "<span class='badge badge-yellow'>⏳ ACTIVE — ABOVE STOP LOSS</span>"
+
+                        # Green / Red Outline comparing Live Price vs Entry Price
+                        if live_price > entry_price and entry_price > 0:
+                            outline_cls = "card-outline-up"
+                            outline_style = "border: 1.5px solid #10b981; border-left: 5px solid #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);"
+                        elif live_price < entry_price and entry_price > 0:
+                            outline_cls = "card-outline-down"
+                            outline_style = "border: 1.5px solid #ef4444; border-left: 5px solid #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);"
+                        else:
+                            outline_cls = "card-outline-flat"
+                            outline_style = "border: 1.5px solid var(--border);"
+
+                        # Calculate progress bar from Stop Loss (0%) to Target 2 (100%)
+                        if target_2 > stop_loss and stop_loss > 0:
+                            prog_pct = float(np.clip(((live_price - stop_loss) / (target_2 - stop_loss)) * 100.0, 0.0, 100.0))
+                        elif target_1 > entry_price and entry_price > 0:
+                            prog_pct = float(np.clip(((live_price - entry_price) / (target_1 - entry_price)) * 100.0, 0.0, 100.0))
+                        else:
+                            prog_pct = 50.0 if pnl >= 0 else 20.0
+                        prog_color = "var(--red)" if (stop_loss > 0 and live_price <= stop_loss) else ("var(--accent)" if pnl >= 0 else "var(--yellow)")
+
+                        dist_to_sl_pct = ((live_price - stop_loss) / entry_price * 100.0) if (stop_loss > 0 and entry_price > 0) else 0.0
+                        dist_to_t1_pct = ((target_1 - live_price) / live_price * 100.0) if (target_1 > 0 and live_price > 0) else 0.0
+
+                        try:
+                            days_active = (datetime.now(IST).date() - datetime.strptime(entry_date_str, '%Y-%m-%d').date()).days
+                        except Exception:
+                            days_active = 0
+
+                        arrow_cls = 'triangle-up' if pnl >= 0 else 'triangle-down'
+                        pct_cls = 'pct-up' if pnl >= 0 else 'pct-down'
+                        arrow_char = '▲' if pnl >= 0 else '▼'
+
+                        with p_col:
+                            st.markdown(f'''
+                            <details class="bento-card {outline_cls}" style="{outline_style} padding:0; overflow:hidden; margin-bottom:4px;">
+                                <summary style="border-bottom: none;">
+                                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                        <div style="display:flex; flex-direction:column; gap:4px;">
+                                            <span class="ticker-name">{html.escape(sym)}</span>
+                                            <div>
+                                                <span class="{arrow_cls}">{arrow_char}</span>
+                                                <span class="{pct_cls}">{abs(pnl_pct):.2f}%</span>
+                                            </div>
+                                        </div>
+                                        <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
+                                            <div><span class="cp-text">CP- </span><span class="live-price-text">{money(live_price)}</span></div>
+                                            <div class="active-days-tag">{days_active} DAYS ACTIVE</div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
-                                    <div><span class="cp-text">CP- </span><span class="live-price-text">{money(live_price)}</span></div>
-                                    <div class="active-days-tag">{days_active} DAYS ACTIVE</div>
-                                </div>
-                            </div>
-                        </summary>
-                        <div class="expanded-content">
-                            <div style="margin-bottom:12px;">
-                                {alert_badge}
-                            </div>
-                            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-                                <div style="flex:1.6; min-width:250px;">
-                                    <div class="small-muted" style="margin-bottom:8px;">
+                                </summary>
+                                <div class="expanded-content">
+                                    <div style="margin-bottom:10px;">{alert_badge}</div>
+                                    <div class="small-muted" style="margin-bottom:6px;">
                                         Entry: <b>{money(entry_price)}</b> ({html.escape(entry_date_str)}) &nbsp;|&nbsp; Qty: <b>{qty}</b> &nbsp;|&nbsp; Invested: <b>{money(entry_price * qty)}</b>
                                     </div>
                                     <div class="small-muted" style="margin-bottom:8px;">
                                         🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b> &nbsp;|&nbsp; 🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b> &nbsp;|&nbsp; 🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b> &nbsp;|&nbsp; 🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b>
                                     </div>
-                                    <div style="max-width:380px;">
+                                    <div style="margin-bottom:10px;">
                                         <div style="display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); font-weight:700; margin-bottom:3px;">
                                             <span>SL Buffer: {dist_to_sl_pct:+.2f}%</span>
                                             <span>{('T1 HIT ✅' if (target_1 > 0 and live_price >= target_1) else f'To T1: {dist_to_t1_pct:+.2f}%') if target_1 > 0 else ''}</span>
                                         </div>
                                         <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
                                     </div>
+                                    <div style="display:flex; justify-content:space-between; align-items:baseline; border-top:1px solid var(--border); padding-top:8px;">
+                                        <span class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL ({pnl_sign}{money(abs(live_price - entry_price))}/sh)</span>
+                                        <span style="font-weight:900; font-size:1.15rem; color:{pnl_color};">{pnl_sign}{money(abs(pnl))}</span>
+                                    </div>
                                 </div>
-                                <div style="text-align:right; min-width:165px;">
-                                    <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL</div>
-                                    <div style="font-weight:900; font-size:1.3rem; color:{pnl_color};">{pnl_sign}{money(abs(pnl))}</div>
-                                    <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}{money(abs(live_price - entry_price))}</div>
-                                </div>
-                            </div>
-                            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px; display:flex; justify-content:flex-end;">
-                    ''', unsafe_allow_html=True)
-                    
-                    close_col1, close_col2 = st.columns([7, 3])
-                    with close_col2:
-                        if st.button("Close Trade", key=f"close_{trade['Trade_ID']}_{idx}", use_container_width=True):
-                            with st.spinner("Closing trade in Google Sheets..."):
-                                close_paper_trade(st.secrets, trade['Trade_ID'], round(live_price, 2), round(pnl, 2))
-                                get_paper_trades_cached.clear()
-                            st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
-                            time.sleep(1)
-                            st.rerun()
-                    st.markdown("</div></details>", unsafe_allow_html=True)
+                            </details>
+                            ''', unsafe_allow_html=True)
+                            if st.button("🛑 Close Trade", key=f"close_{trade['Trade_ID']}_{idx}", use_container_width=True):
+                                with st.spinner("Closing trade in Google Sheets..."):
+                                    close_paper_trade(st.secrets, trade['Trade_ID'], round(live_price, 2), round(pnl, 2))
+                                    get_paper_trades_cached.clear()
+                                st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
+                                time.sleep(1)
+                                st.rerun()
                 
                 # Show Total PnL Header
                 total_color = "var(--accent)" if total_pnl >= 0 else "var(--red)"
