@@ -1,14 +1,9 @@
 """Live Manual Watchlist & Simulated PnL Tracker (Phase 4 Upgraded).
 
-Upgrades implemented in Phase 4:
-  1. Targeted Cache Invalidation: Replaces global st.cache_data.clear() with targeted
-     cache clearing so promoting or removing a watchlist stock never wipes out cached
-     market snapshots, stock histories, or fundamental data.
-  2. Trigger Proximity & Progress Bar: Adds a visual progress bar from Added Price / Trigger
-     to Target 1 & Target 2, plus a "🔥 NEAR TRIGGER (<=1%)" alert badge so imminent
-     breakouts stand out immediately.
-  3. Technical Snapshot Pills: Displays saved RSI, ADX, and MACD values on each watchlist
-     card and computes a Trigger-Anchored Stop Loss when promoting a setup to a Paper Trade.
+Upgrades implemented:
+  1. 3-Column Horizontal Side-by-Side Grid layout.
+  2. Dynamic Green/Red card outlines comparing live price vs added price.
+  3. Action buttons hidden when collapsed and revealed inside expanded card.
 """
 from __future__ import annotations
 
@@ -85,7 +80,6 @@ def fetch_live_watchlist_prices(symbols_tuple):
     except Exception:
         pass
 
-    # Fallback only for any symbol that missed batch download
     for sym, ticker in zip(clean_syms, tickers):
         if sym not in live_prices:
             try:
@@ -100,6 +94,130 @@ def fetch_live_watchlist_prices(symbols_tuple):
 
 
 def render_watchlist_tab(watchlist_df):
+    watchlist_css = """
+    <style>
+    details.bento-card {
+        background: #0B0E14;
+        border: 1.5px solid #1E2535;
+        border-radius: 10px;
+        margin-bottom: 6px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    details.bento-card.card-outline-up {
+        border: 1.5px solid #10b981 !important;
+        border-left: 5px solid #10b981 !important;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);
+    }
+    details.bento-card.card-outline-down {
+        border: 1.5px solid #ef4444 !important;
+        border-left: 5px solid #ef4444 !important;
+        box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);
+    }
+    details.bento-card[open] {
+        margin-bottom: 0px !important;
+        border-bottom-left-radius: 0px !important;
+        border-bottom-right-radius: 0px !important;
+    }
+    div[data-testid="stElementContainer"]:has(details.bento-card:not([open])) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card:not([open])) + div[data-testid="stHorizontalBlock"],
+    div.element-container:has(details.bento-card:not([open])) + div.element-container,
+    div.element-container:has(details.bento-card:not([open])) + div[data-testid="stHorizontalBlock"] {
+        display: none !important;
+    }
+    div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"],
+    div.element-container:has(details.bento-card[open]) + div.element-container,
+    div.element-container:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"] {
+        background: #0B0E14;
+        border: 1.5px solid #1E2535;
+        border-top: none;
+        border-bottom-left-radius: 10px;
+        border-bottom-right-radius: 10px;
+        padding: 8px 14px 12px 14px;
+        margin-top: -6px !important;
+        margin-bottom: 12px !important;
+    }
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stHorizontalBlock"] {
+        border-color: #10b981 !important;
+        border-left: 5px solid #10b981 !important;
+    }
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stElementContainer"],
+    div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stHorizontalBlock"] {
+        border-color: #ef4444 !important;
+        border-left: 5px solid #ef4444 !important;
+    }
+    details.bento-card > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    details.bento-card > summary::-webkit-details-marker {
+        display: none;
+    }
+    .expanded-content {
+        padding: 0 16px 16px 16px;
+        border-top: 1px solid #1E2535;
+        margin-top: 8px;
+        padding-top: 12px;
+        background: #0B0E14;
+    }
+    .ticker-name {
+        font-family: 'Inter', sans-serif;
+        font-weight: 900;
+        font-size: 1.4rem;
+        color: #ffffff;
+        letter-spacing: 0.05em;
+    }
+    .cp-text {
+        color: #8c9bae;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+    .live-price-text {
+        font-weight: 900;
+        font-size: 1.4rem;
+        color: #ffffff;
+    }
+    .active-days-tag {
+        background: rgba(59, 130, 246, 0.1);
+        color: #60a5fa;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        margin-top: 4px;
+        display: inline-block;
+    }
+    .triangle-up {
+        color: #10b981;
+        font-size: 1rem;
+    }
+    .triangle-down {
+        color: #ef4444;
+        font-size: 1rem;
+    }
+    .pct-up {
+        color: #10b981;
+        font-weight: 800;
+        font-size: 1.2rem;
+    }
+    .pct-down {
+        color: #ef4444;
+        font-weight: 800;
+        font-size: 1.2rem;
+    }
+    </style>
+    """
+    st.markdown(watchlist_css, unsafe_allow_html=True)
+
     if watchlist_df is None or watchlist_df.empty:
         st.info("Your Live Watchlist is empty. Go to the Scanner Dashboard, launch analytics on a stock, and click '⭐ Add to Watchlist'!")
         return
@@ -214,7 +332,6 @@ def render_watchlist_tab(watchlist_df):
             status_badge = "<span class='badge badge-yellow'>⏳ IN WATCH ZONE</span>"
             card_border = "border-left: 4px solid var(--border);"
 
-        # Progress bar toward Target 1 / Target 2
         anchor_low = min(price_added, trigger) if (price_added > 0 and trigger > 0) else max(price_added, trigger)
         if t2 > anchor_low > 0 and live_price > 0:
             prog_pct = float(np.clip(((live_price - anchor_low) / (t2 - anchor_low)) * 100.0, 0.0, 100.0))
@@ -234,7 +351,6 @@ def render_watchlist_tab(watchlist_df):
         tech_line = (" &nbsp;•&nbsp; " + " &nbsp;|&nbsp; ".join(tech_meta)) if tech_meta else ""
 
         arrow = '▲' if return_pct >= 0 else '▼'
-        arrow_color = 'var(--accent)' if return_pct >= 0 else 'var(--red)'
         
         try:
             days_active = (datetime.now(IST).date() - datetime.strptime(date_added, '%Y-%m-%d').date()).days
@@ -352,7 +468,7 @@ def render_watchlist_tab(watchlist_df):
                 act_col1, act_col2 = st.columns([1.3, 1.0])
                 with act_col1:
                     if st.button(
-                        f"🚀 Paper Trade ({item['sim_qty']} sh)",
+                        f"🚀 Paper ({item['sim_qty']} sh)",
                         key=f"wl_promote_{item['sym']}_{item['idx']}",
                         use_container_width=True,
                     ):
@@ -403,6 +519,7 @@ def render_watchlist_tab(watchlist_df):
                             st.rerun()
                         except Exception as e:
                             st.error(f"Could not delete {item['sym']}: {e}")
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     if total_sim_invested > 0:
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
