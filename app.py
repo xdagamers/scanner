@@ -486,41 +486,89 @@ def inject_theme_css():
         .target-box {{ min-width: 110px; padding: 10px; }}
     }}
 
+
     details.bento-card {{
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 12px;
+        background: #0B0E14;
+        border: 1px solid #1E2535;
+        border-radius: 8px;
         margin-bottom: 12px;
-        box-shadow: var(--shadow);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }}
     details.bento-card[open] {{
-        border-color: var(--brand);
-        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
+        border-color: #3b82f6;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
     }}
     details.bento-card > summary {{
         list-style: none;
         cursor: pointer;
-        padding: 16px 20px;
+        padding: 12px 16px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
-        gap: 16px;
+        gap: 12px;
     }}
     details.bento-card > summary::-webkit-details-marker {{
         display: none;
     }}
     .expanded-content {{
-        padding: 0 20px 20px 20px;
-        border-top: 1px solid var(--border);
-        margin-top: 12px;
-        padding-top: 16px;
+        padding: 0 16px 16px 16px;
+        border-top: 1px solid #1E2535;
+        margin-top: 8px;
+        padding-top: 12px;
+        background: #0B0E14;
+    }}
+    .ticker-name {{
+        font-family: 'Inter', sans-serif;
+        font-weight: 900;
+        font-size: 1.4rem;
+        color: #ffffff;
+        letter-spacing: 0.05em;
+    }}
+    .cp-text {{
+        color: #8c9bae;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }}
+    .live-price-text {{
+        font-weight: 900;
+        font-size: 1.4rem;
+        color: #ffffff;
+    }}
+    .active-days-tag {{
+        background: rgba(59, 130, 246, 0.1);
+        color: #60a5fa;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        margin-top: 4px;
+        display: inline-block;
+    }}
+    .triangle-up {{
+        color: #10b981;
+        font-size: 1rem;
+    }}
+    .triangle-down {{
+        color: #ef4444;
+        font-size: 1rem;
+    }}
+    .pct-up {{
+        color: #10b981;
+        font-weight: 800;
+        font-size: 1.2rem;
+    }}
+    .pct-down {{
+        color: #ef4444;
+        font-weight: 800;
+        font-size: 1.2rem;
     }}
     .pnl-breakdown {{
         display: flex; gap: 20px; justify-content: flex-end; align-items: baseline; font-size: 0.9rem;
     }}
-        </style>
+            </style>
     '''
     st.markdown(css, unsafe_allow_html=True)
 
@@ -1800,21 +1848,36 @@ def render_home():
                     dist_to_sl_pct = ((live_price - stop_loss) / entry_price * 100.0) if (stop_loss > 0 and entry_price > 0) else 0.0
                     dist_to_t1_pct = ((target_1 - live_price) / live_price * 100.0) if (target_1 > 0 and live_price > 0) else 0.0
                     
-                    arrow_port = '▲' if pnl >= 0 else '▼'
+                    try:
+                        days_active = (datetime.now(IST).date() - datetime.strptime(entry_date_str, '%Y-%m-%d').date()).days
+                    except Exception:
+                        days_active = 0
+                    
+                    arrow_cls = 'triangle-up' if pnl >= 0 else 'triangle-down'
+                    pct_cls = 'pct-up' if pnl >= 0 else 'pct-down'
+                    arrow_char = '▲' if pnl >= 0 else '▼'
+
                     st.markdown(f'''
-                    <details class="bento-card" style="{card_border}">
-                        <summary>
-                            <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
-                                <span style="font-weight:900; font-size:1.3rem; color:var(--text);">{html.escape(sym)}</span>
-                                <span style="color:{pnl_color}; font-size:1.1rem;">{arrow_port}</span>
-                                {alert_badge}
-                            </div>
-                            <div style="text-align:right; min-width:140px;">
-                                <div style="font-weight:900; font-size:1.2rem; color:{pnl_color};">{pnl_sign}{pnl_pct:.2f}%</div>
-                                <div class="small-muted" style="font-size:0.75rem;">{money(live_price)} Live</div>
+                    <details class="bento-card" style="{card_border} padding:0; overflow:hidden;">
+                        <summary style="border-bottom: none;">
+                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                    <span class="ticker-name">{html.escape(sym)}</span>
+                                    <div>
+                                        <span class="{arrow_cls}">{arrow_char}</span>
+                                        <span class="{pct_cls}">{abs(pnl_pct):.2f}%</span>
+                                    </div>
+                                </div>
+                                <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
+                                    <div><span class="cp-text">CP- </span><span class="live-price-text">{money(live_price)}</span></div>
+                                    <div class="active-days-tag">{days_active} DAYS ACTIVE</div>
+                                </div>
                             </div>
                         </summary>
                         <div class="expanded-content">
+                            <div style="margin-bottom:12px;">
+                                {alert_badge}
+                            </div>
                             <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
                                 <div style="flex:1.6; min-width:250px;">
                                     <div class="small-muted" style="margin-bottom:8px;">
@@ -1837,11 +1900,10 @@ def render_home():
                                     <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}{money(abs(live_price - entry_price))}</div>
                                 </div>
                             </div>
-                        </div>
-                    </details>
+                            <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px; display:flex; justify-content:flex-end;">
                     ''', unsafe_allow_html=True)
                     
-                    close_col1, close_col2 = st.columns([8, 2])
+                    close_col1, close_col2 = st.columns([7, 3])
                     with close_col2:
                         if st.button("Close Trade", key=f"close_{trade['Trade_ID']}_{idx}", use_container_width=True):
                             with st.spinner("Closing trade in Google Sheets..."):
@@ -1850,6 +1912,7 @@ def render_home():
                             st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
                             time.sleep(1)
                             st.rerun()
+                    st.markdown("</div></details>", unsafe_allow_html=True)
                 
                 # Show Total PnL Header
                 total_color = "var(--accent)" if total_pnl >= 0 else "var(--red)"
