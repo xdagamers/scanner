@@ -236,21 +236,35 @@ def render_watchlist_tab(watchlist_df):
         arrow = '▲' if return_pct >= 0 else '▼'
         arrow_color = 'var(--accent)' if return_pct >= 0 else 'var(--red)'
         
+        try:
+            days_active = (datetime.now(IST).date() - datetime.strptime(date_added, '%Y-%m-%d').date()).days
+        except Exception:
+            days_active = 0
+            
+        arrow_cls = 'triangle-up' if return_pct >= 0 else 'triangle-down'
+        pct_cls = 'pct-up' if return_pct >= 0 else 'pct-down'
+        
         card_html = f"""
-        <details class="bento-card" style="{card_border}">
-            <summary>
-                <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
-                    <span style="font-weight:900; font-size:1.25rem; color:var(--text);">{html.escape(sym)}</span>
-                    <span style="color:{arrow_color}; font-size:1.1rem;">{arrow}</span>
-                    <span class="badge badge-brand">{html.escape(trade_type)}</span>
-                    {status_badge}
-                </div>
-                <div style="text-align:right; min-width:140px;">
-                    <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">{pnl_sign}{return_pct:.2f}%</div>
-                    <div class="small-muted" style="font-size:0.75rem;">{_money(live_price)} Live</div>
+        <details class="bento-card" style="{card_border} padding:0; overflow:hidden;">
+            <summary style="border-bottom: none;">
+                <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <span class="ticker-name">{html.escape(sym)}</span>
+                        <div>
+                            <span class="{arrow_cls}">{arrow}</span>
+                            <span class="{pct_cls}">{abs(return_pct):.2f}%</span>
+                        </div>
+                    </div>
+                    <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
+                        <div><span class="cp-text">CP- </span><span class="live-price-text">{_money(live_price)}</span></div>
+                        <div class="active-days-tag">{days_active} DAYS ACTIVE</div>
+                    </div>
                 </div>
             </summary>
             <div class="expanded-content">
+                <div style="margin-bottom:12px;">
+                    <span class="badge badge-brand">{html.escape(trade_type)}</span> {status_badge}
+                </div>
                 <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
                     <div style="flex:1.6; min-width:240px;">
                         <div class="small-muted" style="margin-bottom:8px;">{html.escape(company)} • Added: {html.escape(date_added)}{tech_line}</div>
@@ -271,8 +285,7 @@ def render_watchlist_tab(watchlist_df):
                         <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
                     </div>
                 </div>
-            </div>
-        </details>
+                <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px; display:flex; justify-content:flex-end; gap:12px;">
         """
 
         rendered_items.append({
@@ -372,6 +385,7 @@ def render_watchlist_tab(watchlist_df):
                     st.rerun()
                 except Exception as e:
                     st.error(f"Could not delete {item['sym']}: {e}")
+        st.markdown("</div></details>", unsafe_allow_html=True)
 
     if total_sim_invested > 0:
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
