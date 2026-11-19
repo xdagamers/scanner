@@ -1,9 +1,4 @@
-"""Live Manual Watchlist & Simulated PnL Tracker (Phase 4 Upgraded).
-
-Upgrades implemented:
-  1. 3-Column Horizontal Side-by-Side Grid layout.
-  2. Dynamic Green/Red card outlines comparing live price vs added price.
-  3. Action buttons hidden when collapsed and revealed inside expanded card.
+"""Live Manual Watchlist & Simulated PnL Tracker (Sample-Inspired 4-Column Expandable Grid).
 """
 from __future__ import annotations
 
@@ -97,22 +92,25 @@ def render_watchlist_tab(watchlist_df):
     watchlist_css = """
     <style>
     details.bento-card {
-        background: #0B0E14;
-        border: 1.5px solid #1E2535;
-        border-radius: 10px;
+        background: var(--card, #0d1017);
+        border: 1.5px solid var(--border, #1e2535);
+        border-radius: 12px;
         margin-bottom: 6px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: var(--shadow, 0 4px 16px rgba(0, 0, 0, 0.25));
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    }
+    details.bento-card:hover {
+        border-color: var(--brand, #6366f1);
     }
     details.bento-card.card-outline-up {
         border: 1.5px solid #10b981 !important;
-        border-left: 5px solid #10b981 !important;
-        box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);
+        border-left: 4px solid #10b981 !important;
+        box-shadow: 0 2px 14px rgba(16, 185, 129, 0.14);
     }
     details.bento-card.card-outline-down {
         border: 1.5px solid #ef4444 !important;
-        border-left: 5px solid #ef4444 !important;
-        box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);
+        border-left: 4px solid #ef4444 !important;
+        box-shadow: 0 2px 14px rgba(239, 68, 68, 0.14);
     }
     details.bento-card[open] {
         margin-bottom: 0px !important;
@@ -129,11 +127,11 @@ def render_watchlist_tab(watchlist_df):
     div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"],
     div.element-container:has(details.bento-card[open]) + div.element-container,
     div.element-container:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"] {
-        background: #0B0E14;
-        border: 1.5px solid #1E2535;
+        background: var(--card, #0d1017);
+        border: 1.5px solid var(--border, #1e2535);
         border-top: none;
-        border-bottom-left-radius: 10px;
-        border-bottom-right-radius: 10px;
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
         padding: 8px 14px 12px 14px;
         margin-top: -6px !important;
         margin-bottom: 12px !important;
@@ -141,78 +139,76 @@ def render_watchlist_tab(watchlist_df):
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stElementContainer"],
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stHorizontalBlock"] {
         border-color: #10b981 !important;
-        border-left: 5px solid #10b981 !important;
+        border-left: 4px solid #10b981 !important;
     }
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stElementContainer"],
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stHorizontalBlock"] {
         border-color: #ef4444 !important;
-        border-left: 5px solid #ef4444 !important;
+        border-left: 4px solid #ef4444 !important;
     }
     details.bento-card > summary {
         list-style: none;
         cursor: pointer;
-        padding: 12px 16px;
+        padding: 12px 14px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 12px;
+        gap: 8px;
     }
     details.bento-card > summary::-webkit-details-marker {
         display: none;
     }
     .expanded-content {
-        padding: 0 16px 16px 16px;
-        border-top: 1px solid #1E2535;
-        margin-top: 8px;
-        padding-top: 12px;
-        background: #0B0E14;
+        padding: 12px 14px 14px 14px;
+        border-top: 1px solid var(--border, #1e2535);
+        background: var(--card, #0d1017);
     }
     .ticker-name {
         font-family: 'Inter', sans-serif;
-        font-weight: 900;
-        font-size: 1.4rem;
-        color: #ffffff;
-        letter-spacing: 0.05em;
+        font-weight: 800;
+        font-size: 1.05rem;
+        color: var(--text, #f8fafc);
+        letter-spacing: 0.01em;
+        line-height: 1.2;
     }
-    .cp-text {
-        color: #8c9bae;
-        font-weight: 600;
-        font-size: 1.1rem;
+    .exchange-tag {
+        display: inline-block;
+        background: var(--card2, #131823);
+        color: var(--muted, #8c9bae);
+        border: 1px solid var(--border, #1e2535);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
     .live-price-text {
-        font-weight: 900;
-        font-size: 1.4rem;
-        color: #ffffff;
-    }
-    .active-days-tag {
-        background: rgba(59, 130, 246, 0.1);
-        color: #60a5fa;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.65rem;
         font-weight: 800;
-        text-transform: uppercase;
-        margin-top: 4px;
-        display: inline-block;
-    }
-    .triangle-up {
-        color: #10b981;
-        font-size: 1rem;
-    }
-    .triangle-down {
-        color: #ef4444;
-        font-size: 1rem;
+        font-size: 1.08rem;
+        color: var(--text, #ffffff);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2;
     }
     .pct-up {
         color: #10b981;
-        font-weight: 800;
-        font-size: 1.2rem;
+        font-weight: 700;
+        font-size: 0.84rem;
+        font-variant-numeric: tabular-nums;
     }
     .pct-down {
         color: #ef4444;
-        font-weight: 800;
-        font-size: 1.2rem;
+        font-weight: 700;
+        font-size: 0.84rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .expand-chevron {
+        font-size: 0.68rem;
+        color: var(--muted, #8c9bae);
+        transition: transform 0.2s ease;
+    }
+    details.bento-card[open] .expand-chevron {
+        transform: rotate(180deg);
     }
     </style>
     """
@@ -237,7 +233,7 @@ def render_watchlist_tab(watchlist_df):
     wc_col1, wc_col2 = st.columns([6, 2])
     with wc_col1:
         st.markdown(
-            "<div class='small-muted' style='margin-bottom:12px;'>Live prices are pulled in real time via Yahoo Finance APIs and compared against your saved Price_Added &amp; Trigger_Price.</div>",
+            "<div class='small-muted' style='margin-bottom:10px;'>Click any card to expand targets, technical indicators (RSI, ADX, MACD), and trade actions.</div>",
             unsafe_allow_html=True,
         )
     with wc_col2:
@@ -268,7 +264,6 @@ def render_watchlist_tab(watchlist_df):
         company = str(row.get("Stock_Name", sym) or sym)
         date_added = str(row.get("Date_Added", "—") or "—")
         trade_type = str(row.get("Trade_Type", "Setup") or "Setup")
-        exp_days = str(row.get("Expected_Days", "N/A") or "N/A")
 
         price_added = _clean_num(row.get("Price_Added", 0))
         live_price = live_prices.get(sym, price_added)
@@ -322,14 +317,14 @@ def render_watchlist_tab(watchlist_df):
             card_border = "border-left: 4px solid var(--accent);"
             triggered_count += 1
         elif trigger > 0 and live_price >= trigger:
-            status_badge = "<span class='badge badge-accent'>🚀 ABOVE TRIGGER — ACTIVE</span>"
+            status_badge = "<span class='badge badge-accent'>🚀 ABOVE TRIGGER</span>"
             card_border = "border-left: 4px solid var(--brand);"
             triggered_count += 1
         elif trigger > 0 and live_price > 0 and ((trigger - live_price) / live_price * 100.0) <= 1.0:
-            status_badge = "<span class='badge badge-brand'>🔥 NEAR TRIGGER (&le;1% AWAY)</span>"
+            status_badge = "<span class='badge badge-brand'>🔥 NEAR TRIGGER</span>"
             card_border = "border-left: 4px solid var(--brand);"
         else:
-            status_badge = "<span class='badge badge-yellow'>⏳ IN WATCH ZONE</span>"
+            status_badge = "<span class='badge badge-yellow'>⏳ WATCH ZONE</span>"
             card_border = "border-left: 4px solid var(--border);"
 
         anchor_low = min(price_added, trigger) if (price_added > 0 and trigger > 0) else max(price_added, trigger)
@@ -341,75 +336,63 @@ def render_watchlist_tab(watchlist_df):
             prog_pct = 50.0 if return_pct >= 0 else 20.0
         prog_color = "var(--accent)" if return_pct >= 0 else "var(--red)"
 
-        tech_meta = []
-        if rsi_v > 0:
-            tech_meta.append(f"RSI: <b>{rsi_v:.1f}</b>")
-        if adx_v > 0:
-            tech_meta.append(f"ADX: <b>{adx_v:.1f}</b>")
-        if macd_v != 0:
-            tech_meta.append(f"MACD: <b>{macd_v:.2f}</b>")
-        tech_line = (" &nbsp;•&nbsp; " + " &nbsp;|&nbsp; ".join(tech_meta)) if tech_meta else ""
-
-        arrow = '▲' if return_pct >= 0 else '▼'
-        
         try:
             days_active = (datetime.now(IST).date() - datetime.strptime(date_added, '%Y-%m-%d').date()).days
         except Exception:
             days_active = 0
-            
-        arrow_cls = 'triangle-up' if return_pct >= 0 else 'triangle-down'
+
         pct_cls = 'pct-up' if return_pct >= 0 else 'pct-down'
-        
+
         if live_price > price_added and price_added > 0:
             outline_cls = "card-outline-up"
-            outline_style = "border: 1.5px solid #10b981; border-left: 5px solid #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);"
+            outline_style = "border: 1.5px solid #10b981; border-left: 4px solid #10b981;"
         elif live_price < price_added and price_added > 0:
             outline_cls = "card-outline-down"
-            outline_style = "border: 1.5px solid #ef4444; border-left: 5px solid #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);"
+            outline_style = "border: 1.5px solid #ef4444; border-left: 4px solid #ef4444;"
         else:
             outline_cls = "card-outline-flat"
             outline_style = card_border
 
         card_html = f"""
-        <details class="bento-card {outline_cls}" style="{outline_style} padding:0; overflow:hidden; margin-bottom:4px;">
+        <details class="bento-card {outline_cls}" style="{outline_style} padding:0; overflow:hidden;">
             <summary style="border-bottom: none;">
-                <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                    <div style="display:flex; flex-direction:column; gap:4px;">
-                        <span class="ticker-name">{html.escape(sym)}</span>
-                        <div>
-                            <span class="{arrow_cls}">{arrow}</span>
-                            <span class="{pct_cls}">{abs(return_pct):.2f}%</span>
+                <div style="display:flex; justify-content:space-between; width:100%; align-items:center; gap:8px;">
+                    <div style="display:flex; flex-direction:column; gap:5px; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="ticker-name">{html.escape(sym)}</span>
+                            <span class="expand-chevron">▼</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:5px;">
+                            <span class="exchange-tag">NSE</span>
+                            <span class="exchange-tag">{days_active}D</span>
                         </div>
                     </div>
-                    <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
-                        <div><span class="cp-text">CP- </span><span class="live-price-text">{_money(live_price)}</span></div>
-                        <div class="active-days-tag">{days_active} DAYS ACTIVE</div>
+                    <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                        <span class="live-price-text">{_money(live_price)}</span>
+                        <span class="{pct_cls}">{pnl_sign}{abs(diff_per_share):.2f} ({pnl_sign}{return_pct:.2f}%)</span>
                     </div>
                 </div>
             </summary>
             <div class="expanded-content">
-                <div style="margin-bottom:12px;">
+                <div style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
                     <span class="badge badge-brand">{html.escape(trade_type)}</span> {status_badge}
                 </div>
-                <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-                    <div style="flex:1.6; min-width:220px;">
-                        <div class="small-muted" style="margin-bottom:8px;">{html.escape(company)} • Added: {html.escape(date_added)}{tech_line}</div>
-                        <div class="small-muted" style="margin-bottom:8px;">
-                            Trigger: <b>{_money(trigger)}</b> &nbsp;|&nbsp; T1: <b style="color:var(--accent);">{_money(t1)}</b> &nbsp;|&nbsp; T2: <b style="color:var(--brand);">{_money(t2)}</b> &nbsp;|&nbsp; T3: <b>{_money(t3)}</b>
-                        </div>
-                        <div style="max-width:360px;">
-                            <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
-                        </div>
+                <div style="background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px;">
+                    <div class="small-muted" style="font-size:0.72rem; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{html.escape(company)} • <b>{html.escape(date_added)}</b></div>
+                    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px; font-size:0.75rem; margin-bottom:8px;">
+                        <div>Added: <b style="color:var(--text);">{_money(price_added)}</b></div>
+                        <div>Trigger: <b style="color:var(--text);">{_money(trigger)}</b></div>
+                        <div>🎯 T1: <b style="color:var(--accent);">{_money(t1)}</b></div>
+                        <div>🎯 T2: <b style="color:var(--brand);">{_money(t2)}</b></div>
+                        <div>🏆 T3: <b style="color:var(--text);">{_money(t3)}</b></div>
+                        <div>Sim ({sim_qty}): <b style="color:{pnl_color};">{pnl_sign}{_money(abs(sim_pnl))}</b></div>
                     </div>
-                    <div>
-                        <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Added Price</div>
-                        <div style="font-weight:800; font-size:1.05rem; color:var(--text);">{_money(price_added)}</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized Move / Sim PnL ({sim_qty} sh)</div>
-                        <div style="font-weight:900; font-size:1.15rem; color:{pnl_color};">{pnl_sign}{return_pct:.2f}% ({pnl_sign}{_money(abs(sim_pnl)) if sim_pnl < 0 else _money(sim_pnl)})</div>
-                        <div class="small-muted" style="font-size:0.72rem;">Per Share: {pnl_sign}₹{diff_per_share:,.2f}</div>
-                    </div>
+                    <div class="bar-track" style="height:5px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:0.73rem;">
+                    <span>RSI: <b>{f'{rsi_v:.1f}' if rsi_v > 0 else '—'}</b></span>
+                    <span>ADX: <b>{f'{adx_v:.1f}' if adx_v > 0 else '—'}</b></span>
+                    <span>MACD: <b>{f'{macd_v:.2f}' if macd_v != 0 else '—'}</b></span>
                 </div>
             </div>
         </details>
@@ -430,34 +413,34 @@ def render_watchlist_tab(watchlist_df):
     loss_rate_pct = (loss_count / total_stocks * 100.0) if total_stocks > 0 else 0.0
 
     summary_html = f"""
-    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-bottom:20px;">
-        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--brand);">
-            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700;">Total Stocks in Watchlist</div>
-            <div style="font-size:1.8rem; font-weight:900; color:var(--text); margin-top:4px;">{total_stocks}</div>
-            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">Active Tracked Setups ({flat_count} Flat)</div>
+    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; margin-bottom:18px;">
+        <div class="bento-card" style="margin-bottom:0; padding:14px 18px; border-left: 4px solid var(--brand);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem; font-weight:700;">Total Watchlist</div>
+            <div style="font-size:1.65rem; font-weight:900; color:var(--text); margin-top:2px;">{total_stocks}</div>
+            <div class="small-muted" style="font-size:0.72rem; margin-top:2px;">Tracked Setups ({flat_count} Flat)</div>
         </div>
-        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--accent); background:var(--accent-bg);">
-            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--accent);">Stocks in Profit</div>
-            <div style="font-size:1.8rem; font-weight:900; color:var(--accent); margin-top:4px;">{positive_count}</div>
-            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">{win_rate_pct:.1f}% of Watchlist Green</div>
+        <div class="bento-card" style="margin-bottom:0; padding:14px 18px; border-left: 4px solid var(--accent); background:var(--accent-bg);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem; font-weight:700; color:var(--accent);">In Profit</div>
+            <div style="font-size:1.65rem; font-weight:900; color:var(--accent); margin-top:2px;">{positive_count}</div>
+            <div class="small-muted" style="font-size:0.72rem; margin-top:2px;">{win_rate_pct:.1f}% Green</div>
         </div>
-        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--red); background:var(--red-bg);">
-            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--red);">Stocks in Loss</div>
-            <div style="font-size:1.8rem; font-weight:900; color:var(--red); margin-top:4px;">{loss_count}</div>
-            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">{loss_rate_pct:.1f}% of Watchlist Red</div>
+        <div class="bento-card" style="margin-bottom:0; padding:14px 18px; border-left: 4px solid var(--red); background:var(--red-bg);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem; font-weight:700; color:var(--red);">In Loss</div>
+            <div style="font-size:1.65rem; font-weight:900; color:var(--red); margin-top:2px;">{loss_count}</div>
+            <div class="small-muted" style="font-size:0.72rem; margin-top:2px;">{loss_rate_pct:.1f}% Red</div>
         </div>
-        <div class="bento-card" style="margin-bottom:0; padding:16px 20px; border-left: 4px solid var(--yellow); background:var(--yellow-bg);">
-            <div class="small-muted" style="text-transform:uppercase; font-size:0.72rem; font-weight:700; color:var(--yellow);">Above Trigger / Target</div>
-            <div style="font-size:1.8rem; font-weight:900; color:var(--text); margin-top:4px;">{triggered_count}</div>
-            <div class="small-muted" style="font-size:0.75rem; margin-top:2px;">Breakout Confirmed Setups</div>
+        <div class="bento-card" style="margin-bottom:0; padding:14px 18px; border-left: 4px solid var(--yellow); background:var(--yellow-bg);">
+            <div class="small-muted" style="text-transform:uppercase; font-size:0.7rem; font-weight:700; color:var(--yellow);">Above Trigger / Target</div>
+            <div style="font-size:1.65rem; font-weight:900; color:var(--text); margin-top:2px;">{triggered_count}</div>
+            <div class="small-muted" style="font-size:0.72rem; margin-top:2px;">Confirmed Setups</div>
         </div>
     </div>
     """
     st.markdown(summary_html, unsafe_allow_html=True)
 
-    # Render Watchlist Cards in a 3-Column Horizontal Side-by-Side Grid
-    for start in range(0, len(rendered_items), 3):
-        cols = st.columns(3)
+    # Render Watchlist Cards in a 4-Column Horizontal Side-by-Side Grid
+    for start in range(0, len(rendered_items), 4):
+        cols = st.columns(4)
         for j, col in enumerate(cols):
             item_idx = start + j
             if item_idx >= len(rendered_items):
@@ -465,10 +448,10 @@ def render_watchlist_tab(watchlist_df):
             item = rendered_items[item_idx]
             with col:
                 st.markdown(item["card_html"], unsafe_allow_html=True)
-                act_col1, act_col2 = st.columns([1.3, 1.0])
+                act_col1, act_col2 = st.columns([1.25, 1.0])
                 with act_col1:
                     if st.button(
-                        f"🚀 Paper ({item['sim_qty']} sh)",
+                        f"🚀 Paper ({item['sim_qty']})",
                         key=f"wl_promote_{item['sym']}_{item['idx']}",
                         use_container_width=True,
                     ):
@@ -505,7 +488,7 @@ def render_watchlist_tab(watchlist_df):
                                 st.error(f"Paper trade failed: {e}")
                 with act_col2:
                     if st.button(
-                        "🗑️ Remove",
+                        "🗑️ Del",
                         key=f"wl_del_{item['sym']}_{item['idx']}",
                         use_container_width=True,
                     ):
@@ -519,7 +502,7 @@ def render_watchlist_tab(watchlist_df):
                             st.rerun()
                         except Exception as e:
                             st.error(f"Could not delete {item['sym']}: {e}")
-                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
     if total_sim_invested > 0:
         tot_color = "var(--accent)" if total_sim_pnl >= 0 else "var(--red)"
