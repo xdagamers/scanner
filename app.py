@@ -480,11 +480,50 @@ def inject_theme_css():
         line-height: 1.35;
     }}
 
-    .stTabs [data-baseweb="tab-list"] {{ gap: 12px; border-bottom: 1px solid var(--border) !important; }}
-    .stTabs [data-baseweb="tab"] {{ padding: 12px 20px; background: transparent; border: none; }}
-    .stTabs [data-baseweb="tab"] p {{ color: var(--muted) !important; font-weight: 700; }}
-    .stTabs [aria-selected="true"] {{ background: transparent; border-bottom: 3px solid var(--accent) !important; }}
-    .stTabs [aria-selected="true"] p {{ color: var(--text) !important; }}
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 10px;
+        border-bottom: 1px solid var(--border) !important;
+        flex-wrap: wrap !important;
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        padding: 10px 18px;
+        background: var(--card2) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px 10px 0 0 !important;
+        opacity: 1 !important;
+    }}
+    .stTabs [data-baseweb="tab"],
+    .stTabs [data-baseweb="tab"] p,
+    .stTabs [data-baseweb="tab"] span,
+    .stTabs [data-baseweb="tab"] div {{
+        color: var(--text) !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }}
+    .stTabs [data-baseweb="tab"][aria-selected="false"] {{
+        background: var(--card) !important;
+        color: var(--muted) !important;
+    }}
+    .stTabs [data-baseweb="tab"][aria-selected="false"] p,
+    .stTabs [data-baseweb="tab"][aria-selected="false"] span,
+    .stTabs [data-baseweb="tab"][aria-selected="false"] div {{
+        color: var(--muted) !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: var(--card2) !important;
+        border-bottom: 3px solid var(--accent) !important;
+    }}
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] span,
+    .stTabs [aria-selected="true"] div {{
+        color: var(--text) !important;
+        font-weight: 800 !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }}
 
     @media (max-width: 768px) {{
         .block-container {{ padding: 0.6rem 0.8rem 3rem !important; }}
