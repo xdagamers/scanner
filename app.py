@@ -488,45 +488,48 @@ def inject_theme_css():
 
 
     details.bento-card {{
-        background: #0B0E14;
-        border: 1.5px solid #1E2535;
-        border-radius: 10px;
+        background: var(--card);
+        border: 1.5px solid var(--border);
+        border-radius: 12px;
         margin-bottom: 6px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: var(--shadow);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    }}
+    details.bento-card:hover {{
+        border-color: var(--brand);
     }}
     details.bento-card.card-outline-up {{
         border: 1.5px solid #10b981 !important;
-        border-left: 5px solid #10b981 !important;
-        box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);
+        border-left: 4px solid #10b981 !important;
+        box-shadow: 0 2px 14px rgba(16, 185, 129, 0.14);
     }}
     details.bento-card.card-outline-down {{
         border: 1.5px solid #ef4444 !important;
-        border-left: 5px solid #ef4444 !important;
-        box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);
+        border-left: 4px solid #ef4444 !important;
+        box-shadow: 0 2px 14px rgba(239, 68, 68, 0.14);
     }}
     details.bento-card[open] {{
         margin-bottom: 0px !important;
         border-bottom-left-radius: 0px !important;
         border-bottom-right-radius: 0px !important;
     }}
-    /* Hide action buttons when the stock card (<details>) is collapsed (small form) */
+    /* Hide action buttons when the stock card (<details>) is collapsed (squeezed form) */
     div[data-testid="stElementContainer"]:has(details.bento-card:not([open])) + div[data-testid="stElementContainer"],
     div[data-testid="stElementContainer"]:has(details.bento-card:not([open])) + div[data-testid="stHorizontalBlock"],
     div.element-container:has(details.bento-card:not([open])) + div.element-container,
     div.element-container:has(details.bento-card:not([open])) + div[data-testid="stHorizontalBlock"] {{
         display: none !important;
     }}
-    /* Style the revealed button container when the card is expanded so it looks integrated inside the expanded card */
+    /* Style the revealed button container when the card is expanded */
     div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stElementContainer"],
     div[data-testid="stElementContainer"]:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"],
     div.element-container:has(details.bento-card[open]) + div.element-container,
     div.element-container:has(details.bento-card[open]) + div[data-testid="stHorizontalBlock"] {{
-        background: #0B0E14;
-        border: 1.5px solid #1E2535;
+        background: var(--card);
+        border: 1.5px solid var(--border);
         border-top: none;
-        border-bottom-left-radius: 10px;
-        border-bottom-right-radius: 10px;
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
         padding: 8px 14px 12px 14px;
         margin-top: -6px !important;
         margin-bottom: 12px !important;
@@ -534,78 +537,76 @@ def inject_theme_css():
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stElementContainer"],
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-up[open]) + div[data-testid="stHorizontalBlock"] {{
         border-color: #10b981 !important;
-        border-left: 5px solid #10b981 !important;
+        border-left: 4px solid #10b981 !important;
     }}
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stElementContainer"],
     div[data-testid="stElementContainer"]:has(details.bento-card.card-outline-down[open]) + div[data-testid="stHorizontalBlock"] {{
         border-color: #ef4444 !important;
-        border-left: 5px solid #ef4444 !important;
+        border-left: 4px solid #ef4444 !important;
     }}
     details.bento-card > summary {{
         list-style: none;
         cursor: pointer;
-        padding: 12px 16px;
+        padding: 12px 14px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 12px;
+        gap: 8px;
     }}
     details.bento-card > summary::-webkit-details-marker {{
         display: none;
     }}
     .expanded-content {{
-        padding: 0 16px 16px 16px;
-        border-top: 1px solid #1E2535;
-        margin-top: 8px;
-        padding-top: 12px;
-        background: #0B0E14;
+        padding: 12px 14px 14px 14px;
+        border-top: 1px solid var(--border);
+        background: var(--card);
     }}
     .ticker-name {{
         font-family: 'Inter', sans-serif;
-        font-weight: 900;
-        font-size: 1.4rem;
-        color: #ffffff;
-        letter-spacing: 0.05em;
+        font-weight: 800;
+        font-size: 1.05rem;
+        color: var(--text);
+        letter-spacing: 0.01em;
+        line-height: 1.2;
     }}
-    .cp-text {{
-        color: #8c9bae;
-        font-weight: 600;
-        font-size: 1.1rem;
+    .exchange-tag {{
+        display: inline-block;
+        background: var(--card2);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }}
     .live-price-text {{
-        font-weight: 900;
-        font-size: 1.4rem;
-        color: #ffffff;
-    }}
-    .active-days-tag {{
-        background: rgba(59, 130, 246, 0.1);
-        color: #60a5fa;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.65rem;
         font-weight: 800;
-        text-transform: uppercase;
-        margin-top: 4px;
-        display: inline-block;
-    }}
-    .triangle-up {{
-        color: #10b981;
-        font-size: 1rem;
-    }}
-    .triangle-down {{
-        color: #ef4444;
-        font-size: 1rem;
+        font-size: 1.08rem;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2;
     }}
     .pct-up {{
         color: #10b981;
-        font-weight: 800;
-        font-size: 1.2rem;
+        font-weight: 700;
+        font-size: 0.84rem;
+        font-variant-numeric: tabular-nums;
     }}
     .pct-down {{
         color: #ef4444;
-        font-weight: 800;
-        font-size: 1.2rem;
+        font-weight: 700;
+        font-size: 0.84rem;
+        font-variant-numeric: tabular-nums;
+    }}
+    .expand-chevron {{
+        font-size: 0.68rem;
+        color: var(--muted);
+        transition: transform 0.2s ease;
+    }}
+    details.bento-card[open] .expand-chevron {{
+        transform: rotate(180deg);
     }}
     .pnl-breakdown {{
         display: flex; gap: 20px; justify-content: flex-end; align-items: baseline; font-size: 0.9rem;
@@ -1725,7 +1726,7 @@ def render_home():
     render_ticker()
     
     # Create the Tabs for the Main Screen
-    tab_dash, tab_sikho, tab_watch, tab_portfolio = st.tabs(["🚀 Scanner Dashboard", "📚 Sikho (Learn)", "👀 Live Watchlist", "🎮 Paper Portfolio"])
+    tab_dash, tab_watch, tab_portfolio, tab_sikho = st.tabs(["🚀 Scanner Dashboard", "👀 Live Watchlist", "🎮 Paper Portfolio", "📚 Sikho (Learn)"])
 
     with tab_watch:
         wc1, wc2 = st.columns([6, 2])
@@ -1831,8 +1832,8 @@ def render_home():
                 total_invested = 0.0
                 open_records = list(open_trades.iterrows())
 
-                for start in range(0, len(open_records), 3):
-                    p_cols = st.columns(3)
+                for start in range(0, len(open_records), 4):
+                    p_cols = st.columns(4)
                     for j, p_col in enumerate(p_cols):
                         rec_idx = start + j
                         if rec_idx >= len(open_records):
@@ -1847,8 +1848,12 @@ def render_home():
                         target_2 = clean_num(trade.get('Target_2', 0))
                         target_3 = (target_2 + (target_2 - target_1)) if (target_1 > 0 and target_2 > target_1) else 0.0
                         entry_date_str = str(trade.get('Entry_Date', '—') or '—').split(' ')[0]
+                        t_rsi = clean_num(trade.get('RSI', 0))
+                        t_adx = clean_num(trade.get('ADX', 0))
+                        t_macd = clean_num(trade.get('MACD', 0))
 
-                        pnl = (live_price - entry_price) * qty
+                        diff_sh = live_price - entry_price
+                        pnl = diff_sh * qty
                         if pnl >= 0:
                             total_gross_profit += pnl
                         else:
@@ -1862,29 +1867,29 @@ def render_home():
 
                         # Evaluate Target & Stop-Loss Alert Badges
                         if stop_loss > 0 and live_price <= stop_loss:
-                            alert_badge = "<span class='badge badge-red'>🚨 STOP LOSS BREACHED — EXIT NOW</span>"
+                            alert_badge = "<span class='badge badge-red'>🚨 STOP LOSS BREACHED</span>"
                         elif stop_loss > 0 and live_price > stop_loss and ((live_price - stop_loss) / live_price * 100) <= 1.0:
-                            alert_badge = "<span class='badge badge-yellow'>⚠️ NEAR STOP LOSS (&le;1% BUFFER)</span>"
+                            alert_badge = "<span class='badge badge-yellow'>⚠️ NEAR STOP LOSS</span>"
                         elif target_3 > 0 and live_price >= target_3:
-                            alert_badge = "<span class='badge badge-accent'>🏆 TARGET 3 HIT — BOOK FULL / TRAIL</span>"
+                            alert_badge = "<span class='badge badge-accent'>🏆 TARGET 3 HIT</span>"
                         elif target_2 > 0 and live_price >= target_2:
-                            alert_badge = "<span class='badge badge-accent'>🎯 TARGET 2 HIT — TRAIL SL TO T1</span>"
+                            alert_badge = "<span class='badge badge-accent'>🎯 TARGET 2 HIT</span>"
                         elif target_1 > 0 and live_price >= target_1:
-                            alert_badge = "<span class='badge badge-green'>✅ TARGET 1 HIT — BOOK 50% &amp; MOVE SL TO COST</span>"
+                            alert_badge = "<span class='badge badge-green'>✅ TARGET 1 HIT</span>"
                         elif target_1 > 0 and live_price < target_1 and ((target_1 - live_price) / live_price * 100) <= 1.0:
-                            alert_badge = "<span class='badge badge-brand'>🔥 APPROACHING T1 (&le;1% AWAY)</span>"
+                            alert_badge = "<span class='badge badge-brand'>🔥 APPROACHING T1</span>"
                         elif pnl >= 0:
-                            alert_badge = "<span class='badge badge-green'>🟢 IN PROFIT ZONE — HOLD</span>"
+                            alert_badge = "<span class='badge badge-green'>🟢 IN PROFIT</span>"
                         else:
-                            alert_badge = "<span class='badge badge-yellow'>⏳ ACTIVE — ABOVE STOP LOSS</span>"
+                            alert_badge = "<span class='badge badge-yellow'>⏳ ACTIVE</span>"
 
                         # Green / Red Outline comparing Live Price vs Entry Price
                         if live_price > entry_price and entry_price > 0:
                             outline_cls = "card-outline-up"
-                            outline_style = "border: 1.5px solid #10b981; border-left: 5px solid #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, 0.14);"
+                            outline_style = "border: 1.5px solid #10b981; border-left: 4px solid #10b981;"
                         elif live_price < entry_price and entry_price > 0:
                             outline_cls = "card-outline-down"
-                            outline_style = "border: 1.5px solid #ef4444; border-left: 5px solid #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.14);"
+                            outline_style = "border: 1.5px solid #ef4444; border-left: 4px solid #ef4444;"
                         else:
                             outline_cls = "card-outline-flat"
                             outline_style = "border: 1.5px solid var(--border);"
@@ -1906,46 +1911,57 @@ def render_home():
                         except Exception:
                             days_active = 0
 
-                        arrow_cls = 'triangle-up' if pnl >= 0 else 'triangle-down'
                         pct_cls = 'pct-up' if pnl >= 0 else 'pct-down'
-                        arrow_char = '▲' if pnl >= 0 else '▼'
 
                         with p_col:
                             st.markdown(f'''
                             <details class="bento-card {outline_cls}" style="{outline_style} padding:0; overflow:hidden; margin-bottom:4px;">
                                 <summary style="border-bottom: none;">
-                                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                                        <div style="display:flex; flex-direction:column; gap:4px;">
-                                            <span class="ticker-name">{html.escape(sym)}</span>
-                                            <div>
-                                                <span class="{arrow_cls}">{arrow_char}</span>
-                                                <span class="{pct_cls}">{abs(pnl_pct):.2f}%</span>
+                                    <div style="display:flex; justify-content:space-between; width:100%; align-items:center; gap:8px;">
+                                        <div style="display:flex; flex-direction:column; gap:5px; min-width:0;">
+                                            <div style="display:flex; align-items:center; gap:6px;">
+                                                <span class="ticker-name">{html.escape(sym)}</span>
+                                                <span class="expand-chevron">▼</span>
+                                            </div>
+                                            <div style="display:flex; align-items:center; gap:5px;">
+                                                <span class="exchange-tag">NSE</span>
+                                                <span class="exchange-tag">{days_active}D • {qty}Q</span>
                                             </div>
                                         </div>
-                                        <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end;">
-                                            <div><span class="cp-text">CP- </span><span class="live-price-text">{money(live_price)}</span></div>
-                                            <div class="active-days-tag">{days_active} DAYS ACTIVE</div>
+                                        <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                                            <span class="live-price-text">{money(live_price)}</span>
+                                            <span class="{pct_cls}">{pnl_sign}{abs(diff_sh):.2f} ({pnl_sign}{pnl_pct:.2f}%)</span>
                                         </div>
                                     </div>
                                 </summary>
                                 <div class="expanded-content">
-                                    <div style="margin-bottom:10px;">{alert_badge}</div>
-                                    <div class="small-muted" style="margin-bottom:6px;">
-                                        Entry: <b>{money(entry_price)}</b> ({html.escape(entry_date_str)}) &nbsp;|&nbsp; Qty: <b>{qty}</b> &nbsp;|&nbsp; Invested: <b>{money(entry_price * qty)}</b>
-                                    </div>
-                                    <div class="small-muted" style="margin-bottom:8px;">
-                                        🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b> &nbsp;|&nbsp; 🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b> &nbsp;|&nbsp; 🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b> &nbsp;|&nbsp; 🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b>
-                                    </div>
-                                    <div style="margin-bottom:10px;">
-                                        <div style="display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); font-weight:700; margin-bottom:3px;">
-                                            <span>SL Buffer: {dist_to_sl_pct:+.2f}%</span>
-                                            <span>{('T1 HIT ✅' if (target_1 > 0 and live_price >= target_1) else f'To T1: {dist_to_t1_pct:+.2f}%') if target_1 > 0 else ''}</span>
+                                    <div style="margin-bottom:8px;">{alert_badge}</div>
+                                    <div style="background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px;">
+                                        <div class="small-muted" style="font-size:0.72rem; margin-bottom:6px;">
+                                            Entry: <b>{money(entry_price)}</b> ({html.escape(entry_date_str)}) • Inv: <b>{money(entry_price * qty)}</b>
                                         </div>
-                                        <div class="bar-track" style="height:6px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+                                        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px; font-size:0.75rem; margin-bottom:8px;">
+                                            <div>🛑 SL: <b style="color:var(--red);">{money(stop_loss) if stop_loss > 0 else '—'}</b></div>
+                                            <div>🎯 T1: <b style="color:var(--accent);">{money(target_1) if target_1 > 0 else '—'}</b></div>
+                                            <div>🎯 T2: <b style="color:var(--brand);">{money(target_2) if target_2 > 0 else '—'}</b></div>
+                                            <div>🏆 T3: <b>{money(target_3) if target_3 > 0 else '—'}</b></div>
+                                        </div>
+                                        <div style="margin-bottom:6px;">
+                                            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:var(--muted); font-weight:700; margin-bottom:3px;">
+                                                <span>SL Buf: {dist_to_sl_pct:+.1f}%</span>
+                                                <span>{('T1 HIT ✅' if (target_1 > 0 and live_price >= target_1) else f'To T1: {dist_to_t1_pct:+.1f}%') if target_1 > 0 else ''}</span>
+                                            </div>
+                                            <div class="bar-track" style="height:5px;"><div class="bar-fill" style="width:{prog_pct:.1f}%; background:{prog_color};"></div></div>
+                                        </div>
+                                        <div style="display:flex; justify-content:space-between; align-items:baseline; border-top:1px solid var(--border); padding-top:6px; margin-top:6px;">
+                                            <span class="small-muted" style="text-transform:uppercase; font-size:0.66rem;">Net PnL</span>
+                                            <span style="font-weight:800; font-size:0.98rem; color:{pnl_color};">{pnl_sign}{money(abs(pnl))}</span>
+                                        </div>
                                     </div>
-                                    <div style="display:flex; justify-content:space-between; align-items:baseline; border-top:1px solid var(--border); padding-top:8px;">
-                                        <span class="small-muted" style="text-transform:uppercase; font-size:0.7rem;">Unrealized PnL ({pnl_sign}{money(abs(live_price - entry_price))}/sh)</span>
-                                        <span style="font-weight:900; font-size:1.15rem; color:{pnl_color};">{pnl_sign}{money(abs(pnl))}</span>
+                                    <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:0.73rem;">
+                                        <span>RSI: <b>{f'{t_rsi:.1f}' if t_rsi > 0 else '—'}</b></span>
+                                        <span>ADX: <b>{f'{t_adx:.1f}' if t_adx > 0 else '—'}</b></span>
+                                        <span>MACD: <b>{f'{t_macd:.2f}' if t_macd != 0 else '—'}</b></span>
                                     </div>
                                 </div>
                             </details>
@@ -1957,7 +1973,7 @@ def render_home():
                                 st.toast(f"✅ Closed {sym} trade. PnL: {pnl_sign}{money(pnl)}")
                                 time.sleep(1)
                                 st.rerun()
-                
+
                 # Show Total PnL Header
                 total_color = "var(--accent)" if total_pnl >= 0 else "var(--red)"
                 total_sign = "+" if total_pnl >= 0 else ""
@@ -2684,8 +2700,8 @@ def render_home():
                 st.markdown('<div class="bento-card" style="text-align:center;padding:60px 20px;"><div style="font-size:1.1rem;font-weight:700;">No Setups Found</div><div class="small-muted" style="margin-top:8px">Try changing the filter or scanning the market.</div></div>', unsafe_allow_html=True)
             else:
                 grid_df = display if show_all_cards else display.head(30)
-                for start in range(0, len(grid_df), 3):
-                    cols = st.columns(3)
+                for start in range(0, len(grid_df), 4):
+                    cols = st.columns(4)
                     for j, col in enumerate(cols):
                         idx = start + j
                         if idx >= len(grid_df): continue
@@ -2697,6 +2713,7 @@ def render_home():
                             rating = int(float(row.get('rating', 0) or 0))
                             score = float(row.get('score', 0) or 0)
                             price = float(row.get('price', 0) or 0)
+                            dist_pct = float(row.get('distance_pct', 0) or 0)
                             rsi = float(row.get('rsi', 0) or 0)
                             adx = float(row.get('adx', 0) or 0)
                             macd = float(row.get('macd', 0) or 0)
@@ -2706,42 +2723,61 @@ def render_home():
                             sqz_v = float(row.get('squeeze', 0.0) or 0.0)
                             f_grade = str(row.get('fundamental_grade', '') or '').strip()
                             f_flag = str(row.get('fundamental_flag', '') or '').strip()
+                            cap_cat = str(row.get('cap_category', '') or '').strip()
                             
                             score_cls = 'badge-green' if score >= 80 else 'badge-brand' if score >= 65 else 'badge-yellow'
-                            badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:8px;margin-right:6px;">{timeframe}</span>'
-                            badges_html += f'<span class="badge {score_cls}" style="margin-bottom:8px;margin-right:6px;">SCORE: {score:.0f} ({rating}/10)</span>'
+                            badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:6px;margin-right:4px;">{timeframe}</span>'
+                            badges_html += f'<span class="badge {score_cls}" style="margin-bottom:6px;margin-right:4px;">SCORE: {score:.0f} ({rating}/10)</span>'
                             if pd.notna(dly):
-                                badges_html += f'<span class="badge badge-green" style="margin-bottom:8px;margin-right:6px;">DEL: {dly}% ({d_exp:.1f}x)</span>'
+                                badges_html += f'<span class="badge badge-green" style="margin-bottom:6px;margin-right:4px;">DEL: {dly}% ({d_exp:.1f}x)</span>'
                             if sec_rs != 0:
                                 sec_c = 'badge-green' if sec_rs >= 0 else 'badge-red'
-                                badges_html += f'<span class="badge {sec_c}" style="margin-bottom:8px;margin-right:6px;">SEC RS: {sec_rs:+.1f}%</span>'
+                                badges_html += f'<span class="badge {sec_c}" style="margin-bottom:6px;margin-right:4px;">SEC RS: {sec_rs:+.1f}%</span>'
                             if sqz_v >= 0.75:
-                                badges_html += '<span class="badge badge-brand" style="margin-bottom:8px;margin-right:6px;">💎 VCP / VDU</span>'
+                                badges_html += '<span class="badge badge-brand" style="margin-bottom:6px;margin-right:4px;">💎 VCP/VDU</span>'
                             if f_grade and f_grade not in {'nan', 'None'}:
                                 fg_cls = 'badge-green' if f_grade in {'A+', 'A'} else ('badge-red' if f_grade == 'D' else 'badge-grey')
-                                badges_html += f'<span class="badge {fg_cls}" style="margin-bottom:8px;margin-right:6px;">FUND: {html.escape(f_grade)}</span>'
+                                badges_html += f'<span class="badge {fg_cls}" style="margin-bottom:6px;margin-right:4px;">FUND: {html.escape(f_grade)}</span>'
                             if f_flag == 'EARNINGS_EVENT_RISK':
-                                badges_html += '<span class="badge badge-yellow" style="margin-bottom:8px;margin-right:6px;">⚠️ EARNINGS SOON</span>'
+                                badges_html += '<span class="badge badge-yellow" style="margin-bottom:6px;margin-right:4px;">⚠️ EARNINGS</span>'
                             if row.get('false_breakout') or float(row.get('component_volume', 0.5) or 0.5) <= 0.10:
-                                badges_html += '<span class="badge badge-red" style="margin-bottom:8px;">⚠️ TRAP RISK</span>'
+                                badges_html += '<span class="badge badge-red" style="margin-bottom:6px;">⚠️ TRAP</span>'
+
+                            scan_outline_cls = 'card-outline-up' if score >= 80 else ''
+                            scan_outline_style = 'border: 1.5px solid #10b981; border-left: 4px solid #10b981;' if score >= 80 else 'border-left: 4px solid var(--brand);'
+                            dist_cls = 'pct-up' if dist_pct <= 2.0 else 'pct-down'
 
                             card_html = (
-                                f'<div class="bento-stock-card">'
-                                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                                f'<span style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;">RANK #{idx+1}</span>'
-                                f'<span class="badge badge-grey">{html.escape(str(row.get("cap_category","")))}</span>'
+                                f'<details class="bento-card {scan_outline_cls}" style="{scan_outline_style} padding:0; overflow:hidden; margin-bottom:4px;">'
+                                f'<summary style="border-bottom: none;">'
+                                f'<div style="display:flex; justify-content:space-between; width:100%; align-items:center; gap:6px;">'
+                                f'<div style="display:flex; flex-direction:column; gap:5px; min-width:0;">'
+                                f'<div style="display:flex; align-items:center; gap:5px;">'
+                                f'<span class="ticker-name">{html.escape(str(row["symbol"]))}</span>'
+                                f'<span class="expand-chevron">▼</span>'
                                 f'</div>'
-                                f'<div style="font-weight:800;font-size:1.15rem;color:var(--text);margin-top:8px;line-height:1.2;">{html.escape(str(row.get("company_name",row["symbol"])))}</div>'
-                                f'<div class="small-muted" style="margin-bottom:10px;">{html.escape(str(row["symbol"]))}</div>'
-                                f'<div>{badges_html}</div>'
-                                f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">'
-                                f'<div style="font-weight:900;font-size:1.35rem;">{money(price)}</div>'
-                                f'<div style="font-size:.75rem;color:var(--accent);font-weight:700;">{float(row.get("distance_pct",0)):.2f}% to res.</div>'
+                                f'<div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">'
+                                f'<span class="exchange-tag">#{idx+1}</span>'
+                                f'<span class="exchange-tag">SC {score:.0f}</span>'
                                 f'</div>'
+                                f'</div>'
+                                f'<div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">'
+                                f'<span class="live-price-text">{money(price)}</span>'
+                                f'<span class="{dist_cls}">{dist_pct:+.2f}% res</span>'
+                                f'</div>'
+                                f'</div>'
+                                f'</summary>'
+                                f'<div class="expanded-content">'
+                                f'<div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:6px;">'
+                                f'<div style="font-weight:700; font-size:0.84rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{html.escape(str(row.get("company_name", row["symbol"])))}</div>'
+                                f'<span class="exchange-tag">{html.escape(cap_cat or "NSE")}</span>'
+                                f'</div>'
+                                f'<div style="margin-bottom:8px;">{badges_html}</div>'
                                 f'<div class="bar-row"><span class="bar-label">RSI</span><div class="bar-track"><div class="bar-fill" style="width:{min(rsi, 100)}%;background:var(--accent);"></div></div><span class="bar-val">{rsi:.0f}</span></div>'
                                 f'<div class="bar-row"><span class="bar-label">ADX</span><div class="bar-track"><div class="bar-fill" style="width:{min(adx*1.5, 100)}%;background:var(--accent);"></div></div><span class="bar-val">{adx:.0f}</span></div>'
                                 f'<div class="bar-row"><span class="bar-label">MACD</span><div class="bar-track"><div class="bar-fill" style="width:{min(abs(macd)*3, 100)}%;background:var(--accent);"></div></div><span class="bar-val">{macd:.1f}</span></div>'
                                 f'</div>'
+                                f'</details>'
                             )
                             st.markdown(card_html, unsafe_allow_html=True)
                             if st.button('Launch Analytics ↗', key=f'stock_{row["symbol"]}_{idx}', use_container_width=True):
