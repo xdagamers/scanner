@@ -218,13 +218,20 @@ def inject_theme_css():
     }}
     
     button[data-testid="baseButton-primary"] {{
-        background-color: var(--text) !important;
-        color: var(--bg) !important;
-        border: 1px solid var(--text) !important;
+        background: linear-gradient(135deg, #059669, #10b981) !important;
+        color: #ffffff !important;
+        border: 1px solid #059669 !important;
     }}
-    
+    button[data-testid="baseButton-primary"],
+    button[data-testid="baseButton-primary"] * {{
+        color: #ffffff !important;
+    }}
     button[data-testid="baseButton-primary"]:hover {{
-        opacity: 0.85;
+        filter: brightness(1.06);
+        color: #ffffff !important;
+    }}
+    button[data-testid="baseButton-primary"]:hover * {{
+        color: #ffffff !important;
     }}
     
     .stButton > button:hover {{
@@ -611,6 +618,55 @@ def inject_theme_css():
     .pnl-breakdown {{
         display: flex; gap: 20px; justify-content: flex-end; align-items: baseline; font-size: 0.9rem;
     }}
+
+    .stMarkdown table {{
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px;
+        overflow: hidden;
+    }}
+    .stMarkdown table th {{
+        background: var(--card2) !important;
+        color: var(--text) !important;
+        border-bottom: 1px solid var(--border) !important;
+        padding: 10px 12px !important;
+        font-weight: 700 !important;
+    }}
+    .stMarkdown table td {{
+        background: var(--card) !important;
+        color: var(--text) !important;
+        border-bottom: 1px solid var(--border) !important;
+        padding: 9px 12px !important;
+    }}
+    [data-testid="stExpander"], [data-testid="stExpander"] details, [data-testid="stExpander"] summary {{
+        background: var(--card) !important;
+        color: var(--text) !important;
+        border-color: var(--border) !important;
+    }}
+    [data-testid="stStatusWidget"] {{
+        background: var(--card) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+    }}
+    [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-baseweb="select"] > div {{
+        background-color: var(--card2) !important;
+        color: var(--text) !important;
+        border-color: var(--border) !important;
+    }}
+
+
+    [data-testid="stToggle"] label, [data-testid="stToggle"] span, [data-testid="stCheckbox"] label, [data-testid="stCheckbox"] span {{
+        color: var(--text) !important;
+    }}
+    [data-testid="stDataFrame"] {{
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        overflow: hidden !important;
+    }}
+
             </style>
     '''
     st.markdown(css, unsafe_allow_html=True)
@@ -653,6 +709,45 @@ def render_reload_guard(active=True):
           } catch (e) {}
         })();
         </script>
+
+        <script>
+        (() => {
+          try {
+            const w = window.parent; const d = w.document;
+            const syncDetailsButtons = () => {
+              const cards = d.querySelectorAll('details.bento-card');
+              cards.forEach((det) => {
+                const isOpen = det.hasAttribute('open');
+                // Find the next sibling container holding the st.button for this card
+                let host = det.closest('[data-testid="stElementContainer"], .element-container, [data-testid="stVerticalBlock"]');
+                if (!host) return;
+                let nextEl = host.nextElementSibling;
+                // Skip spacer markdowns if any
+                while (nextEl && nextEl.textContent && nextEl.textContent.trim() === '' && !nextEl.querySelector('button')) {
+                  nextEl = nextEl.nextElementSibling;
+                }
+                if (nextEl && (nextEl.querySelector('button') || nextEl.matches('[data-testid="stElementContainer"], .element-container, [data-testid="stHorizontalBlock"]'))) {
+                  if (nextEl.querySelector('button')) {
+                    nextEl.style.display = isOpen ? '' : 'none';
+                  }
+                }
+              });
+            };
+            syncDetailsButtons();
+            if (!w.__niftyDetailsSyncInstalled) {
+              w.__niftyDetailsSyncInstalled = true;
+              d.addEventListener('toggle', (e) => {
+                if (e.target && e.target.matches && e.target.matches('details.bento-card')) {
+                  syncDetailsButtons();
+                }
+              }, true);
+              const obs = new MutationObserver(() => syncDetailsButtons());
+              obs.observe(d.body, { childList: true, subtree: true });
+            }
+          } catch (e) {}
+        })();
+        </script>
+
     ''', height=0)
 def get_timeframe_status(row):
     adx = float(row.get('adx', 0) or 0)
@@ -940,6 +1035,103 @@ def fetch_portfolio_live_prices_batch(symbols_tuple):
             except Exception:
                 pass
     return live_prices
+
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_portfolio_technicals_batch(symbols_tuple):
+    """Compute live RSI(14), ADX(14), and MACD(12,26,9) for open paper portfolio symbols."""
+    if not symbols_tuple:
+        return {}
+    clean_syms = [str(s).strip().upper().replace('.NS', '') for s in symbols_tuple if str(s).strip()]
+    if not clean_syms:
+        return {}
+    tickers = [s.replace('&', '%26') + '.NS' for s in clean_syms]
+    tech_map = {}
+
+    def _calc_indicators(df_ohlc):
+        if df_ohlc is None or len(df_ohlc) < 35:
+            return None
+        c = pd.to_numeric(df_ohlc['Close'], errors='coerce').dropna()
+        h = pd.to_numeric(df_ohlc['High'], errors='coerce').reindex(c.index).ffill()
+        l = pd.to_numeric(df_ohlc['Low'], errors='coerce').reindex(c.index).ffill()
+        if len(c) < 35:
+            return None
+
+        # RSI (14)
+        delta = c.diff()
+        gain = delta.clip(lower=0.0).ewm(alpha=1.0 / 14.0, adjust=False).mean()
+        loss = (-delta.clip(upper=0.0)).ewm(alpha=1.0 / 14.0, adjust=False).mean()
+        rs = gain / loss.replace(0.0, np.nan)
+        rsi_s = 100.0 - (100.0 / (1.0 + rs))
+        rsi_val = float(rsi_s.iloc[-1]) if np.isfinite(rsi_s.iloc[-1]) else 0.0
+
+        # MACD (12, 26, 9)
+        ema12 = c.ewm(span=12, adjust=False).mean()
+        ema26 = c.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        macd_val = float(macd_line.iloc[-1]) if np.isfinite(macd_line.iloc[-1]) else 0.0
+
+        # ADX (14)
+        prev_c = c.shift(1)
+        tr = pd.concat([
+            (h - l).abs(),
+            (h - prev_c).abs(),
+            (l - prev_c).abs(),
+        ], axis=1).max(axis=1)
+        up_move = h.diff()
+        down_move = -l.diff()
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        atr14 = tr.ewm(alpha=1.0 / 14.0, adjust=False).mean().replace(0.0, np.nan)
+        plus_di = 100.0 * pd.Series(plus_dm, index=c.index).ewm(alpha=1.0 / 14.0, adjust=False).mean() / atr14
+        minus_di = 100.0 * pd.Series(minus_dm, index=c.index).ewm(alpha=1.0 / 14.0, adjust=False).mean() / atr14
+        dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)
+        adx_s = dx.ewm(alpha=1.0 / 14.0, adjust=False).mean()
+        adx_val = float(adx_s.iloc[-1]) if np.isfinite(adx_s.iloc[-1]) else 0.0
+
+        return {'rsi': round(rsi_val, 1), 'adx': round(adx_val, 1), 'macd': round(macd_val, 2)}
+
+    try:
+        raw = yf.download(
+            tickers,
+            period='6mo',
+            interval='1d',
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+            group_by='ticker',
+            multi_level_index=True,
+        )
+        if raw is not None and not raw.empty:
+            for sym, ticker in zip(clean_syms, tickers):
+                try:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        if ticker in raw.columns.get_level_values(0):
+                            df_s = raw[ticker]
+                        elif ticker in raw.columns.get_level_values(1):
+                            df_s = raw.xs(ticker, axis=1, level=1)
+                        else:
+                            continue
+                    else:
+                        df_s = raw
+                    ind = _calc_indicators(df_s)
+                    if ind is not None:
+                        tech_map[sym] = ind
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    for sym in clean_syms:
+        if sym not in tech_map:
+            try:
+                hist_s = fetch_history_cached(sym, '6mo')
+                ind = _calc_indicators(hist_s)
+                if ind is not None:
+                    tech_map[sym] = ind
+            except Exception:
+                pass
+
+    return tech_map
 
 def market_status(now=None):
     now = now or datetime.now(IST)
@@ -1331,7 +1523,7 @@ def render_entry_zone_checklists(symbol, row, current_price, hist=None):
         if condition: 
             return "<span style='color:var(--accent); font-weight:800; font-size:0.75rem; padding:2px 8px; background:rgba(16,185,129,0.1); border-radius:4px;'>✅ PASSED</span>"
         if pending: 
-            return "<span style='color:#fbbf24; font-weight:800; font-size:0.75rem; padding:2px 8px; background:rgba(251,191,36,0.1); border-radius:4px;'>⏳ PENDING</span>"
+            return "<span style='color:var(--yellow); font-weight:800; font-size:0.75rem; padding:2px 8px; background:var(--yellow-bg); border-radius:4px;'>⏳ PENDING</span>"
         return "<span style='color:var(--red); font-weight:800; font-size:0.75rem; padding:2px 8px; background:rgba(239,68,68,0.1); border-radius:4px;'>❌ FAILED</span>"
 
     html = f"""
@@ -1666,10 +1858,10 @@ def render_detail(symbol, row):
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
                 <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">YoY Revenue Growth</b><br><span style="font-size:1.6rem;font-weight:800;color:{rev_c}">{rev_str}</span><div class="small-muted" style="margin-top:4px;">{rev_qoq_sub}</div></div>
                 <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">YoY Net Profit Growth</b><br><span style="font-size:1.6rem;font-weight:800;color:{prof_c}">{prof_str}</span><div class="small-muted" style="margin-top:4px;">{prof_qoq_sub}</div></div>
-                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem;font-weight:800;">{margin_str}</span><div class="small-muted" style="margin-top:4px;">Core EBIT / Operating</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Operating Margin</b><br><span style="font-size:1.6rem;font-weight:800;color:var(--text);">{margin_str}</span><div class="small-muted" style="margin-top:4px;">Core EBIT / Operating</div></div>
                 <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Debt to Equity</b><br><span style="font-size:1.6rem;font-weight:800;color:{dte_c}">{dte_str}</span><div class="small-muted" style="margin-top:4px;">Balance Sheet Leverage</div></div>
                 <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Return on Equity (ROE)</b><br><span style="font-size:1.6rem;font-weight:800;color:{roe_c}">{roe_str}</span><div class="small-muted" style="margin-top:4px;">Capital Efficiency</div></div>
-                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Valuation (P/E Ratio)</b><br><span style="font-size:1.6rem;font-weight:800;">{pe_str}</span><div class="small-muted" style="margin-top:4px;">Trailing / Forward P/E</div></div>
+                <div class="bento-card"><b style="color:var(--muted);font-size:.75rem;text-transform:uppercase;">Valuation (P/E Ratio)</b><br><span style="font-size:1.6rem;font-weight:800;color:var(--text);">{pe_str}</span><div class="small-muted" style="margin-top:4px;">Trailing / Forward P/E</div></div>
             </div>
             <div class="small-muted" style="margin-top:12px;text-align:right;">Data sourced securely via Yahoo Finance APIs &amp; corporate filings (6h TTL cache).</div>
             ''', unsafe_allow_html=True)
@@ -1777,6 +1969,31 @@ def render_home():
                 # Fetch live prices in a single parallel batch call (cached 60s)
                 symbols_tuple = tuple(sorted({str(s).strip().upper().replace('.NS', '') for s in open_trades['Symbol'].unique() if str(s).strip()}))
                 live_prices = fetch_portfolio_live_prices_batch(symbols_tuple)
+                live_techs = fetch_portfolio_technicals_batch(symbols_tuple)
+
+                # Build lookup maps from current scan_result and watchlist_df as secondary reference
+                scan_tech_lookup = {}
+                cur_scan_df = st.session_state.get('scan_result')
+                if isinstance(cur_scan_df, pd.DataFrame) and not cur_scan_df.empty and 'symbol' in cur_scan_df.columns:
+                    for _, sr in cur_scan_df.iterrows():
+                        s_k = str(sr.get('symbol', '')).strip().upper().replace('.NS', '')
+                        if s_k:
+                            scan_tech_lookup[s_k] = {
+                                'rsi': clean_num(sr.get('rsi', 0)),
+                                'adx': clean_num(sr.get('adx', 0)),
+                                'macd': clean_num(sr.get('macd', 0)),
+                            }
+
+                wl_cache_df = get_watchlist_cached()
+                if isinstance(wl_cache_df, pd.DataFrame) and not wl_cache_df.empty and 'Symbol' in wl_cache_df.columns:
+                    for _, wr in wl_cache_df.iterrows():
+                        w_k = str(wr.get('Symbol', '')).strip().upper().replace('.NS', '')
+                        if w_k and w_k not in scan_tech_lookup:
+                            scan_tech_lookup[w_k] = {
+                                'rsi': clean_num(wr.get('RSI', 0)),
+                                'adx': clean_num(wr.get('ADX', 0)),
+                                'macd': clean_num(wr.get('MACD', 0)),
+                            }
 
                 # Pre-calculate Open Trades summary metrics & Action Alerts (Total, In Profit, In Loss, Alerts)
                 open_count = len(open_trades)
@@ -1851,6 +2068,14 @@ def render_home():
                         t_rsi = clean_num(trade.get('RSI', 0))
                         t_adx = clean_num(trade.get('ADX', 0))
                         t_macd = clean_num(trade.get('MACD', 0))
+                        if t_rsi == 0 or t_adx == 0 or t_macd == 0:
+                            ref_t = live_techs.get(sym) or scan_tech_lookup.get(sym) or {}
+                            if t_rsi == 0:
+                                t_rsi = clean_num(ref_t.get('rsi', 0))
+                            if t_adx == 0:
+                                t_adx = clean_num(ref_t.get('adx', 0))
+                            if t_macd == 0:
+                                t_macd = clean_num(ref_t.get('macd', 0))
 
                         diff_sh = live_price - entry_price
                         pnl = diff_sh * qty
