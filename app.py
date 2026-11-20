@@ -39,6 +39,11 @@ from performance_tracker import (
 )
 from fundamental_data import fetch_single_fundamental, apply_fundamental_gate
 from live_watchlist import render_watchlist_tab
+try:
+    from firewall_scanner import apply_scanner_mode
+except ImportError:
+    def apply_scanner_mode(df, mode):
+        return df
 from sentiment_engine import get_headline_sentiment
 
 # Optional delivery loader integration
@@ -66,6 +71,35 @@ st.set_page_config(
     initial_sidebar_state='collapsed',
 )
 
+import hashlib as _hashlib
+
+def _device_auth_secret(password_secret: str) -> bytes:
+    try:
+        extra = str(st.secrets.get('DEVICE_AUTH_SECRET', '')).strip()
+    except Exception:
+        extra = ''
+    material = f"{password_secret}|{extra}|nifty_momentum_device_v1".encode('utf-8')
+    return _hashlib.sha256(material).digest()
+
+def _make_device_token(password_secret: str, days_valid: int = 30) -> str:
+    exp_ts = int(time.time()) + int(days_valid * 86400)
+    payload = str(exp_ts).encode('utf-8')
+    sig = hmac.new(_device_auth_secret(password_secret), payload, _hashlib.sha256).hexdigest()
+    return f"{exp_ts}.{sig}"
+
+def _verify_device_token(token: str, password_secret: str) -> bool:
+    if not token or '.' not in str(token):
+        return False
+    try:
+        exp_str, sig = str(token).strip().split('.', 1)
+        exp_ts = int(exp_str)
+        if int(time.time()) > exp_ts:
+            return False
+        expected = hmac.new(_device_auth_secret(password_secret), str(exp_ts).encode('utf-8'), _hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig, expected)
+    except Exception:
+        return False
+
 def password_gate():
     try:
         required = str(st.secrets.get('APP_PASSWORD', '')).strip()
@@ -76,6 +110,33 @@ def password_gate():
     if st.session_state.get('authenticated', False):
         return True
 
+    # 1. Check signed device token in query params first
+    dev_token = str(st.query_params.get('dev_auth', '') or '').strip()
+    if dev_token and _verify_device_token(dev_token, required):
+        st.session_state['authenticated'] = True
+        return True
+
+    # 2. Restore saved device token from browser localStorage once if not in URL
+    if not dev_token and not st.session_state.get('_dev_storage_checked', False):
+        st.session_state['_dev_storage_checked'] = True
+        components.html('''
+            <script>
+            (() => {
+              try {
+                const w = window.parent;
+                const saved = w.localStorage.getItem('nifty_dev_auth');
+                if (saved && saved.includes('.')) {
+                  const url = new URL(w.location.href);
+                  if (!url.searchParams.get('dev_auth')) {
+                    url.searchParams.set('dev_auth', saved);
+                    w.location.replace(url.toString());
+                  }
+                }
+              } catch (e) {}
+            })();
+            </script>
+        ''', height=0)
+
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)
@@ -83,10 +144,37 @@ def password_gate():
         st.caption('Fintech Portfolio Analytics Secure Portal')
         with st.form('scanner_password_login'):
             entered = st.text_input('Enter access key', type='password')
+            save_device = st.checkbox('Save login for this device (30 days)', value=True)
             submitted = st.form_submit_button('Unlock Platform', use_container_width=True)
         if submitted:
             if hmac.compare_digest(entered, required):
                 st.session_state['authenticated'] = True
+                if save_device:
+                    token = _make_device_token(required, days_valid=30)
+                    st.query_params['dev_auth'] = token
+                    components.html(f'''
+                        <script>
+                        (() => {{
+                          try {{
+                            window.parent.localStorage.setItem('nifty_dev_auth', {json.dumps(token)});
+                          }} catch (e) {{}}
+                        }})();
+                        </script>
+                    ''', height=0)
+                else:
+                    try:
+                        if 'dev_auth' in st.query_params:
+                            del st.query_params['dev_auth']
+                    except Exception:
+                        pass
+                    components.html('''
+                        <script>
+                        (() => {
+                          try { window.parent.localStorage.removeItem('nifty_dev_auth'); } catch (e) {}
+                        })();
+                        </script>
+                    ''', height=0)
+                time.sleep(0.15)
                 st.rerun()
             else:
                 st.error('Incorrect password.')
@@ -126,6 +214,8 @@ if 'cap_filter' not in st.session_state:
     st.session_state.cap_filter = 'All Caps'
 if 'portfolio_ticker_mode' not in st.session_state:
     st.session_state.portfolio_ticker_mode = True
+if 'scanner_engine_mode' not in st.session_state:
+    st.session_state.scanner_engine_mode = '⚡ Dual Mode (Run Both + Confluence)'
 
 # -----------------------------------------------------------------------------
 # FINTECH ANALYTICS CSS
@@ -484,45 +574,56 @@ def inject_theme_css():
         gap: 10px;
         border-bottom: 1px solid var(--border) !important;
         flex-wrap: wrap !important;
+        background: transparent !important;
     }}
-    .stTabs [data-baseweb="tab"] {{
-        padding: 10px 18px;
+    .stTabs [data-baseweb="tab"],
+    .stTabs button[role="tab"] {{
+        padding: 10px 18px !important;
         background: var(--card2) !important;
         border: 1px solid var(--border) !important;
         border-radius: 10px 10px 0 0 !important;
         opacity: 1 !important;
+        visibility: visible !important;
     }}
     .stTabs [data-baseweb="tab"],
-    .stTabs [data-baseweb="tab"] p,
-    .stTabs [data-baseweb="tab"] span,
-    .stTabs [data-baseweb="tab"] div {{
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs button[role="tab"],
+    .stTabs button[role="tab"] * {{
         color: var(--text) !important;
         font-weight: 700 !important;
         opacity: 1 !important;
         visibility: visible !important;
     }}
-    .stTabs [data-baseweb="tab"][aria-selected="false"] {{
-        background: var(--card) !important;
-        color: var(--muted) !important;
+    .stTabs [data-baseweb="tab"][aria-selected="false"],
+    .stTabs button[role="tab"][aria-selected="false"] {{
+        background: var(--card2) !important;
+        border-color: var(--border) !important;
     }}
-    .stTabs [data-baseweb="tab"][aria-selected="false"] p,
-    .stTabs [data-baseweb="tab"][aria-selected="false"] span,
-    .stTabs [data-baseweb="tab"][aria-selected="false"] div {{
+    .stTabs [data-baseweb="tab"][aria-selected="false"],
+    .stTabs [data-baseweb="tab"][aria-selected="false"] *,
+    .stTabs button[role="tab"][aria-selected="false"],
+    .stTabs button[role="tab"][aria-selected="false"] * {{
         color: var(--muted) !important;
         opacity: 1 !important;
         visibility: visible !important;
     }}
-    .stTabs [aria-selected="true"] {{
-        background: var(--card2) !important;
+    .stTabs [data-baseweb="tab"][aria-selected="true"],
+    .stTabs button[role="tab"][aria-selected="true"] {{
+        background: var(--card) !important;
         border-bottom: 3px solid var(--accent) !important;
     }}
-    .stTabs [aria-selected="true"] p,
-    .stTabs [aria-selected="true"] span,
-    .stTabs [aria-selected="true"] div {{
+    .stTabs [data-baseweb="tab"][aria-selected="true"],
+    .stTabs [data-baseweb="tab"][aria-selected="true"] *,
+    .stTabs button[role="tab"][aria-selected="true"],
+    .stTabs button[role="tab"][aria-selected="true"] * {{
         color: var(--text) !important;
         font-weight: 800 !important;
         opacity: 1 !important;
         visibility: visible !important;
+    }}
+    [data-testid="stTextInput"] input::placeholder {{
+        color: var(--muted) !important;
+        opacity: 1 !important;
     }}
 
     @media (max-width: 768px) {{
@@ -2408,6 +2509,33 @@ def render_home():
         """)
 
     with tab_dash:
+        # SCANNER ENGINE SELECTOR (Zero-overhead instant switching)
+        eng_col1, eng_col2 = st.columns([3.5, 6.5])
+        with eng_col1:
+            st.markdown('<div style="font-size:.72rem;font-weight:700;margin-bottom:6px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Active Scanner Strategy</div>', unsafe_allow_html=True)
+            engine_options = [
+                '⚡ Dual Mode (Run Both + Confluence)',
+                '🛡️ Firewall 40 (Institutional Survivor)',
+                '🚀 Scanner v3 (Classic Momentum)',
+            ]
+            cur_idx = engine_options.index(st.session_state.scanner_engine_mode) if st.session_state.scanner_engine_mode in engine_options else 0
+            selected_engine = st.selectbox(
+                'Scanner Engine',
+                options=engine_options,
+                index=cur_idx,
+                key='scanner_engine_selector',
+                label_visibility='collapsed',
+            )
+            st.session_state.scanner_engine_mode = selected_engine
+        with eng_col2:
+            if 'Firewall 40' in selected_engine:
+                eng_desc = 'Strict Institutional Survivor Funnel: Fundamental & Earnings Veto + 52W High Proximity + Anti-Trap + EOD Delivery + Max 5/Sector Cap (Top 40).'
+            elif 'Dual Mode' in selected_engine:
+                eng_desc = 'Runs Scanner v3 & Firewall 40 simultaneously on the same market data and boosts 🏆 DUAL CONFIRMED stocks to the top.'
+            else:
+                eng_desc = 'Classic Scanner v3 Regime-Adaptive Momentum Engine (original logic, 100% untouched).'
+            st.markdown(f'<div class="small-muted" style="padding-top:28px;">{eng_desc}</div>', unsafe_allow_html=True)
+
         # ACTION BAR (Bento Action Header)
         col_search, col_scan, col_audit, col_track = st.columns([3, 2, 2, 2])
         
@@ -2823,7 +2951,7 @@ def render_home():
         if result is None or result.empty:
             display = pd.DataFrame()
         else:
-            display = result.copy()
+            display = apply_scanner_mode(result.copy(), st.session_state.get('scanner_engine_mode', '🚀 Scanner v3 (Classic Momentum)'))
             
             # Pre-compute timeframes for filtering and display
             display['timeframe_val'] = display.apply(lambda r: get_timeframe_status(r)[0], axis=1)
@@ -2833,9 +2961,17 @@ def render_home():
             if st.session_state.cap_filter != "All Caps":
                 display = display[display['cap_category'] == st.session_state.cap_filter]
 
-            sort_cols = [c for c in ['rank_score', 'score', 'rating', 'distance_pct'] if c in display.columns]
+            if 'Dual Mode' in st.session_state.get('scanner_engine_mode', '') and 'firewall_passed' in display.columns:
+                sort_cols = ['firewall_passed'] + [c for c in ['rank_score', 'score', 'rating', 'distance_pct'] if c in display.columns]
+                asc_flags = [False] + [False, False, False, True][:len(sort_cols)-1]
+            elif 'Firewall 40' in st.session_state.get('scanner_engine_mode', '') and 'firewall_score' in display.columns:
+                sort_cols = ['firewall_score'] + [c for c in ['score', 'distance_pct'] if c in display.columns]
+                asc_flags = [False] + [False, True][:len(sort_cols)-1]
+            else:
+                sort_cols = [c for c in ['rank_score', 'score', 'rating', 'distance_pct'] if c in display.columns]
+                asc_flags = [False, False, False, True][:len(sort_cols)]
             if sort_cols:
-                display = display.sort_values(sort_cols, ascending=[False, False, False, True][:len(sort_cols)], kind='stable').reset_index(drop=True)
+                display = display.sort_values(sort_cols, ascending=asc_flags, kind='stable').reset_index(drop=True)
                 
         matches_count = len(display)
 
@@ -2990,7 +3126,12 @@ def render_home():
                             cap_cat = str(row.get('cap_category', '') or '').strip()
                             
                             score_cls = 'badge-green' if score >= 80 else 'badge-brand' if score >= 65 else 'badge-yellow'
-                            badges_html = f'<span class="badge {tf_cls}" style="margin-bottom:6px;margin-right:4px;">{timeframe}</span>'
+                            s_tag = str(row.get('scanner_tag', '') or '').strip()
+                            badges_html = ''
+                            if s_tag and ('DUAL' in s_tag or 'FIREWALL' in s_tag):
+                                st_cls = 'badge-accent' if 'DUAL' in s_tag else 'badge-green'
+                                badges_html += f'<span class="badge {st_cls}" style="margin-bottom:6px;margin-right:4px;">{html.escape(s_tag)}</span>'
+                            badges_html += f'<span class="badge {tf_cls}" style="margin-bottom:6px;margin-right:4px;">{timeframe}</span>'
                             badges_html += f'<span class="badge {score_cls}" style="margin-bottom:6px;margin-right:4px;">SCORE: {score:.0f} ({rating}/10)</span>'
                             if pd.notna(dly):
                                 badges_html += f'<span class="badge badge-green" style="margin-bottom:6px;margin-right:4px;">DEL: {dly}% ({d_exp:.1f}x)</span>'
